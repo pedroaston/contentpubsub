@@ -31,7 +31,7 @@ func TestPredicateMatching(t *testing.T) {
 	pSub, err2 := NewPredicate("soccer T/goals R 3 10")
 
 	if err1 == nil && err2 == nil {
-		res = pSub.simplePredicateMatch(pEvent)
+		res = pSub.SimplePredicateMatch(pEvent)
 	} else {
 		t.Fatal("Not supposed error creating the predicates")
 	}
@@ -45,7 +45,7 @@ func TestPredicateMatching(t *testing.T) {
 	pEvent, err1 = NewPredicate("soccer T/portugal T/goals R 10 10")
 
 	if err1 == nil && err2 == nil {
-		res = pSub.simplePredicateMatch(pEvent)
+		res = pSub.SimplePredicateMatch(pEvent)
 	} else {
 		t.Fatal("Not supposed error creating the predicates")
 	}
@@ -59,7 +59,7 @@ func TestPredicateMatching(t *testing.T) {
 	pEvent, err1 = NewPredicate("soccer T/portugal T/goals R 5 5")
 
 	if err1 == nil && err2 == nil {
-		res = pSub.simplePredicateMatch(pEvent)
+		res = pSub.SimplePredicateMatch(pEvent)
 	} else {
 		t.Fatal("Not supposed error creating the predicates")
 	}
@@ -73,7 +73,7 @@ func TestPredicateMatching(t *testing.T) {
 	pEvent, err1 = NewPredicate("soccer T/portugal T/goals R 2 2")
 
 	if err1 == nil && err2 == nil {
-		res = pSub.simplePredicateMatch(pEvent)
+		res = pSub.SimplePredicateMatch(pEvent)
 	} else {
 		t.Fatal("Not supposed error creating the predicates")
 	}
@@ -87,7 +87,7 @@ func TestPredicateMatching(t *testing.T) {
 	pEvent, err1 = NewPredicate("soccer T/portugal T/goals R 11 11")
 
 	if err1 == nil && err2 == nil {
-		res = pSub.simplePredicateMatch(pEvent)
+		res = pSub.SimplePredicateMatch(pEvent)
 	} else {
 		t.Fatal("Not supposed error creating the predicates")
 	}

@@ -1,10 +1,9 @@
 package contentpubsub
 
-// RouteStats keeps filters for each pubsub peer
-// it is connected and its backups in case of
-// peer failure
+// RouteStats keeps filters for each pubsub peer it is
+// connected and its backups in case of peer failure
 type RouteStats struct {
-	filters map[string]*Predicate
+	filters map[int][]*Predicate
 	backups [FaultToleranceFactor]string
 }
 
@@ -22,4 +21,37 @@ func NewFilterTable() *FilterTable {
 	}
 
 	return ft
+}
+
+// SimpleFilterSummarize is called upon receiving a subscription
+// filter to see if it should be added if exclusive, merge
+// with others or encompass or be encompassed by others
+// TODO >> Ongoing
+func (rs *RouteStats) SimpleFilterSummarize(p *Predicate) {
+
+	for i, filters := range rs.filters {
+
+		if len(p.attributes) > i {
+			for _, f := range filters {
+				if f.SimplePredicateMatch(p) {
+					return
+				}
+			}
+		} else if len(p.attributes) == i {
+			// Middle case
+		} else {
+			for j := 0; j < len(filters); j++ {
+				if p.SimplePredicateMatch(filters[j]) {
+					if len(filters) == j+1 {
+						rs.filters[i] = filters[:j-1]
+					} else {
+						rs.filters[i] = append(filters[:j-1], filters[j+1:]...)
+						j--
+					}
+				}
+			}
+		}
+	}
+
+	rs.filters[len(p.attributes)] = append(rs.filters[len(p.attributes)], p)
 }
