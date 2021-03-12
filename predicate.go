@@ -5,35 +5,38 @@ import (
 	"strings"
 )
 
+// AttributeType can be Topic or Range
 type AttributeType int
 
+// Topic >> name: portugal
+// Range >> name: price, rangeQuery: [120,140]
 const (
 	Topic AttributeType = iota
 	Range
 )
 
-// Attribute is the minimal unity of a Predicate and can be:
-// Topic >> name: portugal
-// Range >> name: price, rangeQuery: [120,140]
+// Attribute is the minimal unit of a Predicate and can be:
 type Attribute struct {
 	name       string
 	attrType   AttributeType
 	rangeQuery [2]int
 }
 
-// String returns representation of a
+// String returns representation of an Attribute
 func (a *Attribute) String() string {
 
 	switch a.attrType {
 	case Topic:
 		return a.name
 	case Range:
-		return a.name + "from" + strconv.Itoa(a.rangeQuery[0]) + "to" + strconv.Itoa(a.rangeQuery[1])
+		return a.name + " from " + strconv.Itoa(a.rangeQuery[0]) + " to " + strconv.Itoa(a.rangeQuery[1])
 	default:
 		return ""
 	}
 }
 
+// Predicate is expression that categorizes
+// an event or subscription
 type Predicate struct {
 	attributes map[string]*Attribute
 }
@@ -42,13 +45,13 @@ func (p *Predicate) String() string {
 	res := ""
 
 	for _, attr := range p.attributes {
-		res += attr.String()
+		res += "<" + attr.String() + "> "
 	}
 
 	return res
 }
 
-// Function that creates a predicate. Example of info string:
+// NewPredicate creates a predicate. Example of info string:
 // laptop T/RAM R 16 32/price R 0 1000
 func NewPredicate(info string) (*Predicate, error) {
 
@@ -85,9 +88,21 @@ func NewPredicate(info string) (*Predicate, error) {
 	return p, nil
 }
 
-// TODO >> still to be done
-// Simple method to see if two predicates match
-func (p *Predicate) simplePredicateMatch(pMatch *Predicate) bool {
+// SimplePredicateMatch evaluates if an event predicate matches a sub predicate
+// Special Note >> events range is seen as a single value for now for simplicity
+// and lack of reason to support a range
+func (p *Predicate) simplePredicateMatch(pEvent *Predicate) bool {
+
+	for _, attr := range p.attributes {
+		if _, ok := pEvent.attributes[attr.name]; !ok {
+			return false
+		} else if attr.attrType == Range {
+			if pEvent.attributes[attr.name].rangeQuery[0] >= attr.rangeQuery[0] &&
+				pEvent.attributes[attr.name].rangeQuery[1] <= attr.rangeQuery[1] {
+				return false
+			}
+		}
+	}
 
 	return true
 }
