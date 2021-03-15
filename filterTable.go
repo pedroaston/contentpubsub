@@ -1,5 +1,11 @@
 package contentpubsub
 
+import (
+	dht "github.com/libp2p/go-libp2p-kad-dht"
+
+	"github.com/libp2p/go-libp2p-core/peer"
+)
+
 // RouteStats keeps filters for each pubsub peer it is
 // connected and its backups in case of failure
 type RouteStats struct {
@@ -16,15 +22,20 @@ func NewRouteStats() *RouteStats {
 
 // FilterTable keeps filter information of all peers
 type FilterTable struct {
-	routes map[string]*RouteStats
+	routes map[peer.ID]*RouteStats
 }
 
 // NewFilterTable initializes a FilterTable
-// TODO >> needs to get info from kad-dht
-func NewFilterTable() *FilterTable {
+func NewFilterTable(dht *dht.IpfsDHT) *FilterTable {
+
+	peers := dht.RoutingTable().GetPeerInfos()
 
 	ft := &FilterTable{
-		routes: make(map[string]*RouteStats),
+		routes: make(map[peer.ID]*RouteStats),
+	}
+
+	for _, peer := range peers {
+		ft.routes[peer.Id] = NewRouteStats()
 	}
 
 	return ft
