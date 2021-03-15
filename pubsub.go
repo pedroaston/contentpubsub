@@ -1,7 +1,9 @@
 package contentpubsub
 
 import (
-	pb "github.com/pedroaston/ScoutSubs-FastDelivery/contentpubsub/pb"
+	"context"
+
+	pb "github.com/pedroaston/contentpubsub/pb"
 )
 
 // FaultToleranceFactor >> number of backups (TODO)
@@ -19,8 +21,6 @@ type PubSub struct {
 	currentFilterTable *FilterTable
 	nextFilterTable    *FilterTable
 	mySubs             []*Predicate
-	//TODO >> Needs to be a RPC
-	incoming chan string
 }
 
 // NewPubSub initializes the PubSub's data structure
@@ -34,6 +34,27 @@ func NewPubSub() *PubSub {
 	}
 
 	return ps
+}
+
+// Subscribe is a remote function called by a external peer to send subscriptions
+// TODO
+func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) *pb.Ack {
+
+	return &pb.Ack{State: true, Info: ""}
+}
+
+// Publish is a remote function called by a external peer to send an Event upstream
+// TODO
+func (ps *PubSub) Publish(ctx context.Context, sub *pb.Event) *pb.Ack {
+
+	return &pb.Ack{State: true, Info: ""}
+}
+
+// Notify is a remote function called by a external peer to send an Event downstream
+// TODO
+func (ps *PubSub) Notify(ctx context.Context, sub *pb.Event) *pb.Ack {
+
+	return &pb.Ack{State: true, Info: ""}
 }
 
 // processLopp
