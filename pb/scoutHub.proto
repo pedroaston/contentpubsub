@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+option go_package = "github.com/pedroaston/ScoutSubs-FastDelivery/contentpubsub/pb";
+
+package contentpubsub.pb;
+
+service ScoutHub {
+    rpc Subscribe(Subscription) returns (Ack) {}
+    rpc Publish(Event) returns (Ack) {}
+    rpc Notify(Event) returns (Ack) {}
+}
+
+// Acknowledge response
+message Ack {
+    bool state = 1;
+    string info = 2;
+}
+
+message Subscription {
+    string predicate = 1;
+    string rvId = 2;
+}
+
+message Event {
+    string predicate = 1;
+    string rvId = 2;
+    string event = 3;
+}
