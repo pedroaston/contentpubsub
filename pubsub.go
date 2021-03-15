@@ -1,16 +1,21 @@
 package contentpubsub
 
-// FaultToleranceFactor >> number of backups
-// MaxAttributesPerSub >> maximum allowed number of attributes per predicate
-// SubRefreshRateMin >> frequency in which a subscriber needs to resub in minutes
+import (
+	pb "github.com/pedroaston/ScoutSubs-FastDelivery/contentpubsub/pb"
+)
+
+// FaultToleranceFactor >> number of backups (TODO)
+// MaxAttributesPerSub >> maximum allowed number of attributes per predicate (TODO)
+// SubRefreshRateMin >> frequency in which a subscriber needs to resub in minutes (TODO)
 const (
-	FaultToleranceFactor = 3
-	MaxAttributesPerSub  = 5
-	SubRefreshRateMin    = 20
+	FaultToleranceFactor      = 3
+	MaxAttributesPerPredicate = 5
+	SubRefreshRateMin         = 20
 )
 
 //PubSub data structure
 type PubSub struct {
+	pb.UnimplementedScoutHubServer
 	currentFilterTable *FilterTable
 	nextFilterTable    *FilterTable
 	mySubs             []*Predicate

@@ -1,13 +1,13 @@
 package contentpubsub
 
 // RouteStats keeps filters for each pubsub peer it is
-// connected and its backups in case of peer failure
+// connected and its backups in case of failure
 type RouteStats struct {
 	filters map[int][]*Predicate
 	backups [FaultToleranceFactor]string
 }
 
-// NewRouteStats initializes the a routestat
+// NewRouteStats initializes a routestat
 func NewRouteStats() *RouteStats {
 	r := &RouteStats{filters: make(map[int][]*Predicate)}
 

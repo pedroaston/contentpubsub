@@ -1,3 +1,3 @@
-module github.com/pedroaston/ScoutSubs-FastDelivery
+module github.com/pedroaston/contentpubsub
 
 go 1.16

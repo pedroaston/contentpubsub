@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-option go_package = "github.com/pedroaston/ScoutSubs-FastDelivery/contentpubsub/pb";
+option go_package = "github.com/pedroaston/contentpubsub/pb";
 
 package contentpubsub.pb;
 
