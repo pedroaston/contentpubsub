@@ -4,23 +4,6 @@ import (
 	"testing"
 )
 
-// Testing predicate printing function
-func TestPrintPredicate(t *testing.T) {
-
-	expected := "<soccer> <portugal> <goals from 3 to 10> "
-	p, err := NewPredicate("soccer T/portugal T/goals R 3 10")
-
-	if err != nil {
-		t.Fatal("Unexpected Error creating predicate")
-	}
-
-	res := p.String()
-
-	if res != expected {
-		t.Fatal("Bad predicate Print >> " + res)
-	}
-}
-
 // Testing event predicate matching with Sub predicate
 // by analyzing all border scenarios
 func TestPredicateMatching(t *testing.T) {
@@ -36,7 +19,7 @@ func TestPredicateMatching(t *testing.T) {
 		t.Fatal("Not supposed error creating the predicates")
 	}
 
-	if res {
+	if !res {
 		t.Fatal("Wrong Matching between: " + pSub.String() +
 			" and " + pEvent.String())
 	}
@@ -50,7 +33,7 @@ func TestPredicateMatching(t *testing.T) {
 		t.Fatal("Not supposed error creating the predicates")
 	}
 
-	if res {
+	if !res {
 		t.Fatal("Wrong Matching between: " + pSub.String() +
 			" and " + pEvent.String())
 	}
@@ -64,7 +47,7 @@ func TestPredicateMatching(t *testing.T) {
 		t.Fatal("Not supposed error creating the predicates")
 	}
 
-	if res {
+	if !res {
 		t.Fatal("Wrong Matching between: " + pSub.String() +
 			" and " + pEvent.String())
 	}
@@ -78,7 +61,7 @@ func TestPredicateMatching(t *testing.T) {
 		t.Fatal("Not supposed error creating the predicates")
 	}
 
-	if !res {
+	if res {
 		t.Fatal("Wrong Matching between: " + pSub.String() +
 			" and " + pEvent.String())
 	}
@@ -92,7 +75,7 @@ func TestPredicateMatching(t *testing.T) {
 		t.Fatal("Not supposed error creating the predicates")
 	}
 
-	if !res {
+	if res {
 		t.Fatal("Wrong Matching between: " + pSub.String() +
 			" and " + pEvent.String())
 	}

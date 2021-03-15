@@ -7,6 +7,13 @@ type RouteStats struct {
 	backups [FaultToleranceFactor]string
 }
 
+// NewRouteStats initializes the a routestat
+func NewRouteStats() *RouteStats {
+	r := &RouteStats{filters: make(map[int][]*Predicate)}
+
+	return r
+}
+
 // FilterTable keeps filter information of all peers
 type FilterTable struct {
 	routes map[string]*RouteStats
@@ -23,11 +30,10 @@ func NewFilterTable() *FilterTable {
 	return ft
 }
 
-// SimpleFilterSummarize is called upon receiving a subscription
+// SimpleAddSummarizedFilter is called upon receiving a subscription
 // filter to see if it should be added if exclusive, merge
 // with others or encompass or be encompassed by others
-// TODO >> Ongoing
-func (rs *RouteStats) SimpleFilterSummarize(p *Predicate) {
+func (rs *RouteStats) SimpleAddSummarizedFilter(p *Predicate) {
 
 	for i, filters := range rs.filters {
 
@@ -38,11 +44,36 @@ func (rs *RouteStats) SimpleFilterSummarize(p *Predicate) {
 				}
 			}
 		} else if len(p.attributes) == i {
-			// Middle case
+			for j := 0; j < len(filters); j++ {
+				if filters[j].SimplePredicateMatch(p) {
+					return
+				} else if p.SimplePredicateMatch(filters[j]) {
+					if j == 0 {
+						rs.filters[i] = nil
+					} else if len(filters) == j+1 {
+						rs.filters[i] = filters[:j-1]
+					} else {
+						rs.filters[i] = append(filters[:j-1], filters[j+1:]...)
+						j--
+					}
+				} else if ok, pNew := filters[j].TryMergePredicates(p); ok {
+					p = pNew
+					if j == 0 {
+						rs.filters[i] = nil
+					} else if len(filters) == j+1 {
+						rs.filters[i] = filters[:j-1]
+					} else {
+						rs.filters[i] = append(filters[:j-1], filters[j+1:]...)
+						j--
+					}
+				}
+			}
 		} else {
 			for j := 0; j < len(filters); j++ {
 				if p.SimplePredicateMatch(filters[j]) {
-					if len(filters) == j+1 {
+					if j == 0 {
+						rs.filters[i] = nil
+					} else if len(filters) == j+1 {
 						rs.filters[i] = filters[:j-1]
 					} else {
 						rs.filters[i] = append(filters[:j-1], filters[j+1:]...)

@@ -1,6 +1,7 @@
 package contentpubsub
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 )
@@ -41,6 +42,7 @@ type Predicate struct {
 	attributes map[string]*Attribute
 }
 
+// String returns representation of a Predicate
 func (p *Predicate) String() string {
 	res := ""
 
@@ -98,8 +100,8 @@ func (p *Predicate) SimplePredicateMatch(pEvent *Predicate) bool {
 		if _, ok := pEvent.attributes[attr.name]; !ok {
 			return false
 		} else if attr.attrType == Range {
-			if pEvent.attributes[attr.name].rangeQuery[0] >= attr.rangeQuery[0] &&
-				pEvent.attributes[attr.name].rangeQuery[1] <= attr.rangeQuery[1] {
+			if !(pEvent.attributes[attr.name].rangeQuery[0] >= attr.rangeQuery[0] &&
+				pEvent.attributes[attr.name].rangeQuery[1] <= attr.rangeQuery[1]) {
 				return false
 			}
 		}
@@ -108,9 +110,32 @@ func (p *Predicate) SimplePredicateMatch(pEvent *Predicate) bool {
 	return true
 }
 
-// TryMergePredicates is used in FilterSummarizing to
-// attempt merging two different predicates
-// TODO >> Ongoing
-func (p *Predicate) TryMergePredicates(pOther *Predicate) {
+// TryMergePredicates is used in FilterSummarizing to attempt merging two
+// different predicates. If the result is false it means theyb are exclusive,
+// otherwise it will return the merge of both predicates
+func (p *Predicate) TryMergePredicates(pOther *Predicate) (bool, *Predicate) {
 
+	for _, attr := range p.attributes {
+		if _, ok := pOther.attributes[attr.name]; !ok {
+			return false, nil
+		} else if attr.attrType == Range {
+
+			if pOther.attributes[attr.name].rangeQuery[0] <= attr.rangeQuery[1] &&
+				pOther.attributes[attr.name].rangeQuery[0] >= attr.rangeQuery[0] {
+				pNew := pOther
+				pNew.attributes[attr.name].rangeQuery[0] = attr.rangeQuery[0]
+
+				return true, pNew
+			} else if pOther.attributes[attr.name].rangeQuery[1] <= attr.rangeQuery[1] &&
+				pOther.attributes[attr.name].rangeQuery[1] >= attr.rangeQuery[0] {
+				pNew := pOther
+				pNew.attributes[attr.name].rangeQuery[1] = attr.rangeQuery[1]
+				fmt.Println("Merge Result" + pNew.String())
+
+				return true, pNew
+			}
+		}
+	}
+
+	return false, nil
 }
