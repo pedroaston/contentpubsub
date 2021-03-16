@@ -86,8 +86,6 @@ func TestAddSummarizedFilter(t *testing.T) {
 		t.Fatal("Test4: Filter not deleted")
 	}
 
-	r.PrintRouteStats()
-
 	// Test5: Upper-limit merge
 	pTest, err = NewPredicate("surf T/bali T/price R 700 1000")
 	r.SimpleAddSummarizedFilter(pTest)
