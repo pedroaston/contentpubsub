@@ -1,14 +1,17 @@
 package contentpubsub
 
 import (
+	"sync"
+
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 )
 
 // RouteStats keeps filters for each pubsub peer it is
 // connected and its backups in case of failure
 type RouteStats struct {
-	filters map[int][]*Predicate
-	backups [FaultToleranceFactor]string
+	filters   map[int][]*Predicate
+	backups   [FaultToleranceFactor]string
+	routeLock sync.Mutex
 }
 
 // NewRouteStats initializes a routestat
@@ -43,6 +46,8 @@ func NewFilterTable(dht *dht.IpfsDHT) *FilterTable {
 // filter to see if it should be added if exclusive, merge
 // with others or encompass or be encompassed by others
 func (rs *RouteStats) SimpleAddSummarizedFilter(p *Predicate) {
+
+	rs.routeLock.Lock()
 
 	for i, filters := range rs.filters {
 
@@ -94,4 +99,5 @@ func (rs *RouteStats) SimpleAddSummarizedFilter(p *Predicate) {
 	}
 
 	rs.filters[len(p.attributes)] = append(rs.filters[len(p.attributes)], p)
+	rs.routeLock.Unlock()
 }

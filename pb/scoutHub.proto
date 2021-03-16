@@ -17,8 +17,9 @@ message Ack {
 }
 
 message Subscription {
-    string predicate = 1;
-    string rvId = 2;
+    string peerID = 1;
+    string predicate = 2;
+    string rvId = 3;
 }
 
 message Event {
