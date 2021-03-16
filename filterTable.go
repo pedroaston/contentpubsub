@@ -2,8 +2,6 @@ package contentpubsub
 
 import (
 	dht "github.com/libp2p/go-libp2p-kad-dht"
-
-	"github.com/libp2p/go-libp2p-core/peer"
 )
 
 // RouteStats keeps filters for each pubsub peer it is
@@ -22,7 +20,7 @@ func NewRouteStats() *RouteStats {
 
 // FilterTable keeps filter information of all peers
 type FilterTable struct {
-	routes map[peer.ID]*RouteStats
+	routes map[string]*RouteStats
 }
 
 // NewFilterTable initializes a FilterTable
@@ -31,11 +29,11 @@ func NewFilterTable(dht *dht.IpfsDHT) *FilterTable {
 	peers := dht.RoutingTable().GetPeerInfos()
 
 	ft := &FilterTable{
-		routes: make(map[peer.ID]*RouteStats),
+		routes: make(map[string]*RouteStats),
 	}
 
 	for _, peer := range peers {
-		ft.routes[peer.Id] = NewRouteStats()
+		ft.routes[peer.Id.Pretty()] = NewRouteStats()
 	}
 
 	return ft

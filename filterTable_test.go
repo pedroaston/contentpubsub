@@ -1,8 +1,10 @@
 package contentpubsub
 
 import (
+	"context"
 	"fmt"
 	"testing"
+	"time"
 )
 
 // Initializes a RouteStats for simple testing
@@ -119,5 +121,22 @@ func TestAddSummarizedFilter(t *testing.T) {
 	} else if len(r.filters[2]) != 1 {
 		t.Fatal("Test7: Filter not added: " + pTest.String())
 	}
+}
 
+func TestNewFilterTable(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	defer cancel()
+
+	dhts := setupDHTS(t, ctx, 5)
+
+	connect(t, ctx, dhts[0], dhts[1])
+	connect(t, ctx, dhts[0], dhts[2])
+	connect(t, ctx, dhts[0], dhts[3])
+	connect(t, ctx, dhts[0], dhts[4])
+
+	ft := NewFilterTable(dhts[0])
+
+	if len(ft.routes) != 4 {
+		t.Fatal("Error creating filterTable")
+	}
 }

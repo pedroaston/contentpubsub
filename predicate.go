@@ -1,7 +1,6 @@
 package contentpubsub
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 )
@@ -130,7 +129,6 @@ func (p *Predicate) TryMergePredicates(pOther *Predicate) (bool, *Predicate) {
 				pOther.attributes[attr.name].rangeQuery[1] >= attr.rangeQuery[0] {
 				pNew := pOther
 				pNew.attributes[attr.name].rangeQuery[1] = attr.rangeQuery[1]
-				fmt.Println("Merge Result" + pNew.String())
 
 				return true, pNew
 			}
