@@ -2,8 +2,10 @@ package contentpubsub
 
 import (
 	"context"
+	"errors"
 	"log"
 	"math/big"
+	"strings"
 	"time"
 
 	"github.com/libp2p/go-libp2p-core/peer"
@@ -44,6 +46,7 @@ func NewPubSub(dht *dht.IpfsDHT) *PubSub {
 	ps := &PubSub{
 		currentFilterTable: filterTable,
 		nextFilterTable:    filterTable,
+		ipfsDHT:            dht,
 	}
 
 	return ps
@@ -52,12 +55,12 @@ func NewPubSub(dht *dht.IpfsDHT) *PubSub {
 // Subscribe is a remote function called by a external peer to send subscriptions
 // TODO >> need to build a unreliable version first
 // INCOMPLETE
-func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) *pb.Ack {
+func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack, error) {
 
 	p, err := NewPredicate(sub.Predicate)
 
 	if err != nil {
-		return &pb.Ack{State: false, Info: err.Error()}
+		return &pb.Ack{State: false, Info: err.Error()}, err
 	}
 
 	ps.currentFilterTable.routes[sub.PeerID].SimpleAddSummarizedFilter(p)
@@ -65,31 +68,31 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) *pb.Ack {
 
 	// TODO >> Verify if is the rendezvous to continue sending sub or not
 
-	return &pb.Ack{State: true, Info: ""}
+	return &pb.Ack{State: true, Info: ""}, nil
 }
 
 // Publish is a remote function called by a external peer to send an Event upstream
 // TODO >> need to build a unreliable version first
 // INCOMPLETE
-func (ps *PubSub) Publish(ctx context.Context, sub *pb.Event) *pb.Ack {
+func (ps *PubSub) Publish(ctx context.Context, sub *pb.Event) (*pb.Ack, error) {
 
-	return &pb.Ack{State: true, Info: ""}
+	return &pb.Ack{State: true, Info: ""}, nil
 }
 
 // Notify is a remote function called by a external peer to send an Event downstream
 // TODO >> need to build a unreliable version first
 // INCOMPLETE
-func (ps *PubSub) Notify(ctx context.Context, sub *pb.Event) *pb.Ack {
+func (ps *PubSub) Notify(ctx context.Context, sub *pb.Event) (*pb.Ack, error) {
 
-	return &pb.Ack{State: true, Info: ""}
+	return &pb.Ack{State: true, Info: ""}, nil
 }
 
 // MySubscribe
 // INCOMPLETE
-// Possible Whishlist!
+// TODO list!
 // 1 >> verify redundancy when creating a sub
+// 2 >> verify is subscriber is the rendezvous (test if that can happen)
 func (ps *PubSub) MySubscribe(info string) error {
-
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()
 
@@ -121,23 +124,24 @@ func (ps *PubSub) MySubscribe(info string) error {
 
 		candidateDist := key.XORKeySpace.Distance(selfKey, key.XORKeySpace.Key(aux))
 
-		if candidateDist.Cmp(minDist) == -1 || minDist == nil {
+		if minDist == nil || candidateDist.Cmp(minDist) == -1 {
 			minID = candidateID
 			minDist = candidateDist
 		}
 	}
 
-	// TODO >> Chosing the closest peer to
 	closest := ps.ipfsDHT.RoutingTable().NearestPeer(kb.ID(minID))
 	closestAddr := ps.ipfsDHT.FindLocal(closest).Addrs[0]
+	var dialAddr string
 
 	if closestAddr == nil {
-		// TODO >> need to create a error implementation
-		return err
+		return errors.New("No address for closest peer")
+	} else {
+		aux := strings.Split(closestAddr.String(), "/")
+		dialAddr = aux[2] + ":4" + aux[4][1:]
 	}
 
-	// TODO >> Sending subscription
-	conn, err := grpc.Dial(closestAddr.String())
+	conn, err := grpc.Dial(dialAddr, grpc.WithInsecure())
 	if err != nil {
 		log.Fatalf("fail to dial: %v", err)
 	}
@@ -152,9 +156,8 @@ func (ps *PubSub) MySubscribe(info string) error {
 
 	ack, err := client.Subscribe(ctx, sub)
 
-	if !ack.State || err != nil {
-		// TODO >> need to create a error implementation
-		return err
+	if err != nil || !ack.State {
+		return errors.New("Failed Subscription")
 	}
 
 	return nil
