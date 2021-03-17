@@ -54,12 +54,14 @@ func (rs *RouteStats) SimpleAddSummarizedFilter(p *Predicate) {
 		if len(p.attributes) > i {
 			for _, f := range filters {
 				if f.SimplePredicateMatch(p) {
+					rs.routeLock.Unlock()
 					return
 				}
 			}
 		} else if len(p.attributes) == i {
 			for j := 0; j < len(filters); j++ {
 				if filters[j].SimplePredicateMatch(p) {
+					rs.routeLock.Unlock()
 					return
 				} else if p.SimplePredicateMatch(filters[j]) {
 					if j == 0 {

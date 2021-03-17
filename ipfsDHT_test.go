@@ -4,6 +4,9 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/libp2p/go-libp2p-core/peer"
+	kb "github.com/libp2p/go-libp2p-kbucket"
 )
 
 // TestIpfsDHTSimpleInitialization only attempts to show DHT operation
@@ -37,5 +40,29 @@ func TestIpfsDHTSimpleInitialization(t *testing.T) {
 		dhts[5].RoutingTable().Size() != 3 {
 
 		t.Fatal("Failed to initialize dhts")
+	}
+}
+
+// TestIpfsDHTAddrs was an attempt to understand how NearestPeer works and how
+// are the peers addresses saved in the DHT >> (ip4/ip6)/(address)/(tcp/udp)/(port)
+func TestIpfsDHTAddrs(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	defer cancel()
+
+	dhts := setupDHTS(t, ctx, 5)
+
+	connect(t, ctx, dhts[0], dhts[1])
+	connect(t, ctx, dhts[0], dhts[2])
+	connect(t, ctx, dhts[0], dhts[3])
+	connect(t, ctx, dhts[0], dhts[4])
+
+	attr := "portugal"
+	attrID := peer.ID(kb.ConvertKey(attr))
+
+	peer := dhts[0].RoutingTable().NearestPeer(kb.ID(attrID))
+	peerAddr := dhts[0].FindLocal(peer).Addrs[0]
+
+	if peerAddr == nil {
+		t.Fatal("No address")
 	}
 }
