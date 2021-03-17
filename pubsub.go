@@ -163,6 +163,31 @@ func (ps *PubSub) MySubscribe(info string) error {
 	return nil
 }
 
+// rendezvousSelfCheck evaluates if the peer is the
+// rendezvous node and if not it returns the peerID
+// of the next subscribing hop
+func (ps *PubSub) rendezvousSelfCheck(rvID string) (bool, peer.ID) {
+
+	closestID := ps.ipfsDHT.RoutingTable().NearestPeer(kb.ID(rvID))
+	selfAux, err1 := ps.ipfsDHT.PeerID().MarshalBinary()
+	closestAux, err2 := closestID.MarshalBinary()
+	rvAux, err3 := peer.IDFromString(rvID)
+	rvIDAux, err4 := rvAux.MarshalBinary()
+
+	if err1 != nil || err2 != nil || err3 != nil || err4 != nil {
+		return false, ""
+	}
+
+	selfDist := key.XORKeySpace.Distance(key.XORKeySpace.Key(rvIDAux), key.XORKeySpace.Key(selfAux))
+	closestDist := key.XORKeySpace.Distance(key.XORKeySpace.Key(rvIDAux), key.XORKeySpace.Key(closestAux))
+
+	if closestDist.Cmp(selfDist) == -1 {
+		return false, closestID
+	} else {
+		return true, ""
+	}
+}
+
 // processLopp
 // TODO >> may contain subs refreshing cycle
 func (pb *PubSub) processLoop() {}
