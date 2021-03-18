@@ -3,6 +3,7 @@ package contentpubsub
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"math/big"
 	"strings"
@@ -42,7 +43,6 @@ type PubSub struct {
 func NewPubSub(dht *dht.IpfsDHT) *PubSub {
 
 	filterTable := NewFilterTable(dht)
-
 	ps := &PubSub{
 		currentFilterTable: filterTable,
 		nextFilterTable:    filterTable,
@@ -54,11 +54,9 @@ func NewPubSub(dht *dht.IpfsDHT) *PubSub {
 
 // Subscribe is a remote function called by a external peer to send subscriptions
 // TODO >> need to build a unreliable version first
-// INCOMPLETE
 func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack, error) {
 
 	p, err := NewPredicate(sub.Predicate)
-
 	if err != nil {
 		return &pb.Ack{State: false, Info: err.Error()}, err
 	}
@@ -66,7 +64,28 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 	ps.currentFilterTable.routes[sub.PeerID].SimpleAddSummarizedFilter(p)
 	ps.nextFilterTable.routes[sub.PeerID].SimpleAddSummarizedFilter(p)
 
-	// TODO >> Verify if is the rendezvous to continue sending sub or not
+	isRv, nextHop := ps.rendezvousSelfCheck(sub.RvId)
+	if !isRv && nextHop != "" {
+		var dialAddr string
+		closestAddr := ps.ipfsDHT.FindLocal(nextHop).Addrs[0]
+		if closestAddr == nil {
+			return &pb.Ack{State: false, Info: "No address for next hop peer"}, nil
+		} else {
+			aux := strings.Split(closestAddr.String(), "/")
+			dialAddr = aux[2] + ":4" + aux[4][1:]
+		}
+
+		subForward := &pb.Subscription{
+			PeerID:    nextHop.Pretty(),
+			Predicate: sub.Predicate,
+			RvId:      sub.RvId,
+		}
+
+		go forwardSub(dialAddr, subForward)
+
+	} else if !isRv {
+		return &pb.Ack{State: false, Info: "rendezvous check failed"}, nil
+	}
 
 	return &pb.Ack{State: true, Info: ""}, nil
 }
@@ -88,16 +107,15 @@ func (ps *PubSub) Notify(ctx context.Context, sub *pb.Event) (*pb.Ack, error) {
 }
 
 // MySubscribe
-// INCOMPLETE
 // TODO list!
 // 1 >> verify redundancy when creating a sub
 // 2 >> verify is subscriber is the rendezvous (test if that can happen)
 func (ps *PubSub) MySubscribe(info string) error {
+
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()
 
 	p, err := NewPredicate(info)
-
 	if err != nil {
 		return err
 	}
@@ -105,35 +123,33 @@ func (ps *PubSub) MySubscribe(info string) error {
 	ps.mySubs = append(ps.mySubs, p)
 
 	marshalSelf, err := ps.ipfsDHT.Host().ID().MarshalBinary()
-
 	if err != nil {
 		return err
 	}
 
 	selfKey := key.XORKeySpace.Key(marshalSelf)
+	var minAttr string
 	var minID peer.ID
 	var minDist *big.Int = nil
 
 	for _, attr := range p.attributes {
 		candidateID := peer.ID(kb.ConvertKey(attr.name))
 		aux, err := candidateID.MarshalBinary()
-
 		if err != nil {
 			return err
 		}
 
 		candidateDist := key.XORKeySpace.Distance(selfKey, key.XORKeySpace.Key(aux))
-
 		if minDist == nil || candidateDist.Cmp(minDist) == -1 {
+			minAttr = attr.name
 			minID = candidateID
 			minDist = candidateDist
 		}
 	}
 
+	var dialAddr string
 	closest := ps.ipfsDHT.RoutingTable().NearestPeer(kb.ID(minID))
 	closestAddr := ps.ipfsDHT.FindLocal(closest).Addrs[0]
-	var dialAddr string
-
 	if closestAddr == nil {
 		return errors.New("No address for closest peer")
 	} else {
@@ -146,16 +162,15 @@ func (ps *PubSub) MySubscribe(info string) error {
 		log.Fatalf("fail to dial: %v", err)
 	}
 	defer conn.Close()
-	client := pb.NewScoutHubClient(conn)
 
+	client := pb.NewScoutHubClient(conn)
 	sub := &pb.Subscription{
-		PeerID:    ps.ipfsDHT.Host().ID().Pretty(),
+		PeerID:    peer.Encode(ps.ipfsDHT.Host().ID()),
 		Predicate: info,
-		RvId:      minID.Pretty(),
+		RvId:      minAttr,
 	}
 
 	ack, err := client.Subscribe(ctx, sub)
-
 	if err != nil || !ack.State {
 		return errors.New("Failed Subscription")
 	}
@@ -163,29 +178,57 @@ func (ps *PubSub) MySubscribe(info string) error {
 	return nil
 }
 
+// forwardSub is called upon finishing the processing a
+// received subscription that needs forwarding
+// TODO >> to complete when implementing Fault-Tolerance
+func forwardSub(dialAddr string, sub *pb.Subscription) {
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	defer cancel()
+
+	conn, err := grpc.Dial(dialAddr, grpc.WithInsecure())
+	if err != nil {
+		log.Fatalf("fail to dial: %v", err)
+	}
+	defer conn.Close()
+
+	client := pb.NewScoutHubClient(conn)
+	ack, err := client.Subscribe(ctx, sub)
+
+	// Need to retry if failed
+	if ack.State == false {
+		fmt.Println("Retry to be implemented")
+	}
+}
+
 // rendezvousSelfCheck evaluates if the peer is the
 // rendezvous node and if not it returns the peerID
 // of the next subscribing hop
 func (ps *PubSub) rendezvousSelfCheck(rvID string) (bool, peer.ID) {
 
-	closestID := ps.ipfsDHT.RoutingTable().NearestPeer(kb.ID(rvID))
+	rvAux := kb.ConvertKey(rvID)
+	closestID := ps.ipfsDHT.RoutingTable().NearestPeer(kb.ID(rvAux))
 	selfAux, err1 := ps.ipfsDHT.PeerID().MarshalBinary()
 	closestAux, err2 := closestID.MarshalBinary()
-	rvAux, err3 := peer.IDFromString(rvID)
-	rvIDAux, err4 := rvAux.MarshalBinary()
-
-	if err1 != nil || err2 != nil || err3 != nil || err4 != nil {
+	rvIDAux, err3 := peer.ID(rvAux).MarshalBinary()
+	if err1 != nil {
+		fmt.Println("selfAux: " + err1.Error())
+		return false, ""
+	} else if err2 != nil {
+		fmt.Println("closestAux: " + err2.Error())
+		return false, ""
+	} else if err3 != nil {
+		fmt.Println("rvIDAux: " + err3.Error())
 		return false, ""
 	}
 
 	selfDist := key.XORKeySpace.Distance(key.XORKeySpace.Key(rvIDAux), key.XORKeySpace.Key(selfAux))
 	closestDist := key.XORKeySpace.Distance(key.XORKeySpace.Key(rvIDAux), key.XORKeySpace.Key(closestAux))
-
 	if closestDist.Cmp(selfDist) == -1 {
 		return false, closestID
-	} else {
-		return true, ""
 	}
+
+	return true, ""
 }
 
 // processLopp

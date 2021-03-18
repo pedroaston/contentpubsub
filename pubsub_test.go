@@ -2,12 +2,12 @@ package contentpubsub
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/libp2p/go-libp2p-core/peer"
 	pb "github.com/pedroaston/contentpubsub/pb"
 	"google.golang.org/grpc"
 )
@@ -20,19 +20,15 @@ func TestPubSubServerComms(t *testing.T) {
 	defer cancel()
 
 	dhts := setupDHTS(t, ctx, 2)
-
 	connect(t, ctx, dhts[0], dhts[1])
 
 	var pubsubs [2]*PubSub
-
 	for i, dht := range dhts {
 		pubsubs[i] = NewPubSub(dht)
 
 		addr := dhts[i].Host().Addrs()[0]
 		aux := strings.Split(addr.String(), "/")
 		dialAddr := aux[2] + ":4" + aux[4][1:]
-
-		fmt.Println(dialAddr)
 
 		lis, err := net.Listen("tcp", dialAddr)
 		if err != nil {
@@ -45,11 +41,9 @@ func TestPubSubServerComms(t *testing.T) {
 	}
 
 	err := pubsubs[0].MySubscribe("portugal T")
-
 	if err != nil {
 		t.Fatal(err)
-	} else if pubsubs[1].currentFilterTable.routes[pubsubs[0].ipfsDHT.PeerID().Pretty()].filters[1][0].String() != "<portugal>" {
+	} else if pubsubs[1].currentFilterTable.routes[peer.Encode(pubsubs[0].ipfsDHT.PeerID())].filters[1][0].String() != "<portugal> " {
 		t.Fatal("Failed Subscription")
 	}
-
 }

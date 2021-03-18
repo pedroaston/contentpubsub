@@ -3,6 +3,7 @@ package contentpubsub
 import (
 	"sync"
 
+	"github.com/libp2p/go-libp2p-core/peer"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 )
 
@@ -35,8 +36,8 @@ func NewFilterTable(dht *dht.IpfsDHT) *FilterTable {
 		routes: make(map[string]*RouteStats),
 	}
 
-	for _, peer := range peers {
-		ft.routes[peer.Id.Pretty()] = NewRouteStats()
+	for _, peerStat := range peers {
+		ft.routes[peer.Encode(peerStat.Id)] = NewRouteStats()
 	}
 
 	return ft
