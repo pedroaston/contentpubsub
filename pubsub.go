@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"math/big"
+	"net"
 	"strings"
 	"time"
 
@@ -37,9 +38,12 @@ type PubSub struct {
 	currentFilterTable *FilterTable
 	nextFilterTable    *FilterTable
 	mySubs             []*Predicate
+
+	subsToForward chan *ForwardSubRequest
 }
 
 // NewPubSub initializes the PubSub's data structure
+// setup the server and starts processloop
 func NewPubSub(dht *dht.IpfsDHT) *PubSub {
 
 	filterTable := NewFilterTable(dht)
@@ -47,7 +51,25 @@ func NewPubSub(dht *dht.IpfsDHT) *PubSub {
 		currentFilterTable: filterTable,
 		nextFilterTable:    filterTable,
 		ipfsDHT:            dht,
+		subsToForward:      make(chan *ForwardSubRequest),
 	}
+
+	// Start Server
+	addr := ps.ipfsDHT.Host().Addrs()[0]
+	aux := strings.Split(addr.String(), "/")
+	dialAddr := aux[2] + ":4" + aux[4][1:]
+
+	lis, err := net.Listen("tcp", dialAddr)
+	if err != nil {
+		return nil
+	}
+
+	grpcServer := grpc.NewServer()
+	pb.RegisterScoutHubServer(grpcServer, ps)
+	go grpcServer.Serve(lis)
+
+	// Start processloop
+	go ps.processLoop()
 
 	return ps
 }
@@ -77,13 +99,12 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 		}
 
 		subForward := &pb.Subscription{
-			PeerID:    peer.Encode(nextHop),
+			PeerID:    peer.Encode(ps.ipfsDHT.PeerID()),
 			Predicate: sub.Predicate,
 			RvId:      sub.RvId,
 		}
 
-		// Need to place this as a future task addressed by the process loop
-		ps.forwardSub(dialAddr, subForward)
+		ps.subsToForward <- &ForwardSubRequest{dialAddr: dialAddr, sub: subForward}
 
 	} else if !isRv {
 		return &pb.Ack{State: false, Info: "rendezvous check failed"}, nil
@@ -235,8 +256,18 @@ func (ps *PubSub) rendezvousSelfCheck(rvID string) (bool, peer.ID) {
 	return true, ""
 }
 
+type ForwardSubRequest struct {
+	dialAddr string
+	sub      *pb.Subscription
+}
+
 // processLopp
 // TODO >> may contain subs refreshing cycle
-func (pb *PubSub) processLoop() {
-
+func (ps *PubSub) processLoop() {
+	for {
+		select {
+		case pid := <-ps.subsToForward:
+			ps.forwardSub(pid.dialAddr, pid.sub)
+		}
+	}
 }
