@@ -1,6 +1,7 @@
 package contentpubsub
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/libp2p/go-libp2p-core/peer"
@@ -12,12 +13,15 @@ import (
 type RouteStats struct {
 	filters   map[int][]*Predicate
 	backups   [FaultToleranceFactor]string
-	routeLock sync.Mutex
+	routeLock *sync.Mutex
 }
 
 // NewRouteStats initializes a routestat
 func NewRouteStats() *RouteStats {
-	r := &RouteStats{filters: make(map[int][]*Predicate)}
+	r := &RouteStats{
+		filters:   make(map[int][]*Predicate),
+		routeLock: &sync.Mutex{},
+	}
 
 	return r
 }
@@ -41,6 +45,19 @@ func NewFilterTable(dht *dht.IpfsDHT) *FilterTable {
 	}
 
 	return ft
+}
+
+func (ft *FilterTable) PrintFilterTable() {
+
+	fmt.Println("Printing Table:")
+	for i, route := range ft.routes {
+		fmt.Println("From: " + i)
+		for _, filters := range route.filters {
+			for _, filter := range filters {
+				fmt.Println(filter)
+			}
+		}
+	}
 }
 
 // SimpleAddSummarizedFilter is called upon receiving a subscription

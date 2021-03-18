@@ -55,7 +55,8 @@ func NewPubSub(dht *dht.IpfsDHT) *PubSub {
 // Subscribe is a remote function called by a external peer to send subscriptions
 // TODO >> need to build a unreliable version first
 func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack, error) {
-
+	fmt.Print("Subscribe: ")
+	fmt.Println(ps.ipfsDHT.PeerID())
 	p, err := NewPredicate(sub.Predicate)
 	if err != nil {
 		return &pb.Ack{State: false, Info: err.Error()}, err
@@ -76,12 +77,13 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 		}
 
 		subForward := &pb.Subscription{
-			PeerID:    nextHop.Pretty(),
+			PeerID:    peer.Encode(nextHop),
 			Predicate: sub.Predicate,
 			RvId:      sub.RvId,
 		}
 
-		go forwardSub(dialAddr, subForward)
+		// Need to place this as a future task addressed by the process loop
+		ps.forwardSub(dialAddr, subForward)
 
 	} else if !isRv {
 		return &pb.Ack{State: false, Info: "rendezvous check failed"}, nil
@@ -109,9 +111,9 @@ func (ps *PubSub) Notify(ctx context.Context, sub *pb.Event) (*pb.Ack, error) {
 // MySubscribe
 // TODO list!
 // 1 >> verify redundancy when creating a sub
-// 2 >> verify is subscriber is the rendezvous (test if that can happen)
 func (ps *PubSub) MySubscribe(info string) error {
-
+	fmt.Print("MySubscribe: ")
+	fmt.Println(ps.ipfsDHT.PeerID())
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()
 
@@ -157,6 +159,11 @@ func (ps *PubSub) MySubscribe(info string) error {
 		dialAddr = aux[2] + ":4" + aux[4][1:]
 	}
 
+	res, _ := ps.rendezvousSelfCheck(minAttr)
+	if res {
+		return nil
+	}
+
 	conn, err := grpc.Dial(dialAddr, grpc.WithInsecure())
 	if err != nil {
 		log.Fatalf("fail to dial: %v", err)
@@ -181,7 +188,7 @@ func (ps *PubSub) MySubscribe(info string) error {
 // forwardSub is called upon finishing the processing a
 // received subscription that needs forwarding
 // TODO >> to complete when implementing Fault-Tolerance
-func forwardSub(dialAddr string, sub *pb.Subscription) {
+func (ps *PubSub) forwardSub(dialAddr string, sub *pb.Subscription) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()
@@ -212,13 +219,10 @@ func (ps *PubSub) rendezvousSelfCheck(rvID string) (bool, peer.ID) {
 	closestAux, err2 := closestID.MarshalBinary()
 	rvIDAux, err3 := peer.ID(rvAux).MarshalBinary()
 	if err1 != nil {
-		fmt.Println("selfAux: " + err1.Error())
 		return false, ""
 	} else if err2 != nil {
-		fmt.Println("closestAux: " + err2.Error())
 		return false, ""
 	} else if err3 != nil {
-		fmt.Println("rvIDAux: " + err3.Error())
 		return false, ""
 	}
 
@@ -233,4 +237,6 @@ func (ps *PubSub) rendezvousSelfCheck(rvID string) (bool, peer.ID) {
 
 // processLopp
 // TODO >> may contain subs refreshing cycle
-func (pb *PubSub) processLoop() {}
+func (pb *PubSub) processLoop() {
+
+}
