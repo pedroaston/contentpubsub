@@ -50,12 +50,56 @@ func TestSubscriptionForwarding(t *testing.T) {
 		pubsubs[i] = NewPubSub(dht)
 	}
 
-	err := pubsubs[0].MySubscribe("chocolate T")
-
-	if err != nil {
-		t.Fatal("Failed Subscription")
+	err1 := pubsubs[0].MySubscribe("chocolate T")
+	if err1 != nil {
+		t.Fatal("Failed 1st Subscription")
 	}
 
-	time.Sleep(5000000000)
+	err2 := pubsubs[0].MySubscribe("soccer T/goals R 2 5")
+	if err2 != nil {
+		t.Fatal("Failed 2nd Subscription")
+	}
 
+	err3 := pubsubs[0].MySubscribe("portugal T")
+	if err3 != nil {
+		t.Fatal("Failed 3rd Subscription")
+	}
+
+	err4 := pubsubs[4].MySubscribe("portugal T")
+	if err4 != nil {
+		t.Fatal("Failed 4th Subscription")
+	}
+
+	time.Sleep(time.Second)
+}
+
+// TestAproxRealSubscriptionScenario with 50 peers
+// randomly connected to that will half subscribe to
+// one topic and the others to another one
+func TestAproxRealSubscriptionScenario(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	defer cancel()
+
+	dhts := setupDHTS(t, ctx, 100)
+	bootstrapDhts(t, ctx, dhts)
+
+	var pubsubs [100]*PubSub
+	for i, dht := range dhts {
+		pubsubs[i] = NewPubSub(dht)
+	}
+
+	var err1, err2 error
+	for i, ps := range pubsubs {
+		if i%2 == 0 {
+			err1 = ps.MySubscribe("portugal T/soccer T")
+		} else {
+			err2 = ps.MySubscribe("tesla T/stock T/value R 500 800")
+		}
+
+		if err1 != nil || err2 != nil {
+			t.Fatal("Error Subscribing in mass")
+		}
+	}
+
+	time.Sleep(2 * time.Second)
 }

@@ -76,6 +76,7 @@ func NewPubSub(dht *dht.IpfsDHT) *PubSub {
 
 // Subscribe is a remote function called by a external peer to send subscriptions
 // TODO >> need to build a unreliable version first
+// TODO >> in the merge case we need to forward the new filter
 func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack, error) {
 	fmt.Print("Subscribe: ")
 	fmt.Println(ps.ipfsDHT.PeerID())
@@ -84,8 +85,12 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 		return &pb.Ack{State: false, Info: err.Error()}, err
 	}
 
+	// modify this process to stop or send a different filter
 	ps.currentFilterTable.routes[sub.PeerID].SimpleAddSummarizedFilter(p)
-	ps.nextFilterTable.routes[sub.PeerID].SimpleAddSummarizedFilter(p)
+	alreadyDone := ps.nextFilterTable.routes[sub.PeerID].SimpleAddSummarizedFilter(p)
+	if alreadyDone {
+		return &pb.Ack{State: true, Info: ""}, nil
+	}
 
 	isRv, nextHop := ps.rendezvousSelfCheck(sub.RvId)
 	if !isRv && nextHop != "" {
@@ -131,7 +136,7 @@ func (ps *PubSub) Notify(ctx context.Context, sub *pb.Event) (*pb.Ack, error) {
 
 // MySubscribe
 // TODO list!
-// 1 >> verify redundancy when creating a sub
+// 1 >> verify redundancy when appending a sub
 func (ps *PubSub) MySubscribe(info string) error {
 	fmt.Print("MySubscribe: ")
 	fmt.Println(ps.ipfsDHT.PeerID())

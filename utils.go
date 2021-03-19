@@ -2,6 +2,7 @@ package contentpubsub
 
 import (
 	"context"
+	"math/rand"
 	"testing"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 
 // The following functions and types were extracted from
 // go-libp2p-kad-dht to test the dht operations of this work
+// and other were created by me to assist the tests
 type blankValidator struct{}
 
 func (blankValidator) Validate(_ string, _ []byte) error        { return nil }
@@ -110,4 +112,31 @@ func connect(t *testing.T, ctx context.Context, a, b *dht.IpfsDHT) {
 	connectNoSync(t, ctx, a, b)
 	wait(t, ctx, a, b)
 	wait(t, ctx, b, a)
+}
+
+func bootstrapDhts(t *testing.T, ctx context.Context, dhts []*dht.IpfsDHT) {
+	connectionMap := make(map[int][]int)
+	totalDHT := len(dhts) - 1
+	var random int
+	var connected bool
+
+	for i, dht := range dhts {
+		for len(connectionMap[i]) < totalDHT/4 {
+			random = rand.Intn(totalDHT)
+			connected = false
+
+			for _, value := range connectionMap[i] {
+				if value == random || i == random {
+					connected = true
+					break
+				}
+			}
+
+			if !connected {
+				connect(t, ctx, dht, dhts[random])
+				connectionMap[i] = append(connectionMap[i], random)
+				connectionMap[random] = append(connectionMap[i], i)
+			}
+		}
+	}
 }

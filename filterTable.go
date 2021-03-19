@@ -63,7 +63,7 @@ func (ft *FilterTable) PrintFilterTable() {
 // SimpleAddSummarizedFilter is called upon receiving a subscription
 // filter to see if it should be added if exclusive, merge
 // with others or encompass or be encompassed by others
-func (rs *RouteStats) SimpleAddSummarizedFilter(p *Predicate) {
+func (rs *RouteStats) SimpleAddSummarizedFilter(p *Predicate) bool {
 
 	rs.routeLock.Lock()
 
@@ -73,14 +73,14 @@ func (rs *RouteStats) SimpleAddSummarizedFilter(p *Predicate) {
 			for _, f := range filters {
 				if f.SimplePredicateMatch(p) {
 					rs.routeLock.Unlock()
-					return
+					return true
 				}
 			}
 		} else if len(p.attributes) == i {
 			for j := 0; j < len(filters); j++ {
 				if filters[j].SimplePredicateMatch(p) {
 					rs.routeLock.Unlock()
-					return
+					return true
 				} else if p.SimplePredicateMatch(filters[j]) {
 					if j == 0 {
 						rs.filters[i] = nil
@@ -120,4 +120,5 @@ func (rs *RouteStats) SimpleAddSummarizedFilter(p *Predicate) {
 
 	rs.filters[len(p.attributes)] = append(rs.filters[len(p.attributes)], p)
 	rs.routeLock.Unlock()
+	return false
 }
