@@ -73,9 +73,8 @@ func TestSubscriptionForwarding(t *testing.T) {
 	time.Sleep(time.Second)
 }
 
-// TestAproxRealSubscriptionScenario with 100 peers
-// randomly connected to that will half subscribe to
-// one topic and the others to another one
+// TestAproxRealSubscriptionScenario with 100 peers randomly connected to
+// each other, where half subscribe to one topic and the rest to another
 func TestAproxRealSubscriptionScenario(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()

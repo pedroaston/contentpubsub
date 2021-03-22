@@ -37,7 +37,7 @@ type PubSub struct {
 
 	currentFilterTable *FilterTable
 	nextFilterTable    *FilterTable
-	mySubs             []*Predicate
+	myFilters          *RouteStats
 
 	subsToForward chan *ForwardSubRequest
 }
@@ -47,10 +47,14 @@ type PubSub struct {
 func NewPubSub(dht *dht.IpfsDHT) *PubSub {
 
 	filterTable := NewFilterTable(dht)
+	auxFilterTable := NewFilterTable(dht)
+	mySubs := NewRouteStats()
+
 	ps := &PubSub{
 		currentFilterTable: filterTable,
-		nextFilterTable:    filterTable,
+		nextFilterTable:    auxFilterTable,
 		ipfsDHT:            dht,
+		myFilters:          mySubs,
 		subsToForward:      make(chan *ForwardSubRequest),
 	}
 
@@ -135,9 +139,8 @@ func (ps *PubSub) Notify(ctx context.Context, sub *pb.Event) (*pb.Ack, error) {
 	return &pb.Ack{State: true, Info: ""}, nil
 }
 
-// MySubscribe
-// TODO list!
-// 1 >> verify redundancy when appending a sub
+// MySubscribe subscribes to certain event(s) and saves
+// it in myFilters for further resubing operations
 func (ps *PubSub) MySubscribe(info string) error {
 	fmt.Print("MySubscribe: ")
 	fmt.Println(ps.ipfsDHT.PeerID())
@@ -149,8 +152,12 @@ func (ps *PubSub) MySubscribe(info string) error {
 		return err
 	}
 
-	// Verify if already subbed here
-	ps.mySubs = append(ps.mySubs, p)
+	alreadyDone, pNew := ps.myFilters.SimpleAddSummarizedFilter(p)
+	if alreadyDone {
+		return nil
+	} else if pNew != nil {
+		p = pNew
+	}
 
 	marshalSelf, err := ps.ipfsDHT.Host().ID().MarshalBinary()
 	if err != nil {
