@@ -76,20 +76,21 @@ func NewPubSub(dht *dht.IpfsDHT) *PubSub {
 
 // Subscribe is a remote function called by a external peer to send subscriptions
 // TODO >> need to build a unreliable version first
-// TODO >> in the merge case we need to forward the new filter
 func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack, error) {
 	fmt.Print("Subscribe: ")
 	fmt.Println(ps.ipfsDHT.PeerID())
+
 	p, err := NewPredicate(sub.Predicate)
 	if err != nil {
 		return &pb.Ack{State: false, Info: err.Error()}, err
 	}
 
-	// modify this process to stop or send a different filter
 	ps.currentFilterTable.routes[sub.PeerID].SimpleAddSummarizedFilter(p)
-	alreadyDone := ps.nextFilterTable.routes[sub.PeerID].SimpleAddSummarizedFilter(p)
+	alreadyDone, pNew := ps.nextFilterTable.routes[sub.PeerID].SimpleAddSummarizedFilter(p)
 	if alreadyDone {
 		return &pb.Ack{State: true, Info: ""}, nil
+	} else if pNew != nil {
+		sub.Predicate = pNew.ToString()
 	}
 
 	isRv, nextHop := ps.rendezvousSelfCheck(sub.RvId)
@@ -148,6 +149,7 @@ func (ps *PubSub) MySubscribe(info string) error {
 		return err
 	}
 
+	// Verify if already subbed here
 	ps.mySubs = append(ps.mySubs, p)
 
 	marshalSelf, err := ps.ipfsDHT.Host().ID().MarshalBinary()
@@ -209,6 +211,14 @@ func (ps *PubSub) MySubscribe(info string) error {
 	}
 
 	return nil
+}
+
+// MyUnsubscribe deletes specific predicate out of
+// mySubs list which will stop the node of sending
+// a subscribing operation every refreshing cycle
+// INCOMPLETE
+func MyUnsubscribe(info string) {
+
 }
 
 // forwardSub is called upon finishing the processing a

@@ -4,6 +4,22 @@ import (
 	"testing"
 )
 
+// TestPredicateToAndFromString aimed to assure the correct
+// functioning of NewPredicate and ToString functions
+func TestPredicateToAndFromString(t *testing.T) {
+
+	strPred := "goals R 2 5/portugal T/soccer T"
+	p, err := NewPredicate(strPred)
+	if err != nil {
+		t.Fatal("Unexpected error forming a Predicate")
+	}
+
+	strTest := p.ToString()
+	if strPred != strTest {
+		t.Fatal("Invalid Transformation: " + strPred + " to " + strTest)
+	}
+}
+
 // Testing event predicate matching with Sub predicate
 // by analyzing all border scenarios
 func TestPredicateMatching(t *testing.T) {

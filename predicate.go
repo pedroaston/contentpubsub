@@ -1,6 +1,7 @@
 package contentpubsub
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 )
@@ -33,6 +34,24 @@ func (a *Attribute) String() string {
 	default:
 		return ""
 	}
+}
+
+// ToString return the initial representation of an
+// attribute to send it in grpc messages
+func (p *Predicate) ToString() string {
+
+	res := ""
+	for _, attr := range p.attributes {
+		res += attr.name
+
+		if attr.attrType == Topic {
+			res += " T/"
+		} else {
+			res += fmt.Sprintf(" R %d %d/", attr.rangeQuery[0], attr.rangeQuery[1])
+		}
+	}
+
+	return res[:len(res)-1]
 }
 
 // Predicate is expression that categorizes
@@ -110,7 +129,7 @@ func (p *Predicate) SimplePredicateMatch(pEvent *Predicate) bool {
 }
 
 // TryMergePredicates is used in FilterSummarizing to attempt merging two
-// different predicates. If the result is false it means theyb are exclusive,
+// different predicates. If the result is false it means they are exclusive,
 // otherwise it will return the merge of both predicates
 func (p *Predicate) TryMergePredicates(pOther *Predicate) (bool, *Predicate) {
 
