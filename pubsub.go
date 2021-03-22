@@ -79,7 +79,7 @@ func NewPubSub(dht *dht.IpfsDHT) *PubSub {
 }
 
 // Subscribe is a remote function called by a external peer to send subscriptions
-// TODO >> need to build a unreliable version first
+// TODO >> need to build a reliable version
 func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack, error) {
 	fmt.Print("Subscribe: ")
 	fmt.Println(ps.ipfsDHT.PeerID())
@@ -124,7 +124,7 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 }
 
 // Publish is a remote function called by a external peer to send an Event upstream
-// TODO >> need to build a unreliable version first
+// TODO >> need to build a reliable version
 // INCOMPLETE
 func (ps *PubSub) Publish(ctx context.Context, sub *pb.Event) (*pb.Ack, error) {
 
@@ -132,7 +132,7 @@ func (ps *PubSub) Publish(ctx context.Context, sub *pb.Event) (*pb.Ack, error) {
 }
 
 // Notify is a remote function called by a external peer to send an Event downstream
-// TODO >> need to build a unreliable version first
+// TODO >> need to build a reliable version
 // INCOMPLETE
 func (ps *PubSub) Notify(ctx context.Context, sub *pb.Event) (*pb.Ack, error) {
 
@@ -224,8 +224,15 @@ func (ps *PubSub) MySubscribe(info string) error {
 // mySubs list which will stop the node of sending
 // a subscribing operation every refreshing cycle
 // INCOMPLETE
-func MyUnsubscribe(info string) {
+func (ps *PubSub) MyUnsubscribe(info string) error {
+	p, err := NewPredicate(info)
+	if err != nil {
+		return err
+	}
 
+	ps.myFilters.SimpleSubtractFilter(p)
+
+	return nil
 }
 
 // forwardSub is called upon finishing the processing a

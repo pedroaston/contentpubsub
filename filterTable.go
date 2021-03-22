@@ -71,7 +71,6 @@ func (rs *RouteStats) SimpleAddSummarizedFilter(p *Predicate) (bool, *Predicate)
 	merge := false
 
 	for i, filters := range rs.filters {
-
 		if len(p.attributes) > i {
 			for _, f := range filters {
 				if f.SimplePredicateMatch(p) {
@@ -126,4 +125,25 @@ func (rs *RouteStats) SimpleAddSummarizedFilter(p *Predicate) (bool, *Predicate)
 	}
 
 	return false, nil
+}
+
+// SimpleSubtractFilter removes all the emcompassed filters by the
+// info string predicate ignoring partial encompassing for now
+func (rs *RouteStats) SimpleSubtractFilter(p *Predicate) {
+	for i, filters := range rs.filters {
+		if len(p.attributes) <= i {
+			for j := 0; j < len(filters); j++ {
+				if p.SimplePredicateMatch(filters[j]) {
+					if j == 0 {
+						rs.filters[i] = nil
+					} else if len(filters) == j+1 {
+						rs.filters[i] = filters[:j-1]
+					} else {
+						rs.filters[i] = append(filters[:j-1], filters[j+1:]...)
+						j--
+					}
+				}
+			}
+		}
+	}
 }

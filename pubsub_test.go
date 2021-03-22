@@ -31,6 +31,33 @@ func TestPubSubServerComms(t *testing.T) {
 	}
 }
 
+// TestSimpleUnsubscribing just subscribes to certain
+// events and then unsubscribes to them
+func TestSimpleUnsubscribing(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	defer cancel()
+
+	dhts := setupDHTS(t, ctx, 2)
+	connect(t, ctx, dhts[0], dhts[1])
+
+	var pubsubs [2]*PubSub
+	for i, dht := range dhts {
+		pubsubs[i] = NewPubSub(dht)
+	}
+
+	err := pubsubs[0].MySubscribe("portugal T")
+	if err != nil {
+		t.Fatal(err)
+	} else if len(pubsubs[0].myFilters.filters[1]) != 1 {
+		t.Fatal("Error Subscribing!")
+	}
+
+	pubsubs[0].MyUnsubscribe("portugal T")
+	if len(pubsubs[0].myFilters.filters[1]) != 0 {
+		t.Fatal("Failed Unsubscribing!")
+	}
+}
+
 // TestSubscriptionForwarding attemps to see if the subscription
 // travels to several nodes until it reaches the rendezvous
 func TestSubscriptionForwarding(t *testing.T) {
