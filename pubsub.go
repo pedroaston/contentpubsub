@@ -12,7 +12,7 @@ import (
 
 	"github.com/libp2p/go-libp2p-core/peer"
 
-	dht "github.com/libp2p/go-libp2p-kad-dht"
+	kaddht "github.com/libp2p/go-libp2p-kad-dht"
 	kb "github.com/libp2p/go-libp2p-kbucket"
 	key "github.com/libp2p/go-libp2p-kbucket/keyspace"
 	pb "github.com/pedroaston/contentpubsub/pb"
@@ -33,32 +33,39 @@ const (
 type PubSub struct {
 	pb.UnimplementedScoutHubServer
 
-	ipfsDHT *dht.IpfsDHT
+	ipfsDHT *kaddht.IpfsDHT
 
 	currentFilterTable *FilterTable
 	nextFilterTable    *FilterTable
 	myFilters          *RouteStats
 
-	subsToForward chan *ForwardSubRequest
+	interestingEvents   chan string
+	subsToForward       chan *ForwardSubRequest
+	eventsToForwardUp   chan *ForwardEvent
+	eventsToForwardDown chan *ForwardEvent
 }
 
 // NewPubSub initializes the PubSub's data structure
 // setup the server and starts processloop
-func NewPubSub(dht *dht.IpfsDHT) *PubSub {
+func NewPubSub(dht *kaddht.IpfsDHT) *PubSub {
 
 	filterTable := NewFilterTable(dht)
 	auxFilterTable := NewFilterTable(dht)
 	mySubs := NewRouteStats()
 
 	ps := &PubSub{
-		currentFilterTable: filterTable,
-		nextFilterTable:    auxFilterTable,
-		ipfsDHT:            dht,
-		myFilters:          mySubs,
-		subsToForward:      make(chan *ForwardSubRequest),
+		currentFilterTable:  filterTable,
+		nextFilterTable:     auxFilterTable,
+		myFilters:           mySubs,
+		interestingEvents:   make(chan string),
+		subsToForward:       make(chan *ForwardSubRequest, 2*len(filterTable.routes)),
+		eventsToForwardUp:   make(chan *ForwardEvent, 2*len(filterTable.routes)),
+		eventsToForwardDown: make(chan *ForwardEvent, 2*len(filterTable.routes)),
 	}
 
-	// Start Server
+	// Need to understand why this randomly gives problems
+	ps.ipfsDHT = dht
+
 	addr := ps.ipfsDHT.Host().Addrs()[0]
 	aux := strings.Split(addr.String(), "/")
 	dialAddr := aux[2] + ":4" + aux[4][1:]
@@ -71,8 +78,6 @@ func NewPubSub(dht *dht.IpfsDHT) *PubSub {
 	grpcServer := grpc.NewServer()
 	pb.RegisterScoutHubServer(grpcServer, ps)
 	go grpcServer.Serve(lis)
-
-	// Start processloop
 	go ps.processLoop()
 
 	return ps
@@ -125,16 +130,93 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 
 // Publish is a remote function called by a external peer to send an Event upstream
 // TODO >> need to build a reliable version
-// INCOMPLETE
-func (ps *PubSub) Publish(ctx context.Context, sub *pb.Event) (*pb.Ack, error) {
+func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error) {
+	fmt.Print("Publish: ")
+	fmt.Println(ps.ipfsDHT.PeerID())
+
+	p, err := NewPredicate(event.Predicate)
+	if err != nil {
+		return &pb.Ack{State: false, Info: err.Error()}, err
+	}
+
+	if ps.myFilters.IsInterested(p) {
+		ps.interestingEvents <- event.Event
+	}
+
+	// rendezvous check and forward if needed
+	isRv, nextHop := ps.rendezvousSelfCheck(event.RvId)
+	if !isRv && nextHop != "" {
+		var dialAddr string
+		nextAddr := ps.ipfsDHT.FindLocal(nextHop).Addrs[0]
+		if nextAddr == nil {
+			return &pb.Ack{State: false, Info: "No address for next hop peer"}, nil
+		} else {
+			aux := strings.Split(nextAddr.String(), "/")
+			dialAddr = aux[2] + ":4" + aux[4][1:]
+		}
+
+		ps.eventsToForwardUp <- &ForwardEvent{dialAddr: dialAddr, event: event}
+
+	} else if !isRv {
+		return &pb.Ack{State: false, Info: "rendezvous check failed"}, nil
+	}
+
+	// check filterTable to see if needs to notify
+	for next, route := range ps.currentFilterTable.routes {
+		if route.IsInterested(p) {
+			var dialAddr string
+			nextID, err := peer.Decode(next)
+			if err != nil {
+				return &pb.Ack{State: false, Info: "decoding failed"}, err
+			}
+
+			nextAddr := ps.ipfsDHT.FindLocal(nextID).Addrs[0]
+			if nextAddr == nil {
+				return &pb.Ack{State: false, Info: "No address for next hop peer"}, nil
+			} else {
+				aux := strings.Split(nextAddr.String(), "/")
+				dialAddr = aux[2] + ":4" + aux[4][1:]
+			}
+
+			ps.eventsToForwardDown <- &ForwardEvent{dialAddr: dialAddr, event: event}
+		}
+	}
 
 	return &pb.Ack{State: true, Info: ""}, nil
 }
 
 // Notify is a remote function called by a external peer to send an Event downstream
 // TODO >> need to build a reliable version
-// INCOMPLETE
-func (ps *PubSub) Notify(ctx context.Context, sub *pb.Event) (*pb.Ack, error) {
+func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) {
+
+	p, err := NewPredicate(event.Predicate)
+	if err != nil {
+		return &pb.Ack{State: false, Info: err.Error()}, err
+	}
+
+	if ps.myFilters.IsInterested(p) {
+		ps.interestingEvents <- event.Event
+	}
+
+	for next, route := range ps.currentFilterTable.routes {
+		if route.IsInterested(p) {
+			var dialAddr string
+			nextID, err := peer.Decode(next)
+			if err != nil {
+				return &pb.Ack{State: false, Info: "decoding failed"}, err
+			}
+
+			nextAddr := ps.ipfsDHT.FindLocal(nextID).Addrs[0]
+			if nextAddr == nil {
+				return &pb.Ack{State: false, Info: "No address for next hop peer"}, nil
+			} else {
+				aux := strings.Split(nextAddr.String(), "/")
+				dialAddr = aux[2] + ":4" + aux[4][1:]
+			}
+
+			ps.eventsToForwardDown <- &ForwardEvent{dialAddr: dialAddr, event: event}
+		}
+	}
 
 	return &pb.Ack{State: true, Info: ""}, nil
 }
@@ -207,7 +289,7 @@ func (ps *PubSub) MySubscribe(info string) error {
 
 	client := pb.NewScoutHubClient(conn)
 	sub := &pb.Subscription{
-		PeerID:    peer.Encode(ps.ipfsDHT.Host().ID()),
+		PeerID:    peer.Encode(ps.ipfsDHT.PeerID()),
 		Predicate: info,
 		RvId:      minAttr,
 	}
@@ -223,14 +305,67 @@ func (ps *PubSub) MySubscribe(info string) error {
 // MyUnsubscribe deletes specific predicate out of
 // mySubs list which will stop the node of sending
 // a subscribing operation every refreshing cycle
-// INCOMPLETE
 func (ps *PubSub) MyUnsubscribe(info string) error {
+
 	p, err := NewPredicate(info)
 	if err != nil {
 		return err
 	}
 
 	ps.myFilters.SimpleSubtractFilter(p)
+
+	return nil
+}
+
+// MyPublish function is used when we want to publish an event on the overlay.
+// Data is the message we want to publish and info is the representative
+// predicate of that event data. The publish operation is made towards all
+// attributes rendezvous in order find the way to all subscribers
+// TODO >> check if is rendezvous before publish
+// TODO >> sending downstream
+func (ps *PubSub) MyPublish(data string, info string) error {
+	fmt.Print("MyPublish: ")
+	fmt.Println(ps.ipfsDHT.PeerID())
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	defer cancel()
+
+	p, err := NewPredicate(info)
+	if err != nil {
+		return err
+	}
+
+	var dialAddr string
+	for _, attr := range p.attributes {
+		attrID := ps.ipfsDHT.RoutingTable().NearestPeer(kb.ID(attr.name))
+		attrAddr := ps.ipfsDHT.FindLocal(attrID).Addrs[0]
+		if attrAddr == nil {
+			return errors.New("No address for closest peer")
+		} else {
+			aux := strings.Split(attrAddr.String(), "/")
+			dialAddr = aux[2] + ":4" + aux[4][1:]
+		}
+
+		conn, err := grpc.Dial(dialAddr, grpc.WithInsecure())
+		if err != nil {
+			log.Fatalf("fail to dial: %v", err)
+		}
+		defer conn.Close()
+
+		client := pb.NewScoutHubClient(conn)
+		event := &pb.Event{
+			Event:     data,
+			Predicate: info,
+			RvId:      attr.name,
+		}
+
+		ack, err := client.Publish(ctx, event)
+		if err != nil || !ack.State {
+			fmt.Println("Error: ")
+			fmt.Println(err)
+			return errors.New("Failed Publishing towards: " + attr.name)
+		}
+	}
 
 	return nil
 }
@@ -258,9 +393,55 @@ func (ps *PubSub) forwardSub(dialAddr string, sub *pb.Subscription) {
 	}
 }
 
-// rendezvousSelfCheck evaluates if the peer is the
-// rendezvous node and if not it returns the peerID
-// of the next subscribing hop
+// forwardEventUp is called upon receiving the request to keep forward a event
+// towards a rendezvous by calling another publish operation towards it
+// TODO >> to complete when implementing Fault-Tolerance
+func (ps *PubSub) forwardEventUp(dialAddr string, event *pb.Event) {
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	defer cancel()
+
+	conn, err := grpc.Dial(dialAddr, grpc.WithInsecure())
+	if err != nil {
+		log.Fatalf("fail to dial: %v", err)
+	}
+	defer conn.Close()
+
+	client := pb.NewScoutHubClient(conn)
+	ack, err := client.Publish(ctx, event)
+
+	// Need to retry if failed
+	if ack.State == false {
+		fmt.Println("Retry to be implemented")
+	}
+}
+
+// forwardEventDown is called upon receiving the request to keep forward a event downwards
+// until it finds all subscribers by calling a notify operation towards them
+// TODO >> to complete when implementing Fault-Tolerance
+func (ps *PubSub) forwardEventDown(dialAddr string, event *pb.Event) {
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	defer cancel()
+
+	conn, err := grpc.Dial(dialAddr, grpc.WithInsecure())
+	if err != nil {
+		log.Fatalf("fail to dial: %v", err)
+	}
+	defer conn.Close()
+
+	client := pb.NewScoutHubClient(conn)
+	ack, err := client.Notify(ctx, event)
+
+	// Need to retry if failed
+	if ack.State == false {
+		fmt.Println("Retry to be implemented")
+	}
+}
+
+// rendezvousSelfCheck evaluates if the peer is the rendezvous node
+// and if not it returns the peerID of the next subscribing hop
+// TODO >> not working properly (semantically)
 func (ps *PubSub) rendezvousSelfCheck(rvID string) (bool, peer.ID) {
 
 	rvAux := kb.ConvertKey(rvID)
@@ -290,13 +471,24 @@ type ForwardSubRequest struct {
 	sub      *pb.Subscription
 }
 
+type ForwardEvent struct {
+	dialAddr string
+	event    *pb.Event
+}
+
 // processLopp
-// TODO >> may contain subs refreshing cycle
+// TODO >> must contain subs refreshing cycle
 func (ps *PubSub) processLoop() {
 	for {
 		select {
 		case pid := <-ps.subsToForward:
 			ps.forwardSub(pid.dialAddr, pid.sub)
+		case pid := <-ps.eventsToForwardUp:
+			ps.forwardEventUp(pid.dialAddr, pid.event)
+		case pid := <-ps.eventsToForwardDown:
+			ps.forwardEventDown(pid.dialAddr, pid.event)
+		case pid := <-ps.interestingEvents:
+			fmt.Println("Received: " + pid)
 		}
 	}
 }

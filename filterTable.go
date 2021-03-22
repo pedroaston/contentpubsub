@@ -147,3 +147,20 @@ func (rs *RouteStats) SimpleSubtractFilter(p *Predicate) {
 		}
 	}
 }
+
+func (rs *RouteStats) IsInterested(p *Predicate) bool {
+
+	for i, filters := range rs.filters {
+		if len(p.attributes) <= i {
+			for _, filter := range filters {
+				if filter.SimplePredicateMatch(p) {
+					return true
+				}
+			}
+		} else {
+			break
+		}
+	}
+
+	return false
+}
