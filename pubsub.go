@@ -8,6 +8,7 @@ import (
 	"math/big"
 	"net"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/libp2p/go-libp2p-core/peer"
@@ -22,11 +23,11 @@ import (
 
 // FaultToleranceFactor >> number of backups (TODO)
 // MaxAttributesPerSub >> maximum allowed number of attributes per predicate (TODO)
-// SubRefreshRateMin >> frequency in which a subscriber needs to resub in minutes (TODO)
+// SubRefreshRateMin >> frequency in which a subscriber needs to resub in minutes
 const (
 	FaultToleranceFactor      = 3
 	MaxAttributesPerPredicate = 5
-	SubRefreshRateMin         = 20
+	SubRefreshRateMin         = 15
 )
 
 //PubSub data structure
@@ -43,6 +44,8 @@ type PubSub struct {
 	subsToForward       chan *ForwardSubRequest
 	eventsToForwardUp   chan *ForwardEvent
 	eventsToForwardDown chan *ForwardEvent
+
+	tablesLock *sync.Mutex
 }
 
 // NewPubSub initializes the PubSub's data structure
@@ -61,6 +64,7 @@ func NewPubSub(dht *kaddht.IpfsDHT) *PubSub {
 		subsToForward:       make(chan *ForwardSubRequest, 2*len(filterTable.routes)),
 		eventsToForwardUp:   make(chan *ForwardEvent, 2*len(filterTable.routes)),
 		eventsToForwardDown: make(chan *ForwardEvent, 2*len(filterTable.routes)),
+		tablesLock:          &sync.Mutex{},
 	}
 
 	// Need to understand why this randomly gives problems
@@ -79,6 +83,7 @@ func NewPubSub(dht *kaddht.IpfsDHT) *PubSub {
 	pb.RegisterScoutHubServer(grpcServer, ps)
 	go grpcServer.Serve(lis)
 	go ps.processLoop()
+	go ps.refreshingProtocol()
 
 	return ps
 }
@@ -94,8 +99,11 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 		return &pb.Ack{State: false, Info: err.Error()}, err
 	}
 
+	ps.tablesLock.Lock()
 	ps.currentFilterTable.routes[sub.PeerID].SimpleAddSummarizedFilter(p)
 	alreadyDone, pNew := ps.nextFilterTable.routes[sub.PeerID].SimpleAddSummarizedFilter(p)
+	ps.tablesLock.Unlock()
+
 	if alreadyDone {
 		return &pb.Ack{State: true, Info: ""}, nil
 	} else if pNew != nil {
@@ -160,16 +168,19 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 		return &pb.Ack{State: false, Info: "rendezvous check failed"}, nil
 	}
 
+	ps.tablesLock.Lock()
 	for next, route := range ps.currentFilterTable.routes {
 		if route.IsInterested(p) {
 			var dialAddr string
 			nextID, err := peer.Decode(next)
 			if err != nil {
+				ps.tablesLock.Unlock()
 				return &pb.Ack{State: false, Info: "decoding failed"}, err
 			}
 
 			nextAddr := ps.ipfsDHT.FindLocal(nextID).Addrs[0]
 			if nextAddr == nil {
+				ps.tablesLock.Unlock()
 				return &pb.Ack{State: false, Info: "No address for next hop peer"}, nil
 			} else {
 				aux := strings.Split(nextAddr.String(), "/")
@@ -179,6 +190,7 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 			ps.eventsToForwardDown <- &ForwardEvent{dialAddr: dialAddr, event: event}
 		}
 	}
+	ps.tablesLock.Unlock()
 
 	return &pb.Ack{State: true, Info: ""}, nil
 }
@@ -196,16 +208,19 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 		ps.interestingEvents <- event.Event
 	}
 
+	ps.tablesLock.Lock()
 	for next, route := range ps.currentFilterTable.routes {
 		if route.IsInterested(p) {
 			var dialAddr string
 			nextID, err := peer.Decode(next)
 			if err != nil {
+				ps.tablesLock.Unlock()
 				return &pb.Ack{State: false, Info: "decoding failed"}, err
 			}
 
 			nextAddr := ps.ipfsDHT.FindLocal(nextID).Addrs[0]
 			if nextAddr == nil {
+				ps.tablesLock.Unlock()
 				return &pb.Ack{State: false, Info: "No address for next hop peer"}, nil
 			} else {
 				aux := strings.Split(nextAddr.String(), "/")
@@ -215,6 +230,7 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 			ps.eventsToForwardDown <- &ForwardEvent{dialAddr: dialAddr, event: event}
 		}
 	}
+	ps.tablesLock.Unlock()
 
 	return &pb.Ack{State: true, Info: ""}, nil
 }
@@ -340,28 +356,30 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 			RvId:      attr.name,
 		}
 
+		ps.tablesLock.Lock()
+		for next, route := range ps.currentFilterTable.routes {
+			if route.IsInterested(p) {
+				var dialAddr string
+				nextID, err := peer.Decode(next)
+				if err != nil {
+					return err
+				}
+
+				nextAddr := ps.ipfsDHT.FindLocal(nextID).Addrs[0]
+				if nextAddr == nil {
+					return errors.New("no address to send!")
+				} else {
+					aux := strings.Split(nextAddr.String(), "/")
+					dialAddr = aux[2] + ":4" + aux[4][1:]
+				}
+
+				ps.eventsToForwardDown <- &ForwardEvent{dialAddr: dialAddr, event: event}
+			}
+		}
+		ps.tablesLock.Unlock()
+
 		res, _ := ps.rendezvousSelfCheck(attr.name)
 		if res {
-			for next, route := range ps.currentFilterTable.routes {
-				if route.IsInterested(p) {
-					var dialAddr string
-					nextID, err := peer.Decode(next)
-					if err != nil {
-						return err
-					}
-
-					nextAddr := ps.ipfsDHT.FindLocal(nextID).Addrs[0]
-					if nextAddr == nil {
-						return errors.New("no address to send!")
-					} else {
-						aux := strings.Split(nextAddr.String(), "/")
-						dialAddr = aux[2] + ":4" + aux[4][1:]
-					}
-
-					ps.eventsToForwardDown <- &ForwardEvent{dialAddr: dialAddr, event: event}
-				}
-			}
-
 			continue
 		}
 
@@ -501,7 +519,6 @@ type ForwardEvent struct {
 }
 
 // processLopp
-// TODO >> must contain subs refreshing cycle
 func (ps *PubSub) processLoop() {
 	for {
 		select {
@@ -514,5 +531,32 @@ func (ps *PubSub) processLoop() {
 		case pid := <-ps.interestingEvents:
 			fmt.Println("Received: " + pid)
 		}
+	}
+}
+
+// heartbeatProtocol
+func (ps *PubSub) refreshingProtocol() {
+
+	for {
+		for _, filters := range ps.myFilters.filters {
+			for _, filter := range filters {
+				ps.MySubscribe(filter.ToString())
+			}
+		}
+
+		time.Sleep(SubRefreshRateMin * time.Minute)
+
+		for _, filters := range ps.myFilters.filters {
+			for _, filter := range filters {
+				ps.MySubscribe(filter.ToString())
+			}
+		}
+
+		ps.tablesLock.Lock()
+		ps.currentFilterTable = ps.nextFilterTable
+		ps.nextFilterTable = NewFilterTable(ps.ipfsDHT)
+		ps.tablesLock.Unlock()
+
+		time.Sleep(SubRefreshRateMin * time.Minute)
 	}
 }
