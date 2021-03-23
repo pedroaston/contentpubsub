@@ -143,7 +143,6 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 		ps.interestingEvents <- event.Event
 	}
 
-	// rendezvous check and forward if needed
 	isRv, nextHop := ps.rendezvousSelfCheck(event.RvId)
 	if !isRv && nextHop != "" {
 		var dialAddr string
@@ -161,7 +160,6 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 		return &pb.Ack{State: false, Info: "rendezvous check failed"}, nil
 	}
 
-	// check filterTable to see if needs to notify
 	for next, route := range ps.currentFilterTable.routes {
 		if route.IsInterested(p) {
 			var dialAddr string
@@ -321,8 +319,6 @@ func (ps *PubSub) MyUnsubscribe(info string) error {
 // Data is the message we want to publish and info is the representative
 // predicate of that event data. The publish operation is made towards all
 // attributes rendezvous in order find the way to all subscribers
-// TODO >> check if is rendezvous before publish
-// TODO >> sending downstream
 func (ps *PubSub) MyPublish(data string, info string) error {
 	fmt.Print("MyPublish: ")
 	fmt.Println(ps.ipfsDHT.PeerID())
@@ -344,6 +340,11 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 		} else {
 			aux := strings.Split(attrAddr.String(), "/")
 			dialAddr = aux[2] + ":4" + aux[4][1:]
+		}
+
+		res, _ := ps.rendezvousSelfCheck(attr.name)
+		if res {
+			continue
 		}
 
 		conn, err := grpc.Dial(dialAddr, grpc.WithInsecure())
