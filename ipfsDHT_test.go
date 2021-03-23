@@ -66,3 +66,30 @@ func TestIpfsDHTAddrs(t *testing.T) {
 		t.Fatal("No address")
 	}
 }
+
+// TestSearchSelf was an attempt to understand which peers
+// are returned once we search for the self node on the
+// routing table to understand if we can use it on a
+// function that returns the potencial backups
+func TestSearchSelf(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	defer cancel()
+
+	dhts := setupDHTS(t, ctx, 10)
+
+	connect(t, ctx, dhts[0], dhts[1])
+	connect(t, ctx, dhts[0], dhts[2])
+	connect(t, ctx, dhts[0], dhts[3])
+	connect(t, ctx, dhts[0], dhts[4])
+	connect(t, ctx, dhts[0], dhts[5])
+	connect(t, ctx, dhts[0], dhts[6])
+	connect(t, ctx, dhts[0], dhts[7])
+	connect(t, ctx, dhts[0], dhts[8])
+	connect(t, ctx, dhts[0], dhts[9])
+
+	backups := dhts[0].RoutingTable().NearestPeers(kb.ConvertPeerID(dhts[0].PeerID()), 3)
+
+	if len(backups) != 3 {
+		t.Fatal("Error getting backups")
+	}
+}

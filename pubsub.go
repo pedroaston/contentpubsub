@@ -429,7 +429,7 @@ func (ps *PubSub) forwardSub(dialAddr string, sub *pb.Subscription) {
 	ack, err := client.Subscribe(ctx, sub)
 
 	// Need to retry if failed
-	if ack.State == false {
+	if ack.State == false || err != nil {
 		fmt.Println("Retry to be implemented")
 	}
 }
@@ -452,7 +452,7 @@ func (ps *PubSub) forwardEventUp(dialAddr string, event *pb.Event) {
 	ack, err := client.Publish(ctx, event)
 
 	// Need to retry if failed
-	if ack.State == false {
+	if ack.State == false || err != nil {
 		fmt.Println("Retry to be implemented")
 	}
 }
@@ -475,7 +475,7 @@ func (ps *PubSub) forwardEventDown(dialAddr string, event *pb.Event) {
 	ack, err := client.Notify(ctx, event)
 
 	// Need to retry if failed
-	if ack.State == false {
+	if ack.State == false || err != nil {
 		fmt.Println("Retry to be implemented")
 	}
 }
@@ -534,10 +534,14 @@ func (ps *PubSub) processLoop() {
 	}
 }
 
-// heartbeatProtocol
+// heartbeatProtocol is the routine responsible to
+// refresh periodically the subscriptions of a peer
+// and the filterTables after 2 subs refreshings
 func (ps *PubSub) refreshingProtocol() {
 
 	for {
+		time.Sleep(SubRefreshRateMin * time.Minute)
+
 		for _, filters := range ps.myFilters.filters {
 			for _, filter := range filters {
 				ps.MySubscribe(filter.ToString())
@@ -556,7 +560,5 @@ func (ps *PubSub) refreshingProtocol() {
 		ps.currentFilterTable = ps.nextFilterTable
 		ps.nextFilterTable = NewFilterTable(ps.ipfsDHT)
 		ps.tablesLock.Unlock()
-
-		time.Sleep(SubRefreshRateMin * time.Minute)
 	}
 }

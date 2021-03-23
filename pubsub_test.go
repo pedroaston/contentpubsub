@@ -11,7 +11,6 @@ import (
 // TestPubSubServerComms only wants to assure that pubsub servers can communicate
 // by initializing both and subscribing to events about portugal
 func TestPubSubServerComms(t *testing.T) {
-
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()
 
@@ -23,10 +22,13 @@ func TestPubSubServerComms(t *testing.T) {
 		pubsubs[i] = NewPubSub(dht)
 	}
 
-	err := pubsubs[0].MySubscribe("portugal T")
+	err := pubsubs[0].MySubscribe("surf T")
+
+	time.Sleep(time.Second)
+
 	if err != nil {
 		t.Fatal(err)
-	} else if pubsubs[1].currentFilterTable.routes[peer.Encode(pubsubs[0].ipfsDHT.PeerID())].filters[1][0].String() != "<portugal> " {
+	} else if pubsubs[1].currentFilterTable.routes[peer.Encode(pubsubs[0].ipfsDHT.PeerID())].filters[1][0].String() != "<surf> " {
 		t.Fatal("Failed Subscription")
 	}
 }
