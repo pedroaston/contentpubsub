@@ -333,6 +333,38 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 
 	var dialAddr string
 	for _, attr := range p.attributes {
+
+		event := &pb.Event{
+			Event:     data,
+			Predicate: info,
+			RvId:      attr.name,
+		}
+
+		res, _ := ps.rendezvousSelfCheck(attr.name)
+		if res {
+			for next, route := range ps.currentFilterTable.routes {
+				if route.IsInterested(p) {
+					var dialAddr string
+					nextID, err := peer.Decode(next)
+					if err != nil {
+						return err
+					}
+
+					nextAddr := ps.ipfsDHT.FindLocal(nextID).Addrs[0]
+					if nextAddr == nil {
+						return errors.New("no address to send!")
+					} else {
+						aux := strings.Split(nextAddr.String(), "/")
+						dialAddr = aux[2] + ":4" + aux[4][1:]
+					}
+
+					ps.eventsToForwardDown <- &ForwardEvent{dialAddr: dialAddr, event: event}
+				}
+			}
+
+			continue
+		}
+
 		attrID := ps.ipfsDHT.RoutingTable().NearestPeer(kb.ID(attr.name))
 		attrAddr := ps.ipfsDHT.FindLocal(attrID).Addrs[0]
 		if attrAddr == nil {
@@ -342,11 +374,6 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 			dialAddr = aux[2] + ":4" + aux[4][1:]
 		}
 
-		res, _ := ps.rendezvousSelfCheck(attr.name)
-		if res {
-			continue
-		}
-
 		conn, err := grpc.Dial(dialAddr, grpc.WithInsecure())
 		if err != nil {
 			log.Fatalf("fail to dial: %v", err)
@@ -354,11 +381,6 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 		defer conn.Close()
 
 		client := pb.NewScoutHubClient(conn)
-		event := &pb.Event{
-			Event:     data,
-			Predicate: info,
-			RvId:      attr.name,
-		}
 
 		ack, err := client.Publish(ctx, event)
 		if err != nil || !ack.State {
@@ -460,6 +482,7 @@ func (ps *PubSub) rendezvousSelfCheck(rvID string) (bool, peer.ID) {
 
 	selfDist := key.XORKeySpace.Distance(key.XORKeySpace.Key(rvIDAux), key.XORKeySpace.Key(selfAux))
 	closestDist := key.XORKeySpace.Distance(key.XORKeySpace.Key(rvIDAux), key.XORKeySpace.Key(closestAux))
+
 	if closestDist.Cmp(selfDist) == -1 {
 		return false, closestID
 	}
