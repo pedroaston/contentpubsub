@@ -22,13 +22,13 @@ func TestPubSubServerComms(t *testing.T) {
 		pubsubs[i] = NewPubSub(dht)
 	}
 
-	err := pubsubs[0].MySubscribe("surf T")
+	err := pubsubs[0].MySubscribe("tenis T")
 
 	time.Sleep(time.Second)
 
 	if err != nil {
 		t.Fatal(err)
-	} else if pubsubs[1].currentFilterTable.routes[peer.Encode(pubsubs[0].ipfsDHT.PeerID())].filters[1][0].String() != "<surf> " {
+	} else if pubsubs[1].currentFilterTable.routes[peer.Encode(pubsubs[0].ipfsDHT.PeerID())].filters[1][0].String() != "<tenis> " {
 		t.Fatal("Failed Subscription")
 	}
 }

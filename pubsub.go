@@ -485,27 +485,14 @@ func (ps *PubSub) forwardEventDown(dialAddr string, event *pb.Event) {
 // TODO >> not working properly (semantically)
 func (ps *PubSub) rendezvousSelfCheck(rvID string) (bool, peer.ID) {
 
-	rvAux := kb.ConvertKey(rvID)
-	closestID := ps.ipfsDHT.RoutingTable().NearestPeer(kb.ID(rvAux))
-	selfAux, err1 := ps.ipfsDHT.PeerID().MarshalBinary()
-	closestAux, err2 := closestID.MarshalBinary()
-	rvIDAux, err3 := peer.ID(rvAux).MarshalBinary()
-	if err1 != nil {
-		return false, ""
-	} else if err2 != nil {
-		return false, ""
-	} else if err3 != nil {
-		return false, ""
+	selfID := ps.ipfsDHT.PeerID()
+	closestID := ps.ipfsDHT.RoutingTable().NearestPeer(kb.ID(kb.ConvertKey(rvID)))
+
+	if kb.Closer(selfID, closestID, rvID) {
+		return true, ""
 	}
 
-	selfDist := key.XORKeySpace.Distance(key.XORKeySpace.Key(rvIDAux), key.XORKeySpace.Key(selfAux))
-	closestDist := key.XORKeySpace.Distance(key.XORKeySpace.Key(rvIDAux), key.XORKeySpace.Key(closestAux))
-
-	if closestDist.Cmp(selfDist) == -1 {
-		return false, closestID
-	}
-
-	return true, ""
+	return false, closestID
 }
 
 type ForwardSubRequest struct {
