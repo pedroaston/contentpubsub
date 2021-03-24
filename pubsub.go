@@ -30,7 +30,7 @@ const (
 	SubRefreshRateMin         = 15
 )
 
-//PubSub data structure
+// PubSub data structure
 type PubSub struct {
 	pb.UnimplementedScoutHubServer
 
@@ -39,6 +39,7 @@ type PubSub struct {
 	currentFilterTable *FilterTable
 	nextFilterTable    *FilterTable
 	myFilters          *RouteStats
+	myBackups          []string
 
 	interestingEvents   chan string
 	subsToForward       chan *ForwardSubRequest
@@ -69,6 +70,7 @@ func NewPubSub(dht *kaddht.IpfsDHT) *PubSub {
 
 	// Need to understand why this randomly gives problems
 	ps.ipfsDHT = dht
+	ps.myBackups = ps.getBackups()
 
 	addr := ps.ipfsDHT.Host().Addrs()[0]
 	aux := strings.Split(addr.String(), "/")
@@ -411,6 +413,32 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 	return nil
 }
 
+// getBackups selects f backups peers for the node,
+// which are the ones closer its own ID
+func (ps *PubSub) getBackups() []string {
+
+	var backups []string
+
+	var dialAddr string
+	for _, backup := range ps.ipfsDHT.RoutingTable().NearestPeers(kb.ConvertPeerID(ps.ipfsDHT.PeerID()), FaultToleranceFactor) {
+		backupAddr := ps.ipfsDHT.FindLocal(backup).Addrs[0]
+		aux := strings.Split(backupAddr.String(), "/")
+		dialAddr = aux[2] + ":4" + aux[4][1:]
+		backups = append(backups, dialAddr)
+	}
+
+	return backups
+}
+
+// updateBackups sends the new version of the filter table to the backup
+// TODO >> this should be a remote call
+// TODO >> this should be a group of strings not structs beacuse of grpc
+// INCOMPLETE
+func (ps *PubSub) updateBackups() (*pb.Ack, error) {
+
+	return &pb.Ack{State: true, Info: ""}, nil
+}
+
 // forwardSub is called upon finishing the processing a
 // received subscription that needs forwarding
 // TODO >> to complete when implementing Fault-Tolerance
@@ -429,7 +457,7 @@ func (ps *PubSub) forwardSub(dialAddr string, sub *pb.Subscription) {
 	ack, err := client.Subscribe(ctx, sub)
 
 	// Need to retry if failed
-	if ack.State == false || err != nil {
+	if !ack.State || err != nil {
 		fmt.Println("Retry to be implemented")
 	}
 }
@@ -452,7 +480,7 @@ func (ps *PubSub) forwardEventUp(dialAddr string, event *pb.Event) {
 	ack, err := client.Publish(ctx, event)
 
 	// Need to retry if failed
-	if ack.State == false || err != nil {
+	if !ack.State || err != nil {
 		fmt.Println("Retry to be implemented")
 	}
 }
@@ -475,7 +503,7 @@ func (ps *PubSub) forwardEventDown(dialAddr string, event *pb.Event) {
 	ack, err := client.Notify(ctx, event)
 
 	// Need to retry if failed
-	if ack.State == false || err != nil {
+	if !ack.State || err != nil {
 		fmt.Println("Retry to be implemented")
 	}
 }
