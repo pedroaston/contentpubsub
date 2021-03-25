@@ -47,7 +47,7 @@ type PubSub struct {
 	eventsToForwardUp   chan *ForwardEvent
 	eventsToForwardDown chan *ForwardEvent
 
-	tablesLock *sync.Mutex
+	tablesLock *sync.RWMutex
 }
 
 // NewPubSub initializes the PubSub's data structure
@@ -67,7 +67,7 @@ func NewPubSub(dht *kaddht.IpfsDHT) *PubSub {
 		subsToForward:       make(chan *ForwardSubRequest, 2*len(filterTable.routes)),
 		eventsToForwardUp:   make(chan *ForwardEvent, 2*len(filterTable.routes)),
 		eventsToForwardDown: make(chan *ForwardEvent, 2*len(filterTable.routes)),
-		tablesLock:          &sync.Mutex{},
+		tablesLock:          &sync.RWMutex{},
 	}
 
 	// Need to understand why this randomly gives problems
@@ -94,6 +94,7 @@ func NewPubSub(dht *kaddht.IpfsDHT) *PubSub {
 
 // Subscribe is a remote function called by a external peer to send subscriptions
 // TODO >> need to build a reliable version
+// TODO >> read write
 func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack, error) {
 	fmt.Print("Subscribe: ")
 	fmt.Println(ps.ipfsDHT.PeerID())
@@ -112,10 +113,10 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 	ps.currentFilterTable.routes[sub.PeerID].routeLock.Unlock()
 
 	// Need to change to read/write Lock
-	ps.tablesLock.Lock()
+	ps.tablesLock.RLock()
 	ps.currentFilterTable.routes[sub.PeerID].SimpleAddSummarizedFilter(p)
 	alreadyDone, pNew := ps.nextFilterTable.routes[sub.PeerID].SimpleAddSummarizedFilter(p)
-	ps.tablesLock.Unlock()
+	ps.tablesLock.RUnlock()
 
 	if alreadyDone {
 		return &pb.Ack{State: true, Info: ""}, nil
@@ -209,19 +210,19 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 		return &pb.Ack{State: false, Info: "rendezvous check failed"}, nil
 	}
 
-	ps.tablesLock.Lock()
+	ps.tablesLock.RLock()
 	for next, route := range ps.currentFilterTable.routes {
 		if route.IsInterested(p) {
 			var dialAddr string
 			nextID, err := peer.Decode(next)
 			if err != nil {
-				ps.tablesLock.Unlock()
+				ps.tablesLock.RUnlock()
 				return &pb.Ack{State: false, Info: "decoding failed"}, err
 			}
 
 			nextAddr := ps.ipfsDHT.FindLocal(nextID).Addrs[0]
 			if nextAddr == nil {
-				ps.tablesLock.Unlock()
+				ps.tablesLock.RUnlock()
 				return &pb.Ack{State: false, Info: "No address for next hop peer"}, nil
 			} else {
 				aux := strings.Split(nextAddr.String(), "/")
@@ -231,7 +232,7 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 			ps.eventsToForwardDown <- &ForwardEvent{dialAddr: dialAddr, event: event}
 		}
 	}
-	ps.tablesLock.Unlock()
+	ps.tablesLock.RUnlock()
 
 	return &pb.Ack{State: true, Info: ""}, nil
 }
@@ -249,19 +250,19 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 		ps.interestingEvents <- event.Event
 	}
 
-	ps.tablesLock.Lock()
+	ps.tablesLock.RLock()
 	for next, route := range ps.currentFilterTable.routes {
 		if route.IsInterested(p) {
 			var dialAddr string
 			nextID, err := peer.Decode(next)
 			if err != nil {
-				ps.tablesLock.Unlock()
+				ps.tablesLock.RUnlock()
 				return &pb.Ack{State: false, Info: "decoding failed"}, err
 			}
 
 			nextAddr := ps.ipfsDHT.FindLocal(nextID).Addrs[0]
 			if nextAddr == nil {
-				ps.tablesLock.Unlock()
+				ps.tablesLock.RUnlock()
 				return &pb.Ack{State: false, Info: "No address for next hop peer"}, nil
 			} else {
 				aux := strings.Split(nextAddr.String(), "/")
@@ -271,7 +272,7 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 			ps.eventsToForwardDown <- &ForwardEvent{dialAddr: dialAddr, event: event}
 		}
 	}
-	ps.tablesLock.Unlock()
+	ps.tablesLock.RUnlock()
 
 	return &pb.Ack{State: true, Info: ""}, nil
 }
