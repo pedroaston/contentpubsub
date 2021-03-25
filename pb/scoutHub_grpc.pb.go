@@ -21,6 +21,7 @@ type ScoutHubClient interface {
 	Subscribe(ctx context.Context, in *Subscription, opts ...grpc.CallOption) (*Ack, error)
 	Publish(ctx context.Context, in *Event, opts ...grpc.CallOption) (*Ack, error)
 	Notify(ctx context.Context, in *Event, opts ...grpc.CallOption) (*Ack, error)
+	UpdateBackup(ctx context.Context, in *Update, opts ...grpc.CallOption) (*Ack, error)
 }
 
 type scoutHubClient struct {
@@ -58,6 +59,15 @@ func (c *scoutHubClient) Notify(ctx context.Context, in *Event, opts ...grpc.Cal
 	return out, nil
 }
 
+func (c *scoutHubClient) UpdateBackup(ctx context.Context, in *Update, opts ...grpc.CallOption) (*Ack, error) {
+	out := new(Ack)
+	err := c.cc.Invoke(ctx, "/contentpubsub.pb.ScoutHub/UpdateBackup", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ScoutHubServer is the server API for ScoutHub service.
 // All implementations must embed UnimplementedScoutHubServer
 // for forward compatibility
@@ -65,6 +75,7 @@ type ScoutHubServer interface {
 	Subscribe(context.Context, *Subscription) (*Ack, error)
 	Publish(context.Context, *Event) (*Ack, error)
 	Notify(context.Context, *Event) (*Ack, error)
+	UpdateBackup(context.Context, *Update) (*Ack, error)
 	mustEmbedUnimplementedScoutHubServer()
 }
 
@@ -80,6 +91,9 @@ func (UnimplementedScoutHubServer) Publish(context.Context, *Event) (*Ack, error
 }
 func (UnimplementedScoutHubServer) Notify(context.Context, *Event) (*Ack, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Notify not implemented")
+}
+func (UnimplementedScoutHubServer) UpdateBackup(context.Context, *Update) (*Ack, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateBackup not implemented")
 }
 func (UnimplementedScoutHubServer) mustEmbedUnimplementedScoutHubServer() {}
 
@@ -148,6 +162,24 @@ func _ScoutHub_Notify_Handler(srv interface{}, ctx context.Context, dec func(int
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ScoutHub_UpdateBackup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(Update)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ScoutHubServer).UpdateBackup(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/contentpubsub.pb.ScoutHub/UpdateBackup",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ScoutHubServer).UpdateBackup(ctx, req.(*Update))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ScoutHub_ServiceDesc is the grpc.ServiceDesc for ScoutHub service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -166,6 +198,10 @@ var ScoutHub_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Notify",
 			Handler:    _ScoutHub_Notify_Handler,
+		},
+		{
+			MethodName: "UpdateBackup",
+			Handler:    _ScoutHub_UpdateBackup_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

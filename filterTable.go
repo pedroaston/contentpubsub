@@ -12,7 +12,7 @@ import (
 // connected and its backups in case of failure
 type RouteStats struct {
 	filters   map[int][]*Predicate
-	backups   [FaultToleranceFactor]string
+	backups   []string
 	routeLock *sync.Mutex
 }
 

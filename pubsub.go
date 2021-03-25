@@ -40,6 +40,7 @@ type PubSub struct {
 	nextFilterTable    *FilterTable
 	myFilters          *RouteStats
 	myBackups          []string
+	myBackupsFilters   map[string]*FilterTable
 
 	interestingEvents   chan string
 	subsToForward       chan *ForwardSubRequest
@@ -61,6 +62,7 @@ func NewPubSub(dht *kaddht.IpfsDHT) *PubSub {
 		currentFilterTable:  filterTable,
 		nextFilterTable:     auxFilterTable,
 		myFilters:           mySubs,
+		myBackupsFilters:    make(map[string]*FilterTable),
 		interestingEvents:   make(chan string),
 		subsToForward:       make(chan *ForwardSubRequest, 2*len(filterTable.routes)),
 		eventsToForwardUp:   make(chan *ForwardEvent, 2*len(filterTable.routes)),
@@ -101,6 +103,15 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 		return &pb.Ack{State: false, Info: err.Error()}, err
 	}
 
+	var aux []string
+	for _, addr := range sub.Backups {
+		aux = append(aux, addr)
+	}
+	ps.currentFilterTable.routes[sub.PeerID].routeLock.Lock()
+	ps.currentFilterTable.routes[sub.PeerID].backups = aux
+	ps.currentFilterTable.routes[sub.PeerID].routeLock.Unlock()
+
+	// Need to change to read/write Lock
 	ps.tablesLock.Lock()
 	ps.currentFilterTable.routes[sub.PeerID].SimpleAddSummarizedFilter(p)
 	alreadyDone, pNew := ps.nextFilterTable.routes[sub.PeerID].SimpleAddSummarizedFilter(p)
@@ -123,10 +134,18 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 			dialAddr = aux[2] + ":4" + aux[4][1:]
 		}
 
+		ps.updateMyBackups(sub.PeerID, sub.Predicate)
+
+		var backups map[int32]string = make(map[int32]string)
+		for i, backup := range ps.myBackups {
+			backups[int32(i)] = backup
+		}
+
 		subForward := &pb.Subscription{
 			PeerID:    peer.Encode(ps.ipfsDHT.PeerID()),
 			Predicate: sub.Predicate,
 			RvId:      sub.RvId,
+			Backups:   backups,
 		}
 
 		ps.subsToForward <- &ForwardSubRequest{dialAddr: dialAddr, sub: subForward}
@@ -134,6 +153,26 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 	} else if !isRv {
 		return &pb.Ack{State: false, Info: "rendezvous check failed"}, nil
 	}
+
+	return &pb.Ack{State: true, Info: ""}, nil
+}
+
+// updateBackups sends the new version of the filter table to the backup
+// TODO >> this should be a group of strings not structs beacuse of grpc
+func (ps *PubSub) UpdateBackup(ctx context.Context, update *pb.Update) (*pb.Ack, error) {
+
+	p, err := NewPredicate(update.Predicate)
+	if err != nil {
+		return &pb.Ack{State: false, Info: err.Error()}, err
+	} else if _, ok := ps.myBackupsFilters[update.Sender]; !ok {
+		ps.myBackupsFilters[update.Sender] = &FilterTable{routes: make(map[string]*RouteStats)}
+	}
+
+	if _, ok := ps.myBackupsFilters[update.Sender].routes[update.Route]; !ok {
+		ps.myBackupsFilters[update.Sender].routes[update.Route] = NewRouteStats()
+	}
+
+	ps.myBackupsFilters[update.Sender].routes[update.Route].SimpleAddSummarizedFilter(p)
 
 	return &pb.Ack{State: true, Info: ""}, nil
 }
@@ -318,6 +357,39 @@ func (ps *PubSub) MySubscribe(info string) error {
 	return nil
 }
 
+// updateMyBackups basically sends updates rpcs to its backups
+// to update their versions of his filter table
+// TODO >> Need to implement the case where one/more backup is down
+func (ps *PubSub) updateMyBackups(route string, info string) error {
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	defer cancel()
+
+	for _, addr := range ps.myBackups {
+		conn, err := grpc.Dial(addr, grpc.WithInsecure())
+		if err != nil {
+			log.Fatalf("fail to dial: %v", err)
+		}
+		defer conn.Close()
+
+		client := pb.NewScoutHubClient(conn)
+		update := &pb.Update{
+			Sender:    peer.Encode(ps.ipfsDHT.PeerID()),
+			Route:     route,
+			Predicate: info,
+		}
+
+		ack, err := client.UpdateBackup(ctx, update)
+
+		if !ack.State || err != nil {
+			return errors.New("failed update")
+		}
+
+	}
+
+	return nil
+}
+
 // MyUnsubscribe deletes specific predicate out of
 // mySubs list which will stop the node of sending
 // a subscribing operation every refreshing cycle
@@ -428,15 +500,6 @@ func (ps *PubSub) getBackups() []string {
 	}
 
 	return backups
-}
-
-// updateBackups sends the new version of the filter table to the backup
-// TODO >> this should be a remote call
-// TODO >> this should be a group of strings not structs beacuse of grpc
-// INCOMPLETE
-func (ps *PubSub) updateBackups() (*pb.Ack, error) {
-
-	return &pb.Ack{State: true, Info: ""}, nil
 }
 
 // forwardSub is called upon finishing the processing a

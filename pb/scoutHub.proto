@@ -8,6 +8,7 @@ service ScoutHub {
     rpc Subscribe(Subscription) returns (Ack) {}
     rpc Publish(Event) returns (Ack) {}
     rpc Notify(Event) returns (Ack) {}
+    rpc UpdateBackup(Update) returns (Ack) {}
 }
 
 // Acknowledge response
@@ -20,10 +21,17 @@ message Subscription {
     string peerID = 1;
     string predicate = 2;
     string rvId = 3;
+    map<int32, string> backups = 4;
 }
 
 message Event {
     string predicate = 1;
     string rvId = 2;
     string event = 3;
+}
+
+message Update {
+    string sender = 1;
+    string route = 2;
+    string predicate = 3;
 }
