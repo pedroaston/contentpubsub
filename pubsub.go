@@ -237,7 +237,6 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 }
 
 // Notify is a remote function called by a external peer to send an Event downstream
-// INCOMPLETE >> Fault Tolerance
 func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) {
 
 	p, err := NewPredicate(event.Predicate)
@@ -547,15 +546,32 @@ func (ps *PubSub) forwardSub(dialAddr string, sub *pb.Subscription) {
 	client := pb.NewScoutHubClient(conn)
 	ack, err := client.Subscribe(ctx, sub)
 
-	// Need to retry if failed
 	if !ack.State || err != nil {
-		fmt.Println("Retry to be implemented")
+		alternatives := ps.alternativesToRv(sub.RvId)
+		for _, ID := range alternatives {
+			attrAddr := ps.ipfsDHT.FindLocal(ID).Addrs[0]
+			if attrAddr != nil {
+				aux := strings.Split(attrAddr.String(), "/")
+				dialAddr = aux[2] + ":4" + aux[4][1:]
+			}
+
+			conn, err := grpc.Dial(dialAddr, grpc.WithInsecure())
+			if err != nil {
+				log.Fatalf("fail to dial: %v", err)
+			}
+			defer conn.Close()
+
+			client := pb.NewScoutHubClient(conn)
+			ack, err := client.Subscribe(ctx, sub)
+			if ack.State && err == nil {
+				break
+			}
+		}
 	}
 }
 
 // forwardEventUp is called upon receiving the request to keep forward a event
 // towards a rendezvous by calling another publish operation towards it
-// TODO >> to complete when implementing Fault-Tolerance
 func (ps *PubSub) forwardEventUp(dialAddr string, event *pb.Event) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
@@ -570,9 +586,27 @@ func (ps *PubSub) forwardEventUp(dialAddr string, event *pb.Event) {
 	client := pb.NewScoutHubClient(conn)
 	ack, err := client.Publish(ctx, event)
 
-	// Need to retry if failed
 	if !ack.State || err != nil {
-		fmt.Println("Retry to be implemented")
+		alternatives := ps.alternativesToRv(event.RvId)
+		for _, ID := range alternatives {
+			attrAddr := ps.ipfsDHT.FindLocal(ID).Addrs[0]
+			if attrAddr != nil {
+				aux := strings.Split(attrAddr.String(), "/")
+				dialAddr = aux[2] + ":4" + aux[4][1:]
+			}
+
+			conn, err := grpc.Dial(dialAddr, grpc.WithInsecure())
+			if err != nil {
+				log.Fatalf("fail to dial: %v", err)
+			}
+			defer conn.Close()
+
+			client := pb.NewScoutHubClient(conn)
+			ack, err := client.Publish(ctx, event)
+			if ack.State && err == nil {
+				break
+			}
+		}
 	}
 }
 
@@ -624,6 +658,22 @@ func (ps *PubSub) rendezvousSelfCheck(rvID string) (bool, peer.ID) {
 	}
 
 	return false, closestID
+}
+
+// alternativesToRv checks for alternative ways to reach RV
+func (ps *PubSub) alternativesToRv(rvID string) []peer.ID {
+
+	var validAlt []peer.ID
+	selfID := ps.ipfsDHT.PeerID()
+	closestIDs := ps.ipfsDHT.RoutingTable().NearestPeers(kb.ID(kb.ConvertKey(rvID)), FaultToleranceFactor)
+
+	for _, ID := range closestIDs {
+		if kb.Closer(selfID, ID, rvID) {
+			validAlt = append(validAlt, ID)
+		}
+	}
+
+	return validAlt
 }
 
 type ForwardSubRequest struct {
