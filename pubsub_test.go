@@ -150,7 +150,6 @@ func TestAproxRealSubscriptionScenario(t *testing.T) {
 		} else {
 			err2 = ps.MySubscribe("tesla T/stock T/value R 500 800")
 		}
-
 		if err1 != nil || err2 != nil {
 			t.Fatal("Error Subscribing in mass")
 		}

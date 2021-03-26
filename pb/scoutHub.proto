@@ -28,6 +28,7 @@ message Event {
     string predicate = 1;
     string rvId = 2;
     string event = 3;
+    string backup = 4;
 }
 
 message Update {
