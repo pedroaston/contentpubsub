@@ -548,14 +548,8 @@ func (ps *PubSub) forwardSub(dialAddr string, sub *pb.Subscription) {
 
 	if !ack.State || err != nil {
 		alternatives := ps.alternativesToRv(sub.RvId)
-		for _, ID := range alternatives {
-			attrAddr := ps.ipfsDHT.FindLocal(ID).Addrs[0]
-			if attrAddr != nil {
-				aux := strings.Split(attrAddr.String(), "/")
-				dialAddr = aux[2] + ":4" + aux[4][1:]
-			}
-
-			conn, err := grpc.Dial(dialAddr, grpc.WithInsecure())
+		for _, addr := range alternatives {
+			conn, err := grpc.Dial(addr, grpc.WithInsecure())
 			if err != nil {
 				log.Fatalf("fail to dial: %v", err)
 			}
@@ -588,14 +582,8 @@ func (ps *PubSub) forwardEventUp(dialAddr string, event *pb.Event) {
 
 	if !ack.State || err != nil {
 		alternatives := ps.alternativesToRv(event.RvId)
-		for _, ID := range alternatives {
-			attrAddr := ps.ipfsDHT.FindLocal(ID).Addrs[0]
-			if attrAddr != nil {
-				aux := strings.Split(attrAddr.String(), "/")
-				dialAddr = aux[2] + ":4" + aux[4][1:]
-			}
-
-			conn, err := grpc.Dial(dialAddr, grpc.WithInsecure())
+		for _, addr := range alternatives {
+			conn, err := grpc.Dial(addr, grpc.WithInsecure())
 			if err != nil {
 				log.Fatalf("fail to dial: %v", err)
 			}
@@ -612,7 +600,6 @@ func (ps *PubSub) forwardEventUp(dialAddr string, event *pb.Event) {
 
 // forwardEventDown is called upon receiving the request to keep forward a event downwards
 // until it finds all subscribers by calling a notify operation towards them
-// TODO >> to complete when implementing Fault-Tolerance
 func (ps *PubSub) forwardEventDown(dialAddr string, event *pb.Event, originalRoute string) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
@@ -661,15 +648,20 @@ func (ps *PubSub) rendezvousSelfCheck(rvID string) (bool, peer.ID) {
 }
 
 // alternativesToRv checks for alternative ways to reach RV
-func (ps *PubSub) alternativesToRv(rvID string) []peer.ID {
+func (ps *PubSub) alternativesToRv(rvID string) []string {
 
-	var validAlt []peer.ID
+	var validAlt []string
 	selfID := ps.ipfsDHT.PeerID()
 	closestIDs := ps.ipfsDHT.RoutingTable().NearestPeers(kb.ID(kb.ConvertKey(rvID)), FaultToleranceFactor)
 
 	for _, ID := range closestIDs {
 		if kb.Closer(selfID, ID, rvID) {
-			validAlt = append(validAlt, ID)
+			attrAddr := ps.ipfsDHT.FindLocal(ID).Addrs[0]
+			if attrAddr != nil {
+				aux := strings.Split(attrAddr.String(), "/")
+				addr := aux[2] + ":4" + aux[4][1:]
+				validAlt = append(validAlt, addr)
+			}
 		}
 	}
 
