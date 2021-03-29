@@ -2,6 +2,7 @@ package contentpubsub
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -127,6 +128,33 @@ func TestSubscriptionForwarding(t *testing.T) {
 	}
 
 	time.Sleep(time.Second)
+}
+
+// TestSimpleFaultTolerance just tries to show the system
+// working with failures in different situations
+func TestSimpleFaultTolerance(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	defer cancel()
+
+	dhts := setupDHTS(t, ctx, 5)
+
+	connect(t, ctx, dhts[0], dhts[1])
+	connect(t, ctx, dhts[1], dhts[2])
+	connect(t, ctx, dhts[2], dhts[3])
+	connect(t, ctx, dhts[2], dhts[4])
+
+	fmt.Println("Start Tolerance Test!")
+	var pubsubs [5]*PubSub
+	for i, dht := range dhts {
+		pubsubs[i] = NewPubSub(dht)
+		fmt.Println(dht.PeerID())
+	}
+
+	pubsubs[0].MySubscribe("portugal T")
+	time.Sleep(time.Second)
+	pubsubs[4].MyPublish("valmitão tem as melhores marolas do mundo!", "portugal T")
+	time.Sleep(time.Second)
+
 }
 
 // TestAproxRealSubscriptionScenario with 100 peers randomly connected to

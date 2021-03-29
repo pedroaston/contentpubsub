@@ -21,7 +21,7 @@ import (
 	"google.golang.org/grpc"
 )
 
-// FaultToleranceFactor >> number of backups (TODO)
+// FaultToleranceFactor >> number of backups
 // MaxAttributesPerSub >> maximum allowed number of attributes per predicate (TODO)
 // SubRefreshRateMin >> frequency in which a subscriber needs to resub in minutes
 const (
@@ -70,7 +70,6 @@ func NewPubSub(dht *kaddht.IpfsDHT) *PubSub {
 		tablesLock:          &sync.RWMutex{},
 	}
 
-	// Need to understand why this randomly gives problems
 	ps.ipfsDHT = dht
 	ps.myBackups = ps.getBackups()
 
@@ -93,7 +92,6 @@ func NewPubSub(dht *kaddht.IpfsDHT) *PubSub {
 }
 
 // Subscribe is a remote function called by a external peer to send subscriptions
-// TODO >> need to build a reliable version
 func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack, error) {
 	fmt.Print("Subscribe: ")
 	fmt.Println(ps.ipfsDHT.PeerID())
@@ -111,7 +109,6 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 	ps.currentFilterTable.routes[sub.PeerID].backups = aux
 	ps.currentFilterTable.routes[sub.PeerID].routeLock.Unlock()
 
-	// Need to change to read/write Lock
 	ps.tablesLock.RLock()
 	ps.currentFilterTable.routes[sub.PeerID].SimpleAddSummarizedFilter(p)
 	alreadyDone, pNew := ps.nextFilterTable.routes[sub.PeerID].SimpleAddSummarizedFilter(p)
@@ -158,7 +155,6 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 }
 
 // updateBackup sends the new version of the filter table to the backup
-// TODO >> this should be a group of strings not structs because of grpc
 func (ps *PubSub) UpdateBackup(ctx context.Context, update *pb.Update) (*pb.Ack, error) {
 
 	p, err := NewPredicate(update.Predicate)
@@ -178,7 +174,6 @@ func (ps *PubSub) UpdateBackup(ctx context.Context, update *pb.Update) (*pb.Ack,
 }
 
 // Publish is a remote function called by a external peer to send an Event upstream
-// TODO >> need to build a reliable version
 func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error) {
 	fmt.Print("Publish: ")
 	fmt.Println(ps.ipfsDHT.PeerID())
@@ -211,6 +206,11 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 
 	ps.tablesLock.RLock()
 	for next, route := range ps.currentFilterTable.routes {
+		fmt.Println("Apenas para evitar erro de transicao de grpc! A remover ...")
+		if next == event.LastHop {
+			break
+		}
+
 		if route.IsInterested(p) {
 			var dialAddr string
 			nextID, err := peer.Decode(next)
@@ -238,6 +238,8 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 
 // Notify is a remote function called by a external peer to send an Event downstream
 func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) {
+	fmt.Print("Notify: ")
+	fmt.Println(ps.ipfsDHT.PeerID())
 
 	p, err := NewPredicate(event.Predicate)
 	if err != nil {
@@ -396,7 +398,6 @@ func (ps *PubSub) MySubscribe(info string) error {
 
 // updateMyBackups basically sends updates rpcs to its backups
 // to update their versions of his filter table
-// TODO >> Need to implement the case where one/more backup is down
 func (ps *PubSub) updateMyBackups(route string, info string) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
@@ -465,6 +466,7 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 			Event:     data,
 			Predicate: info,
 			RvId:      attr.name,
+			LastHop:   peer.Encode(ps.ipfsDHT.PeerID()),
 			Backup:    "",
 		}
 
@@ -553,7 +555,6 @@ func (ps *PubSub) getBackups() []string {
 
 // forwardSub is called upon finishing the processing a
 // received subscription that needs forwarding
-// TODO >> to complete when implementing Fault-Tolerance
 func (ps *PubSub) forwardSub(dialAddr string, sub *pb.Subscription) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
@@ -600,6 +601,7 @@ func (ps *PubSub) forwardEventUp(dialAddr string, event *pb.Event) {
 	defer conn.Close()
 
 	client := pb.NewScoutHubClient(conn)
+	event.LastHop = peer.Encode(ps.ipfsDHT.PeerID())
 	ack, err := client.Publish(ctx, event)
 
 	if !ack.State || err != nil {
@@ -634,6 +636,7 @@ func (ps *PubSub) forwardEventDown(dialAddr string, event *pb.Event, originalRou
 	defer conn.Close()
 
 	client := pb.NewScoutHubClient(conn)
+	event.LastHop = peer.Encode(ps.ipfsDHT.PeerID())
 	ack, err := client.Notify(ctx, event)
 
 	if !ack.State || err != nil {
@@ -647,7 +650,6 @@ func (ps *PubSub) forwardEventDown(dialAddr string, event *pb.Event, originalRou
 
 			client := pb.NewScoutHubClient(conn)
 			ack, err := client.Notify(ctx, event)
-
 			if ack.State && err == nil {
 				break
 			}
@@ -712,7 +714,9 @@ func (ps *PubSub) processLoop() {
 		case pid := <-ps.eventsToForwardDown:
 			ps.forwardEventDown(pid.dialAddr, pid.event, pid.originalRoute)
 		case pid := <-ps.interestingEvents:
-			fmt.Println("Received: " + pid)
+			fmt.Println("Received Event at: ")
+			fmt.Println(ps.ipfsDHT.PeerID())
+			fmt.Println(">> " + pid)
 		}
 	}
 }
