@@ -302,7 +302,6 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 
 // MySubscribe subscribes to certain event(s) and saves
 // it in myFilters for further resubing operations
-// TODO >> instead of fetching only the nearest he needs to fetch f nearest (FT)
 func (ps *PubSub) MySubscribe(info string) error {
 	fmt.Print("MySubscribe: ")
 	fmt.Println(ps.ipfsDHT.PeerID())
@@ -376,7 +375,20 @@ func (ps *PubSub) MySubscribe(info string) error {
 
 	ack, err := client.Subscribe(ctx, sub)
 	if err != nil || !ack.State {
-		return errors.New("Failed Subscription")
+		alternatives := ps.alternativesToRv(sub.RvId)
+		for _, addr := range alternatives {
+			conn, err := grpc.Dial(addr, grpc.WithInsecure())
+			if err != nil {
+				log.Fatalf("fail to dial: %v", err)
+			}
+			defer conn.Close()
+
+			client := pb.NewScoutHubClient(conn)
+			ack, err := client.Subscribe(ctx, sub)
+			if ack.State && err == nil {
+				break
+			}
+		}
 	}
 
 	return nil
@@ -434,7 +446,6 @@ func (ps *PubSub) MyUnsubscribe(info string) error {
 // Data is the message we want to publish and info is the representative
 // predicate of that event data. The publish operation is made towards all
 // attributes rendezvous in order find the way to all subscribers
-// TODO >> instead of fetching only the nearest he needs to fetch f nearest (FT)
 func (ps *PubSub) MyPublish(data string, info string) error {
 	fmt.Print("MyPublish: ")
 	fmt.Println(ps.ipfsDHT.PeerID())
@@ -503,9 +514,20 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 
 		ack, err := client.Publish(ctx, event)
 		if err != nil || !ack.State {
-			fmt.Println("Error: ")
-			fmt.Println(err)
-			return errors.New("Failed Publishing towards: " + attr.name)
+			alternatives := ps.alternativesToRv(event.RvId)
+			for _, addr := range alternatives {
+				conn, err := grpc.Dial(addr, grpc.WithInsecure())
+				if err != nil {
+					log.Fatalf("fail to dial: %v", err)
+				}
+				defer conn.Close()
+
+				client := pb.NewScoutHubClient(conn)
+				ack, err := client.Publish(ctx, event)
+				if ack.State && err == nil {
+					break
+				}
+			}
 		}
 	}
 
