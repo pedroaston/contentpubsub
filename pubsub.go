@@ -33,6 +33,7 @@ const (
 // PubSub data structure
 type PubSub struct {
 	pb.UnimplementedScoutHubServer
+	server *grpc.Server
 
 	ipfsDHT *kaddht.IpfsDHT
 
@@ -46,6 +47,7 @@ type PubSub struct {
 	subsToForward       chan *ForwardSubRequest
 	eventsToForwardUp   chan *ForwardEvent
 	eventsToForwardDown chan *ForwardEvent
+	terminate           chan string
 
 	tablesLock *sync.RWMutex
 }
@@ -67,6 +69,7 @@ func NewPubSub(dht *kaddht.IpfsDHT) *PubSub {
 		subsToForward:       make(chan *ForwardSubRequest, 2*len(filterTable.routes)),
 		eventsToForwardUp:   make(chan *ForwardEvent, 2*len(filterTable.routes)),
 		eventsToForwardDown: make(chan *ForwardEvent, 2*len(filterTable.routes)),
+		terminate:           make(chan string),
 		tablesLock:          &sync.RWMutex{},
 	}
 
@@ -82,9 +85,9 @@ func NewPubSub(dht *kaddht.IpfsDHT) *PubSub {
 		return nil
 	}
 
-	grpcServer := grpc.NewServer()
-	pb.RegisterScoutHubServer(grpcServer, ps)
-	go grpcServer.Serve(lis)
+	ps.server = grpc.NewServer()
+	pb.RegisterScoutHubServer(ps.server, ps)
+	go ps.server.Serve(lis)
 	go ps.processLoop()
 	go ps.refreshingProtocol()
 
@@ -206,9 +209,8 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 
 	ps.tablesLock.RLock()
 	for next, route := range ps.currentFilterTable.routes {
-		fmt.Println("Apenas para evitar erro de transicao de grpc! A remover ...")
 		if next == event.LastHop {
-			break
+			continue
 		}
 
 		if route.IsInterested(p) {
@@ -703,24 +705,6 @@ type ForwardEvent struct {
 	event         *pb.Event
 }
 
-// processLopp
-func (ps *PubSub) processLoop() {
-	for {
-		select {
-		case pid := <-ps.subsToForward:
-			ps.forwardSub(pid.dialAddr, pid.sub)
-		case pid := <-ps.eventsToForwardUp:
-			ps.forwardEventUp(pid.dialAddr, pid.event)
-		case pid := <-ps.eventsToForwardDown:
-			ps.forwardEventDown(pid.dialAddr, pid.event, pid.originalRoute)
-		case pid := <-ps.interestingEvents:
-			fmt.Println("Received Event at: ")
-			fmt.Println(ps.ipfsDHT.PeerID())
-			fmt.Println(">> " + pid)
-		}
-	}
-}
-
 // heartbeatProtocol is the routine responsible to
 // refresh periodically the subscriptions of a peer
 // and the filterTables after 2 subs refreshings
@@ -747,5 +731,30 @@ func (ps *PubSub) refreshingProtocol() {
 		ps.currentFilterTable = ps.nextFilterTable
 		ps.nextFilterTable = NewFilterTable(ps.ipfsDHT)
 		ps.tablesLock.Unlock()
+	}
+}
+
+func (ps *PubSub) Terminate() {
+	ps.terminate <- "end"
+	ps.server.GracefulStop()
+}
+
+// processLopp
+func (ps *PubSub) processLoop() {
+	for {
+		select {
+		case pid := <-ps.subsToForward:
+			ps.forwardSub(pid.dialAddr, pid.sub)
+		case pid := <-ps.eventsToForwardUp:
+			ps.forwardEventUp(pid.dialAddr, pid.event)
+		case pid := <-ps.eventsToForwardDown:
+			ps.forwardEventDown(pid.dialAddr, pid.event, pid.originalRoute)
+		case pid := <-ps.interestingEvents:
+			fmt.Println("Received Event at: ")
+			fmt.Println(ps.ipfsDHT.PeerID())
+			fmt.Println(">> " + pid)
+		case <-ps.terminate:
+			return
+		}
 	}
 }
