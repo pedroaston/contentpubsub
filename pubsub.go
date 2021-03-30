@@ -52,6 +52,8 @@ type PubSub struct {
 	terminate           chan string
 
 	tablesLock *sync.RWMutex
+
+	managedGroups []*MulticastGroup
 }
 
 // NewPubSub initializes the PubSub's data structure
@@ -760,4 +762,16 @@ func (ps *PubSub) processLoop() {
 			return
 		}
 	}
+}
+
+func (ps *PubSub) CreateMulticastGroup(info string) error {
+
+	p, err := NewPredicate(info)
+	if err != nil {
+		return err
+	}
+
+	ps.managedGroups = append(ps.managedGroups, NewMulticastGroup(p))
+
+	return nil
 }
