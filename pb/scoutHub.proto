@@ -35,5 +35,6 @@ message Event {
 message Update {
     string sender = 1;
     string route = 2;
-    string predicate = 3;
+    string routeAddr = 3;
+    string predicate = 4;
 }

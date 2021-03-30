@@ -152,6 +152,10 @@ func TestSimpleFaultTolerance(t *testing.T) {
 
 	pubsubs[0].MySubscribe("portugal T")
 	time.Sleep(time.Second)
+
+	pubsubs[1].Terminate()
+	time.Sleep(time.Second)
+
 	pubsubs[4].MyPublish("valmitão tem as melhores marolas do mundo!", "portugal T")
 	time.Sleep(time.Second)
 

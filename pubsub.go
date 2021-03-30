@@ -40,8 +40,10 @@ type PubSub struct {
 	currentFilterTable *FilterTable
 	nextFilterTable    *FilterTable
 	myFilters          *RouteStats
-	myBackups          []string
-	myBackupsFilters   map[string]*FilterTable
+
+	myBackups        []string
+	myBackupsFilters map[string]*FilterTable
+	mapBackupAddr    map[string]string
 
 	interestingEvents   chan string
 	subsToForward       chan *ForwardSubRequest
@@ -65,6 +67,7 @@ func NewPubSub(dht *kaddht.IpfsDHT) *PubSub {
 		nextFilterTable:     auxFilterTable,
 		myFilters:           mySubs,
 		myBackupsFilters:    make(map[string]*FilterTable),
+		mapBackupAddr:       make(map[string]string),
 		interestingEvents:   make(chan string),
 		subsToForward:       make(chan *ForwardSubRequest, 2*len(filterTable.routes)),
 		eventsToForwardUp:   make(chan *ForwardEvent, 2*len(filterTable.routes)),
@@ -172,6 +175,7 @@ func (ps *PubSub) UpdateBackup(ctx context.Context, update *pb.Update) (*pb.Ack,
 	}
 
 	ps.myBackupsFilters[update.Sender].routes[update.Route].SimpleAddSummarizedFilter(p)
+	ps.mapBackupAddr[update.Route] = update.RouteAddr
 
 	return &pb.Ack{State: true, Info: ""}, nil
 }
@@ -230,7 +234,7 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 				dialAddr = aux[2] + ":4" + aux[4][1:]
 			}
 
-			ps.eventsToForwardDown <- &ForwardEvent{dialAddr: dialAddr, event: event}
+			ps.eventsToForwardDown <- &ForwardEvent{dialAddr: dialAddr, event: event, originalRoute: next}
 		}
 	}
 	ps.tablesLock.RUnlock()
@@ -272,30 +276,16 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 					dialAddr = aux[2] + ":4" + aux[4][1:]
 				}
 
-				ps.eventsToForwardDown <- &ForwardEvent{dialAddr: dialAddr, event: event}
+				ps.eventsToForwardDown <- &ForwardEvent{dialAddr: dialAddr, event: event, originalRoute: next}
 			}
 		}
 	} else {
-		event.Backup = ""
 		for next, route := range ps.myBackupsFilters[event.Backup].routes {
 			if route.IsInterested(p) {
-				var dialAddr string
-				nextID, err := peer.Decode(next)
-				if err != nil {
-					ps.tablesLock.RUnlock()
-					return &pb.Ack{State: false, Info: "decoding failed"}, err
-				}
+				event.Backup = ""
 
-				nextAddr := ps.ipfsDHT.FindLocal(nextID).Addrs[0]
-				if nextAddr == nil {
-					ps.tablesLock.RUnlock()
-					return &pb.Ack{State: false, Info: "No address for next hop peer"}, nil
-				} else {
-					aux := strings.Split(nextAddr.String(), "/")
-					dialAddr = aux[2] + ":4" + aux[4][1:]
-				}
-
-				ps.eventsToForwardDown <- &ForwardEvent{dialAddr: dialAddr, event: event}
+				nextAddr := ps.mapBackupAddr[next]
+				ps.eventsToForwardDown <- &ForwardEvent{dialAddr: nextAddr, event: event}
 			}
 		}
 	}
@@ -412,10 +402,23 @@ func (ps *PubSub) updateMyBackups(route string, info string) error {
 		}
 		defer conn.Close()
 
+		routeID, err := peer.Decode(route)
+		if err != nil {
+			return err
+		}
+
+		var routeAddr string
+		addr := ps.ipfsDHT.FindLocal(routeID).Addrs[0]
+		if addr != nil {
+			aux := strings.Split(addr.String(), "/")
+			routeAddr = aux[2] + ":4" + aux[4][1:]
+		}
+
 		client := pb.NewScoutHubClient(conn)
 		update := &pb.Update{
 			Sender:    peer.Encode(ps.ipfsDHT.PeerID()),
 			Route:     route,
+			RouteAddr: routeAddr,
 			Predicate: info,
 		}
 
@@ -571,7 +574,7 @@ func (ps *PubSub) forwardSub(dialAddr string, sub *pb.Subscription) {
 	client := pb.NewScoutHubClient(conn)
 	ack, err := client.Subscribe(ctx, sub)
 
-	if !ack.State || err != nil {
+	if err != nil || !ack.State {
 		alternatives := ps.alternativesToRv(sub.RvId)
 		for _, addr := range alternatives {
 			conn, err := grpc.Dial(addr, grpc.WithInsecure())
@@ -606,7 +609,7 @@ func (ps *PubSub) forwardEventUp(dialAddr string, event *pb.Event) {
 	event.LastHop = peer.Encode(ps.ipfsDHT.PeerID())
 	ack, err := client.Publish(ctx, event)
 
-	if !ack.State || err != nil {
+	if err != nil || !ack.State {
 		alternatives := ps.alternativesToRv(event.RvId)
 		for _, addr := range alternatives {
 			conn, err := grpc.Dial(addr, grpc.WithInsecure())
@@ -641,9 +644,9 @@ func (ps *PubSub) forwardEventDown(dialAddr string, event *pb.Event, originalRou
 	event.LastHop = peer.Encode(ps.ipfsDHT.PeerID())
 	ack, err := client.Notify(ctx, event)
 
-	if !ack.State || err != nil {
+	if err != nil || !ack.State {
 		event.Backup = originalRoute
-		for _, backup := range ps.currentFilterTable.routes[originalRoute].backups {
+		for _, backup := range ps.currentFilterTable.routes[originalRoute].backups { // TAGME
 			conn, err := grpc.Dial(backup, grpc.WithInsecure())
 			if err != nil {
 				log.Fatalf("fail to dial: %v", err)
@@ -736,7 +739,7 @@ func (ps *PubSub) refreshingProtocol() {
 
 func (ps *PubSub) Terminate() {
 	ps.terminate <- "end"
-	ps.server.GracefulStop()
+	ps.server.Stop()
 }
 
 // processLopp
