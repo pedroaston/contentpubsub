@@ -764,6 +764,8 @@ func (ps *PubSub) processLoop() {
 	}
 }
 
+// CreateMulticastGroup
+// Proto Version
 func (ps *PubSub) CreateMulticastGroup(info string) error {
 
 	p, err := NewPredicate(info)
@@ -772,6 +774,32 @@ func (ps *PubSub) CreateMulticastGroup(info string) error {
 	}
 
 	ps.managedGroups = append(ps.managedGroups, NewMulticastGroup(p))
+
+	return nil
+}
+
+// CloseMulticastGroup
+// Proto Version
+func (ps *PubSub) CloseMulticastGroup(info string) error {
+
+	return nil
+}
+
+// MyPremiumSubscribe
+// Proto Version
+func (ps *PubSub) MyPremiumSubscribe(info string) error {
+
+	return nil
+}
+
+// MyPremiumUnsubscribe
+// Proto Version
+func (ps *PubSub) MyPremiumUnsubscribe(info string) error {
+
+	return nil
+}
+
+func (ps *PubSub) PremiumPublish(info string, event string) error {
 
 	return nil
 }

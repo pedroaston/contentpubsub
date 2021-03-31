@@ -25,6 +25,7 @@ func NewMulticastGroup(p *Predicate) *MulticastGroup {
 }
 
 type SubData struct {
+	pred      *Predicate
 	addr      string
 	capacity  int
 	region    string

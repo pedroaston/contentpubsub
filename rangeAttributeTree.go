@@ -1,73 +1,118 @@
 package contentpubsub
 
-import "fmt"
+type Node struct {
+	subs       []*SubData
+	upperLimit int
+	lowerLimit int
+	left       *Node
+	right      *Node
+}
 
-type bstnode struct {
-	value int
-	left  *bstnode
-	right *bstnode
+// NewNode
+// Test-Approval-Required
+func NewNode(upperLimit int, lowerLimit int) *Node {
+
+	n := &Node{
+		upperLimit: upperLimit,
+		lowerLimit: lowerLimit,
+	}
+
+	if n.lowerLimit == n.upperLimit {
+		return n
+	}
+
+	localCap := n.upperLimit - n.lowerLimit
+	n.left = NewNode(n.lowerLimit+localCap/2, n.lowerLimit)
+	n.right = NewNode(n.upperLimit, n.lowerLimit+localCap/2+1)
+
+	return n
+}
+
+// InsertSub
+// Test-Approval-Required
+func (n *Node) InsertSub(upper int, lower int, sub *SubData) {
+
+	localCap := n.upperLimit - n.lowerLimit
+	if upper >= n.upperLimit && lower <= n.lowerLimit {
+		n.subs = append(n.subs, sub)
+	} else {
+		if upper <= n.lowerLimit+localCap/2 {
+			n.left.InsertSub(upper, lower, sub)
+		}
+		if lower >= n.lowerLimit+localCap/2+1 {
+			n.right.InsertSub(upper, lower, sub)
+		}
+	}
+}
+
+func (n *Node) GetSubsOfEvent(value int) []*SubData {
+
+	localCap := n.upperLimit - n.lowerLimit
+	if n.left == nil {
+		return n.subs
+	} else if value <= n.lowerLimit+localCap/2 {
+		return append(n.subs, n.left.GetSubsOfEvent(value)...)
+	} else {
+		return append(n.subs, n.left.GetSubsOfEvent(value)...)
+	}
+
 }
 
 type RangeAttributeTree struct {
-	root *bstnode
+	root       *Node
+	attrname   string
+	upperValue int
+	lowerValue int
 }
 
-func (b *RangeAttributeTree) reset() {
-	b.root = nil
-}
+// NewRangeAttributeTree
+// Test-Approval-Required
+func NewRangeAttributeTree(attr *Attribute) *RangeAttributeTree {
 
-func (b *RangeAttributeTree) insert(value int) {
-	b.insertRec(b.root, value)
-}
+	size := attr.rangeQuery[1] - attr.rangeQuery[0] + 1
+	cap := 2
 
-func (b *RangeAttributeTree) insertRec(node *bstnode, value int) *bstnode {
-	if b.root == nil {
-		b.root = &bstnode{
-			value: value,
+	for {
+		if cap >= size {
+			break
 		}
-		return b.root
+
+		cap = cap * 2
 	}
-	if node == nil {
-		return &bstnode{value: value}
+
+	rt := &RangeAttributeTree{
+		attrname:   attr.name,
+		lowerValue: attr.rangeQuery[0],
+		upperValue: attr.rangeQuery[1],
 	}
-	if value <= node.value {
-		node.left = b.insertRec(node.left, value)
-	}
-	if value > node.value {
-		node.right = b.insertRec(node.right, value)
-	}
-	return node
+
+	rt.root = NewNode(cap-1, 0)
+
+	return rt
 }
 
-func (b *RangeAttributeTree) find(value int) error {
-	node := b.findRec(b.root, value)
-	if node == nil {
-		return fmt.Errorf("Value: %d not found in tree", value)
+// AddSubToTree
+// Test-Approval-Required
+func (rt *RangeAttributeTree) AddSubToTree(sub *SubData) {
+
+	var upper, lower int
+
+	if sub.pred.attributes[rt.attrname].rangeQuery[1] >= rt.upperValue {
+		upper = rt.upperValue
+	} else {
+		upper = sub.pred.attributes[rt.attrname].rangeQuery[1] - rt.lowerValue
 	}
-	return nil
+
+	if sub.pred.attributes[rt.attrname].rangeQuery[0] <= rt.lowerValue {
+		lower = 0
+	} else {
+		lower = sub.pred.attributes[rt.attrname].rangeQuery[0] - rt.lowerValue
+	}
+
+	rt.root.InsertSub(upper, lower, sub)
 }
 
-func (b *RangeAttributeTree) findRec(node *bstnode, value int) *bstnode {
-	if node == nil {
-		return nil
-	}
-	if node.value == value {
-		return b.root
-	}
-	if value < node.value {
-		return b.findRec(node.left, value)
-	}
-	return b.findRec(node.right, value)
-}
+func (rt *RangeAttributeTree) GetInterestedSubs(value int) []*SubData {
 
-func (b *RangeAttributeTree) inorder() {
-	b.inorderRec(b.root)
-}
-
-func (b *RangeAttributeTree) inorderRec(node *bstnode) {
-	if node != nil {
-		b.inorderRec(node.left)
-		fmt.Println(node.value)
-		b.inorderRec(node.right)
-	}
+	return rt.root.GetSubsOfEvent(value)
 }
