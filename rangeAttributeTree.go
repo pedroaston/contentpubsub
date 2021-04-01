@@ -1,5 +1,7 @@
 package contentpubsub
 
+import "fmt"
+
 type Node struct {
 	subs       []*SubData
 	upperLimit int
@@ -32,14 +34,14 @@ func NewNode(upperLimit int, lowerLimit int) *Node {
 // Test-Approval-Required
 func (n *Node) InsertSub(upper int, lower int, sub *SubData) {
 
-	localCap := n.upperLimit - n.lowerLimit
+	localCap := n.upperLimit - n.lowerLimit + 1
 	if upper >= n.upperLimit && lower <= n.lowerLimit {
 		n.subs = append(n.subs, sub)
 	} else {
-		if upper <= n.lowerLimit+localCap/2 {
+		if lower <= n.lowerLimit+localCap/2-1 {
 			n.left.InsertSub(upper, lower, sub)
 		}
-		if lower >= n.lowerLimit+localCap/2+1 {
+		if upper >= n.lowerLimit+localCap/2 {
 			n.right.InsertSub(upper, lower, sub)
 		}
 	}
@@ -47,13 +49,17 @@ func (n *Node) InsertSub(upper int, lower int, sub *SubData) {
 
 func (n *Node) GetSubsOfEvent(value int) []*SubData {
 
-	localCap := n.upperLimit - n.lowerLimit
+	fmt.Println("Entrou")
+	fmt.Println(n.lowerLimit)
+	fmt.Println(n.upperLimit)
+
+	localCap := n.upperLimit - n.lowerLimit + 1
 	if n.left == nil {
 		return n.subs
-	} else if value <= n.lowerLimit+localCap/2 {
+	} else if value <= n.lowerLimit+localCap/2-1 {
 		return append(n.subs, n.left.GetSubsOfEvent(value)...)
 	} else {
-		return append(n.subs, n.left.GetSubsOfEvent(value)...)
+		return append(n.subs, n.right.GetSubsOfEvent(value)...)
 	}
 
 }
@@ -114,5 +120,5 @@ func (rt *RangeAttributeTree) AddSubToTree(sub *SubData) {
 
 func (rt *RangeAttributeTree) GetInterestedSubs(value int) []*SubData {
 
-	return rt.root.GetSubsOfEvent(value)
+	return rt.root.GetSubsOfEvent(value - rt.lowerValue)
 }
