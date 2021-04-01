@@ -17,6 +17,8 @@ func PrintRT(n *Node) {
 	}
 }
 
+// TestAddSubsToTreeAndRead tests if the adding function works properly
+// as also the process to return the interested subs of a event
 func TestAddSubsToTreeAndRead(t *testing.T) {
 
 	attr := &Attribute{

@@ -3,6 +3,7 @@ package contentpubsub
 type MulticastGroup struct {
 	predicate  *Predicate
 	subByPlace map[string]map[string]*SubRegionData
+	trackHelp  []*HelperTracker
 	attrTrees  map[string]*RangeAttributeTree
 }
 
@@ -38,6 +39,11 @@ type SubRegionData struct {
 	helpers  []*SubData
 }
 
+type HelperTracker struct {
+	helper        *SubData
+	subsDelegated []*SubData
+}
+
 // addSubToSubRegion
 // Proto Version
 func (sr *SubRegionData) addSubToSubRegion(sub *SubData) {
@@ -48,9 +54,10 @@ func (sr *SubRegionData) addSubToSubRegion(sub *SubData) {
 
 // addSubToGroup
 // Proto Version
-func (mg *MulticastGroup) addSubToGroup(addr string, cap int, region string, subRegion string) {
+func (mg *MulticastGroup) addSubToGroup(addr string, cap int, region string, subRegion string, pred *Predicate) {
 
 	sub := &SubData{
+		pred:      pred,
 		addr:      addr,
 		capacity:  cap,
 		region:    region,
@@ -58,4 +65,10 @@ func (mg *MulticastGroup) addSubToGroup(addr string, cap int, region string, sub
 	}
 
 	mg.subByPlace[region][subRegion].addSubToSubRegion(sub)
+
+	for _, attr := range sub.pred.attributes {
+		if attr.attrType == Range {
+			mg.attrTrees[attr.name].AddSubToTree(sub)
+		}
+	}
 }

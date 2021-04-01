@@ -1,7 +1,5 @@
 package contentpubsub
 
-import "fmt"
-
 type Node struct {
 	subs       []*SubData
 	upperLimit int
@@ -10,8 +8,7 @@ type Node struct {
 	right      *Node
 }
 
-// NewNode
-// Test-Approval-Required
+// NewNode creates a node on the attributeTree with a certain range
 func NewNode(upperLimit int, lowerLimit int) *Node {
 
 	n := &Node{
@@ -30,8 +27,8 @@ func NewNode(upperLimit int, lowerLimit int) *Node {
 	return n
 }
 
-// InsertSub
-// Test-Approval-Required
+// InsertSub inserts a sub to all the nodes that he should be
+// recursively throught the tree
 func (n *Node) InsertSub(upper int, lower int, sub *SubData) {
 
 	localCap := n.upperLimit - n.lowerLimit + 1
@@ -47,11 +44,8 @@ func (n *Node) InsertSub(upper int, lower int, sub *SubData) {
 	}
 }
 
+// GetSubsOfEvent returns all subs by calling recursivelly the function
 func (n *Node) GetSubsOfEvent(value int) []*SubData {
-
-	fmt.Println("Entrou")
-	fmt.Println(n.lowerLimit)
-	fmt.Println(n.upperLimit)
 
 	localCap := n.upperLimit - n.lowerLimit + 1
 	if n.left == nil {
@@ -71,8 +65,7 @@ type RangeAttributeTree struct {
 	lowerValue int
 }
 
-// NewRangeAttributeTree
-// Test-Approval-Required
+// NewRangeAttributeTree creates a range attribute tree with a certain range
 func NewRangeAttributeTree(attr *Attribute) *RangeAttributeTree {
 
 	size := attr.rangeQuery[1] - attr.rangeQuery[0] + 1
@@ -97,8 +90,7 @@ func NewRangeAttributeTree(attr *Attribute) *RangeAttributeTree {
 	return rt
 }
 
-// AddSubToTree
-// Test-Approval-Required
+// AddSubToTree adds a sub to the tree translating the attribute values for tree insertion
 func (rt *RangeAttributeTree) AddSubToTree(sub *SubData) {
 
 	var upper, lower int
@@ -118,6 +110,7 @@ func (rt *RangeAttributeTree) AddSubToTree(sub *SubData) {
 	rt.root.InsertSub(upper, lower, sub)
 }
 
+// GetInterestedSubs
 func (rt *RangeAttributeTree) GetInterestedSubs(value int) []*SubData {
 
 	return rt.root.GetSubsOfEvent(value - rt.lowerValue)
