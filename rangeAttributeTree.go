@@ -58,6 +58,12 @@ func (n *Node) GetSubsOfEvent(value int) []*SubData {
 
 }
 
+// DeleteSubsFromNode
+// INCOMPLETE
+func (n *Node) DeleteSubFromNode(sub *SubData) {
+
+}
+
 type RangeAttributeTree struct {
 	root       *Node
 	attrname   string
@@ -90,6 +96,11 @@ func NewRangeAttributeTree(attr *Attribute) *RangeAttributeTree {
 	return rt
 }
 
+// AddSubToTreeRoot
+func (rt *RangeAttributeTree) AddSubToTreeRoot(sub *SubData) {
+	rt.root.subs = append(rt.root.subs, sub)
+}
+
 // AddSubToTree adds a sub to the tree translating the attribute values for tree insertion
 func (rt *RangeAttributeTree) AddSubToTree(sub *SubData) {
 
@@ -114,4 +125,10 @@ func (rt *RangeAttributeTree) AddSubToTree(sub *SubData) {
 func (rt *RangeAttributeTree) GetInterestedSubs(value int) []*SubData {
 
 	return rt.root.GetSubsOfEvent(value - rt.lowerValue)
+}
+
+// DeleteSubFromTree
+func (rt *RangeAttributeTree) DeleteSubFromTree(sub *SubData) {
+
+	rt.root.DeleteSubFromNode(sub)
 }
