@@ -1,5 +1,7 @@
 package contentpubsub
 
+import "sort"
+
 const (
 	MaxSubsPerRegion  = 5
 	PowerSubsPoolSize = 2
@@ -38,6 +40,12 @@ type SubData struct {
 	region    string
 	subRegion string
 }
+
+type ByCapacity []*SubData
+
+func (a ByCapacity) Len() int           { return len(a) }
+func (a ByCapacity) Less(i, j int) bool { return a[i].capacity < a[j].capacity }
+func (a ByCapacity) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 
 type SubRegionData struct {
 	subs     []*SubData
@@ -84,27 +92,31 @@ func (mg *MulticastGroup) addSubToGroup(addr string, cap int, region string, sub
 		if subReg.unhelped+1 > MaxSubsPerRegion {
 			candidate := subReg.subs[0]
 			var indexCutter int
-			if candidate.capacity > subReg.unhelped-PowerSubsPoolSize {
+			if candidate.capacity > subReg.unhelped-PowerSubsPoolSize+1 {
 				indexCutter = PowerSubsPoolSize
 			} else {
-				indexCutter = subReg.unhelped - candidate.capacity
+				indexCutter = subReg.unhelped - candidate.capacity + 1
 			}
 
 			// TODO >> Starts remote process that needs confirmation
 			RecruitHelper(candidate, append(subReg.subs[indexCutter:], sub))
 			subReg.helpers = append(subReg.helpers, candidate)
+			toDelegate := append(subReg.subs[indexCutter+1:], sub)
 			subReg.subs = subReg.subs[1:indexCutter]
 			subReg.unhelped = len(subReg.subs)
 			mg.trackHelp[candidate.addr] = &HelperTracker{
 				helper:        candidate,
-				subsDelegated: append(subReg.subs[indexCutter:], sub),
-				remainCap:     candidate.capacity - len(append(subReg.subs[indexCutter:], sub)),
+				subsDelegated: toDelegate,
+				remainCap:     candidate.capacity - len(toDelegate),
 			}
-			// TODO >> remove subs from attrtrees
+
+			for _, sub := range append(toDelegate, candidate) {
+				mg.RemoveFromRangeTrees(sub)
+			}
 
 		} else {
-			// TODO >> need to maintain order in list
 			subReg.subs = append(subReg.subs, sub)
+			sort.Sort(ByCapacity(subReg.subs))
 			subReg.unhelped++
 			mg.AddToRangeTrees(sub)
 		}
@@ -139,4 +151,40 @@ func (mg *MulticastGroup) AddToRangeTrees(sub *SubData) {
 			tree.AddSubToTree(sub)
 		}
 	}
+}
+
+// RemoveFromRangeTrees
+func (mg *MulticastGroup) RemoveFromRangeTrees(sub *SubData) {
+	for attr, tree := range mg.attrTrees {
+		if _, ok := sub.pred.attributes[attr]; !ok {
+			tree.RemoveSubFromTreeRoot(sub)
+		} else {
+			tree.DeleteSubFromTree(sub)
+		}
+	}
+}
+
+// PublishEvent
+// INCOMPLETE
+func (mg *MulticastGroup) PublishEvent(p *Predicate, data string) {
+	var interested []*SubData = nil
+	for attr, tree := range mg.attrTrees {
+		if interested == nil {
+			interested = tree.GetInterestedSubs(p.attributes[attr].rangeQuery[0])
+		} else {
+			plus := tree.GetInterestedSubs(p.attributes[attr].rangeQuery[0])
+			aux := interested
+			interested = nil
+			for _, sub1 := range aux {
+				for _, sub2 := range plus {
+					if sub1.addr == sub2.addr {
+						interested = append(interested, sub1)
+					}
+				}
+			}
+		}
+	}
+
+	// TODO >> Send to all subs in interested
+
 }

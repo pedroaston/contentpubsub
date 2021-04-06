@@ -764,6 +764,8 @@ func (ps *PubSub) processLoop() {
 	}
 }
 
+// ++++++++++++++++++++++++ Fast-Delivery ++++++++++++++++++++++++ //
+
 // CreateMulticastGroup
 // Proto Version
 func (ps *PubSub) CreateMulticastGroup(info string) error {

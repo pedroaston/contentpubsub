@@ -59,9 +59,32 @@ func (n *Node) GetSubsOfEvent(value int) []*SubData {
 }
 
 // DeleteSubsFromNode
-// INCOMPLETE
-func (n *Node) DeleteSubFromNode(sub *SubData) {
-
+// UNTESTED
+func (n *Node) DeleteSubFromNode(upper int, lower int, sub *SubData) {
+	localCap := n.upperLimit - n.lowerLimit + 1
+	if upper >= n.upperLimit && lower <= n.lowerLimit {
+		for i := 0; i < len(n.subs); i++ {
+			if n.subs[i].addr == sub.addr {
+				if i == 0 && len(n.subs) == 1 {
+					n.subs = nil
+				} else if i == 0 {
+					n.subs = n.subs[1:]
+				} else if len(n.subs) == i+1 {
+					n.subs = n.subs[:i-1]
+				} else {
+					n.subs = append(n.subs[:i-1], n.subs[i+1:]...)
+					i--
+				}
+			}
+		}
+	} else {
+		if lower <= n.lowerLimit+localCap/2-1 {
+			n.left.DeleteSubFromNode(upper, lower, sub)
+		}
+		if upper >= n.lowerLimit+localCap/2 {
+			n.right.DeleteSubFromNode(upper, lower, sub)
+		}
+	}
 }
 
 type RangeAttributeTree struct {
@@ -101,6 +124,24 @@ func (rt *RangeAttributeTree) AddSubToTreeRoot(sub *SubData) {
 	rt.root.subs = append(rt.root.subs, sub)
 }
 
+// RemoveSubFromTreeRoot
+func (rt *RangeAttributeTree) RemoveSubFromTreeRoot(sub *SubData) {
+	for i := 0; i < len(rt.root.subs); i++ {
+		if rt.root.subs[i].addr == sub.addr {
+			if i == 0 && len(rt.root.subs) == 1 {
+				rt.root.subs = nil
+			} else if i == 0 {
+				rt.root.subs = rt.root.subs[1:]
+			} else if len(rt.root.subs) == i+1 {
+				rt.root.subs = rt.root.subs[:i-1]
+			} else {
+				rt.root.subs = append(rt.root.subs[:i-1], rt.root.subs[i+1:]...)
+				i--
+			}
+		}
+	}
+}
+
 // AddSubToTree adds a sub to the tree translating the attribute values for tree insertion
 func (rt *RangeAttributeTree) AddSubToTree(sub *SubData) {
 
@@ -128,7 +169,22 @@ func (rt *RangeAttributeTree) GetInterestedSubs(value int) []*SubData {
 }
 
 // DeleteSubFromTree
+// UNTESTED
 func (rt *RangeAttributeTree) DeleteSubFromTree(sub *SubData) {
 
-	rt.root.DeleteSubFromNode(sub)
+	var upper, lower int
+
+	if sub.pred.attributes[rt.attrname].rangeQuery[1] >= rt.upperValue {
+		upper = rt.upperValue
+	} else {
+		upper = sub.pred.attributes[rt.attrname].rangeQuery[1] - rt.lowerValue
+	}
+
+	if sub.pred.attributes[rt.attrname].rangeQuery[0] <= rt.lowerValue {
+		lower = 0
+	} else {
+		lower = sub.pred.attributes[rt.attrname].rangeQuery[0] - rt.lowerValue
+	}
+
+	rt.root.DeleteSubFromNode(upper, lower, sub)
 }
