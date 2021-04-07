@@ -33,7 +33,8 @@ const (
 // PubSub data structure
 type PubSub struct {
 	pb.UnimplementedScoutHubServer
-	server *grpc.Server
+	server     *grpc.Server
+	serverAddr string
 
 	ipfsDHT *kaddht.IpfsDHT
 
@@ -54,6 +55,7 @@ type PubSub struct {
 	tablesLock *sync.RWMutex
 
 	managedGroups []*MulticastGroup
+	subbedGroups  []*SubGroupView
 }
 
 // NewPubSub initializes the PubSub's data structure
@@ -90,6 +92,7 @@ func NewPubSub(dht *kaddht.IpfsDHT) *PubSub {
 		return nil
 	}
 
+	ps.serverAddr = dialAddr
 	ps.server = grpc.NewServer()
 	pb.RegisterScoutHubServer(ps.server, ps)
 	go ps.server.Serve(lis)
@@ -648,7 +651,7 @@ func (ps *PubSub) forwardEventDown(dialAddr string, event *pb.Event, originalRou
 
 	if err != nil || !ack.State {
 		event.Backup = originalRoute
-		for _, backup := range ps.currentFilterTable.routes[originalRoute].backups { // TAGME
+		for _, backup := range ps.currentFilterTable.routes[originalRoute].backups {
 			conn, err := grpc.Dial(backup, grpc.WithInsecure())
 			if err != nil {
 				log.Fatalf("fail to dial: %v", err)
@@ -768,9 +771,9 @@ func (ps *PubSub) processLoop() {
 
 // CreateMulticastGroup
 // Proto Version
-func (ps *PubSub) CreateMulticastGroup(info string) error {
+func (ps *PubSub) CreateMulticastGroup(pred string) error {
 
-	p, err := NewPredicate(info)
+	p, err := NewPredicate(pred)
 	if err != nil {
 		return err
 	}
@@ -788,20 +791,102 @@ func (ps *PubSub) CloseMulticastGroup(info string) error {
 }
 
 // MyPremiumSubscribe
-// Proto Version
-func (ps *PubSub) MyPremiumSubscribe(info string) error {
+func (ps *PubSub) MyPremiumSubscribe(info string, pubAddr string, pubPredicate string) error {
 
-	return nil
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	defer cancel()
+
+	pubP, err := NewPredicate(pubPredicate)
+	if err != nil {
+		return err
+	}
+
+	conn, err := grpc.Dial(pubAddr, grpc.WithInsecure())
+	if err != nil {
+		log.Fatalf("fail to dial: %v", err)
+	}
+	defer conn.Close()
+
+	sub := &pb.PremiumSubscription{
+		OwnPredicate: info,
+		PubPredicate: pubPredicate,
+		Addr:         ps.serverAddr,
+	}
+
+	client := pb.NewScoutHubClient(conn)
+	ack, err := client.PremiumSubscribe(ctx, sub)
+	if ack.State && err == nil {
+		subG := &SubGroupView{
+			predicate: pubP,
+			helping:   false,
+		}
+
+		ps.subbedGroups = append(ps.subbedGroups, subG)
+
+		return nil
+	} else {
+		return errors.New("Failed MyPremiumSubscribe")
+	}
 }
 
 // MyPremiumUnsubscribe
-// Proto Version
+// INCOMPLETE
 func (ps *PubSub) MyPremiumUnsubscribe(info string) error {
 
 	return nil
 }
 
-func (ps *PubSub) PremiumPublish(info string, event string) error {
+// MyPremiumPublish
+// INCOMPLETE
+func (ps *PubSub) MyPremiumPublish(info string, event string) error {
 
 	return nil
+}
+
+// PremiumSubscribe
+// INCOMPLETE
+func (ps *PubSub) PremiumSubscribe(ctx context.Context, sub *pb.PremiumSubscription) (*pb.Ack, error) {
+
+	pubP, err := NewPredicate(sub.PubPredicate)
+	if err != nil {
+		return err
+	}
+	subP, err := NewPredicate(sub.OwnPredicate)
+	if err != nil {
+		return err
+	}
+
+	for _, mg := range ps.managedGroups {
+		if mg.predicate.Equal(pubP) {
+			// TODO >> Need to complete the PremiumSubscription Message
+			subData := &SubData{
+				pred: subP,
+				addr: sub.Addr,
+			}
+			mg.addSubToGroup()
+		}
+	}
+
+	return &pb.Ack{State: true, Info: ""}, nil
+}
+
+// PremiumPublish
+// INCOMPLETE
+func (ps *PubSub) PremiumPublish(ctx context.Context, event *pb.PremiumEvent) (*pb.Ack, error) {
+
+	return &pb.Ack{State: true, Info: ""}, nil
+}
+
+// RequestHelp
+// INCOMPLETE
+func (ps *PubSub) RequestHelp(ctx context.Context, req *pb.HelpRequest) (*pb.Ack, error) {
+
+	return &pb.Ack{State: true, Info: ""}, nil
+}
+
+// DelegateSubToHelper
+// INCOMPLETE
+func (ps *PubSub) DelegateSubToHelper(ctx context.Context, sub *pb.MinimalSubData) (*pb.Ack, error) {
+
+	return &pb.Ack{State: true, Info: ""}, nil
 }

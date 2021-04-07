@@ -185,6 +185,12 @@ func (mg *MulticastGroup) PublishEvent(p *Predicate, data string) {
 		}
 	}
 
-	// TODO >> Send to all subs in interested
+	// TODO >> Send to all subs in interested plus helpers
 
+}
+
+type SubGroupView struct {
+	predicate *Predicate
+	helping   bool
+	attrTrees map[string]*RangeAttributeTree
 }

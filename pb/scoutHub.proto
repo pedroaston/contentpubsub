@@ -9,6 +9,12 @@ service ScoutHub {
     rpc Publish(Event) returns (Ack) {}
     rpc Notify(Event) returns (Ack) {}
     rpc UpdateBackup(Update) returns (Ack) {}
+
+    // Fast-Delivery
+    rpc PremiumSubscribe(PremiumSubscription) returns (Ack) {}
+    rpc PremiumPublish(PremiumEvent) returns (Ack) {}
+    rpc RequestHelp(HelpRequest) returns (Ack) {}
+    rpc DelegateSubToHelper(MinimalSubData) returns (Ack) {}
 }
 
 // Acknowledge response
@@ -37,4 +43,32 @@ message Update {
     string route = 2;
     string routeAddr = 3;
     string predicate = 4;
+}
+
+// Fast-Delivery
+
+message MulticastGroupID {
+    string ownerID = 1;
+    string predicate = 2;
+}
+
+message PremiumEvent {
+    MulticastGroupID groupID = 1;
+    string event = 2;
+}
+
+message PremiumSubscription {
+    string addr = 1;
+    string ownPredicate = 2;
+    string pubPredicate = 3;
+}
+
+message HelpRequest {
+    MulticastGroupID groupID = 1;
+    map<int32, MinimalSubData> subs = 2;
+}
+
+message MinimalSubData {
+    string predicate = 1;
+    string addr = 2;
 }

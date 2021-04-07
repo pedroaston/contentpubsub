@@ -22,6 +22,11 @@ type ScoutHubClient interface {
 	Publish(ctx context.Context, in *Event, opts ...grpc.CallOption) (*Ack, error)
 	Notify(ctx context.Context, in *Event, opts ...grpc.CallOption) (*Ack, error)
 	UpdateBackup(ctx context.Context, in *Update, opts ...grpc.CallOption) (*Ack, error)
+	// Fast-Delivery
+	PremiumSubscribe(ctx context.Context, in *PremiumSubscription, opts ...grpc.CallOption) (*Ack, error)
+	PremiumPublish(ctx context.Context, in *PremiumEvent, opts ...grpc.CallOption) (*Ack, error)
+	RequestHelp(ctx context.Context, in *HelpRequest, opts ...grpc.CallOption) (*Ack, error)
+	DelegateSubToHelper(ctx context.Context, in *MinimalSubData, opts ...grpc.CallOption) (*Ack, error)
 }
 
 type scoutHubClient struct {
@@ -68,6 +73,42 @@ func (c *scoutHubClient) UpdateBackup(ctx context.Context, in *Update, opts ...g
 	return out, nil
 }
 
+func (c *scoutHubClient) PremiumSubscribe(ctx context.Context, in *PremiumSubscription, opts ...grpc.CallOption) (*Ack, error) {
+	out := new(Ack)
+	err := c.cc.Invoke(ctx, "/contentpubsub.pb.ScoutHub/PremiumSubscribe", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *scoutHubClient) PremiumPublish(ctx context.Context, in *PremiumEvent, opts ...grpc.CallOption) (*Ack, error) {
+	out := new(Ack)
+	err := c.cc.Invoke(ctx, "/contentpubsub.pb.ScoutHub/PremiumPublish", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *scoutHubClient) RequestHelp(ctx context.Context, in *HelpRequest, opts ...grpc.CallOption) (*Ack, error) {
+	out := new(Ack)
+	err := c.cc.Invoke(ctx, "/contentpubsub.pb.ScoutHub/RequestHelp", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *scoutHubClient) DelegateSubToHelper(ctx context.Context, in *MinimalSubData, opts ...grpc.CallOption) (*Ack, error) {
+	out := new(Ack)
+	err := c.cc.Invoke(ctx, "/contentpubsub.pb.ScoutHub/DelegateSubToHelper", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ScoutHubServer is the server API for ScoutHub service.
 // All implementations must embed UnimplementedScoutHubServer
 // for forward compatibility
@@ -76,6 +117,11 @@ type ScoutHubServer interface {
 	Publish(context.Context, *Event) (*Ack, error)
 	Notify(context.Context, *Event) (*Ack, error)
 	UpdateBackup(context.Context, *Update) (*Ack, error)
+	// Fast-Delivery
+	PremiumSubscribe(context.Context, *PremiumSubscription) (*Ack, error)
+	PremiumPublish(context.Context, *PremiumEvent) (*Ack, error)
+	RequestHelp(context.Context, *HelpRequest) (*Ack, error)
+	DelegateSubToHelper(context.Context, *MinimalSubData) (*Ack, error)
 	mustEmbedUnimplementedScoutHubServer()
 }
 
@@ -94,6 +140,18 @@ func (UnimplementedScoutHubServer) Notify(context.Context, *Event) (*Ack, error)
 }
 func (UnimplementedScoutHubServer) UpdateBackup(context.Context, *Update) (*Ack, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateBackup not implemented")
+}
+func (UnimplementedScoutHubServer) PremiumSubscribe(context.Context, *PremiumSubscription) (*Ack, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PremiumSubscribe not implemented")
+}
+func (UnimplementedScoutHubServer) PremiumPublish(context.Context, *PremiumEvent) (*Ack, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PremiumPublish not implemented")
+}
+func (UnimplementedScoutHubServer) RequestHelp(context.Context, *HelpRequest) (*Ack, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RequestHelp not implemented")
+}
+func (UnimplementedScoutHubServer) DelegateSubToHelper(context.Context, *MinimalSubData) (*Ack, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DelegateSubToHelper not implemented")
 }
 func (UnimplementedScoutHubServer) mustEmbedUnimplementedScoutHubServer() {}
 
@@ -180,6 +238,78 @@ func _ScoutHub_UpdateBackup_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ScoutHub_PremiumSubscribe_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PremiumSubscription)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ScoutHubServer).PremiumSubscribe(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/contentpubsub.pb.ScoutHub/PremiumSubscribe",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ScoutHubServer).PremiumSubscribe(ctx, req.(*PremiumSubscription))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ScoutHub_PremiumPublish_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PremiumEvent)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ScoutHubServer).PremiumPublish(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/contentpubsub.pb.ScoutHub/PremiumPublish",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ScoutHubServer).PremiumPublish(ctx, req.(*PremiumEvent))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ScoutHub_RequestHelp_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(HelpRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ScoutHubServer).RequestHelp(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/contentpubsub.pb.ScoutHub/RequestHelp",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ScoutHubServer).RequestHelp(ctx, req.(*HelpRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ScoutHub_DelegateSubToHelper_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MinimalSubData)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ScoutHubServer).DelegateSubToHelper(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/contentpubsub.pb.ScoutHub/DelegateSubToHelper",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ScoutHubServer).DelegateSubToHelper(ctx, req.(*MinimalSubData))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ScoutHub_ServiceDesc is the grpc.ServiceDesc for ScoutHub service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -202,6 +332,22 @@ var ScoutHub_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpdateBackup",
 			Handler:    _ScoutHub_UpdateBackup_Handler,
+		},
+		{
+			MethodName: "PremiumSubscribe",
+			Handler:    _ScoutHub_PremiumSubscribe_Handler,
+		},
+		{
+			MethodName: "PremiumPublish",
+			Handler:    _ScoutHub_PremiumPublish_Handler,
+		},
+		{
+			MethodName: "RequestHelp",
+			Handler:    _ScoutHub_RequestHelp_Handler,
+		},
+		{
+			MethodName: "DelegateSubToHelper",
+			Handler:    _ScoutHub_DelegateSubToHelper_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
