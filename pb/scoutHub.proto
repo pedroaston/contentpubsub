@@ -55,6 +55,7 @@ message MulticastGroupID {
 message PremiumEvent {
     MulticastGroupID groupID = 1;
     string event = 2;
+    string eventPred = 3;
 }
 
 message PremiumSubscription {

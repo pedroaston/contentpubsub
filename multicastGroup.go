@@ -20,11 +20,11 @@ type MulticastGroup struct {
 	predicate  *Predicate
 	subByPlace map[string]map[string]*SubRegionData
 	trackHelp  map[string]*HelperTracker
+	helpers    []*SubData
 	attrTrees  map[string]*RangeAttributeTree
 }
 
 // NewMulticastGroup
-// Proto Version
 func NewMulticastGroup(p *Predicate, addr string) *MulticastGroup {
 
 	mg := &MulticastGroup{
@@ -70,7 +70,6 @@ type HelperTracker struct {
 }
 
 // addSubToGroup
-// Proto Version
 func (mg *MulticastGroup) addSubToGroup(addr string, cap int, region string, subRegion string, pred *Predicate) error {
 
 	sub := &SubData{
@@ -175,11 +174,18 @@ func (mg *MulticastGroup) RecruitHelper(helper *SubData, subs []*SubData) error 
 		return err
 	}
 
+	mg.helpers = append(mg.helpers, helper)
+	hT := &HelperTracker{
+		helper:        helper,
+		subsDelegated: subs,
+		remainCap:     helper.capacity - len(subs),
+	}
+	mg.trackHelp[helper.addr] = hT
+
 	return nil
 }
 
 // AddSubToHelper
-// INCOMPLETE
 func (mg *MulticastGroup) AddSubToHelper(sub *SubData, addr string) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
@@ -237,9 +243,8 @@ func (mg *MulticastGroup) RemoveFromRangeTrees(sub *SubData) {
 	}
 }
 
-// PublishEvent
-// INCOMPLETE
-func (mg *MulticastGroup) PublishEvent(p *Predicate, data string) {
+// AddrsToPublishEvent
+func (mg *MulticastGroup) AddrsToPublishEvent(p *Predicate) ([]*SubData, []*SubData) {
 	var interested []*SubData = nil
 	for attr, tree := range mg.attrTrees {
 		if interested == nil {
@@ -258,8 +263,7 @@ func (mg *MulticastGroup) PublishEvent(p *Predicate, data string) {
 		}
 	}
 
-	// TODO >> Send to all subs in interested plus helpers
-
+	return mg.helpers, interested
 }
 
 type SubGroupView struct {
@@ -312,4 +316,27 @@ func (sg *SubGroupView) AddToRangeTrees(sub *SubData) {
 			tree.AddSubToTree(sub)
 		}
 	}
+}
+
+// AddrsToPublishEvent
+func (sg *SubGroupView) AddrsToPublishEvent(p *Predicate) []*SubData {
+	var interested []*SubData = nil
+	for attr, tree := range sg.attrTrees {
+		if interested == nil {
+			interested = tree.GetInterestedSubs(p.attributes[attr].rangeQuery[0])
+		} else {
+			plus := tree.GetInterestedSubs(p.attributes[attr].rangeQuery[0])
+			aux := interested
+			interested = nil
+			for _, sub1 := range aux {
+				for _, sub2 := range plus {
+					if sub1.addr == sub2.addr {
+						interested = append(interested, sub1)
+					}
+				}
+			}
+		}
+	}
+
+	return interested
 }

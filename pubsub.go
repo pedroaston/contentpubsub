@@ -838,7 +838,64 @@ func (ps *PubSub) MyPremiumUnsubscribe(info string) error {
 
 // MyPremiumPublish
 // INCOMPLETE
-func (ps *PubSub) MyPremiumPublish(info string, event string) error {
+func (ps *PubSub) MyPremiumPublish(grpPred string, event string, eventInfo string) error {
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	defer cancel()
+
+	gP, err1 := NewPredicate(grpPred)
+	if err1 != nil {
+		return err1
+	}
+
+	eP, err2 := NewPredicate(eventInfo)
+	if err2 != nil {
+		return err2
+	}
+
+	var helpersAddrs []*SubData
+	var subsAddrs []*SubData
+	for _, grp := range ps.managedGroups {
+		if grp.predicate.Equal(gP) {
+			helpersAddrs, subsAddrs = grp.AddrsToPublishEvent(eP)
+			break
+		}
+	}
+
+	gID := &pb.MulticastGroupID{
+		OwnerAddr: ps.serverAddr,
+		Predicate: grpPred,
+	}
+	premiumE := &pb.PremiumEvent{
+		GroupID:   gID,
+		Event:     event,
+		EventPred: eventInfo,
+	}
+
+	for _, helper := range helpersAddrs {
+		conn, err := grpc.Dial(helper.addr, grpc.WithInsecure())
+		if err != nil {
+			log.Fatalf("fail to dial: %v", err)
+		}
+		defer conn.Close()
+
+		client := pb.NewScoutHubClient(conn)
+		ack, err := client.PremiumPublish(ctx, premiumE)
+		if !ack.State && err != nil {
+			// TODO >> Fault-Tolerance
+		}
+	}
+
+	for _, sub := range subsAddrs {
+		conn, err := grpc.Dial(sub.addr, grpc.WithInsecure())
+		if err != nil {
+			log.Fatalf("fail to dial: %v", err)
+		}
+		defer conn.Close()
+
+		client := pb.NewScoutHubClient(conn)
+		client.PremiumPublish(ctx, premiumE)
+	}
 
 	return nil
 }
@@ -866,8 +923,37 @@ func (ps *PubSub) PremiumSubscribe(ctx context.Context, sub *pb.PremiumSubscript
 }
 
 // PremiumPublish
-// INCOMPLETE
 func (ps *PubSub) PremiumPublish(ctx context.Context, event *pb.PremiumEvent) (*pb.Ack, error) {
+
+	pubP, err := NewPredicate(event.GroupID.Predicate)
+	if err != nil {
+		return &pb.Ack{State: false, Info: ""}, err
+	}
+
+	for _, sg := range ps.subbedGroups {
+		if sg.predicate.Equal(pubP) {
+			if sg.helping {
+				eP, err := NewPredicate(event.EventPred)
+				if err != nil {
+					return &pb.Ack{State: false, Info: ""}, err
+				}
+
+				for _, sub := range sg.AddrsToPublishEvent(eP) {
+					conn, err := grpc.Dial(sub.addr, grpc.WithInsecure())
+					if err != nil {
+						log.Fatalf("fail to dial: %v", err)
+					}
+					defer conn.Close()
+
+					client := pb.NewScoutHubClient(conn)
+					client.PremiumPublish(ctx, event)
+				}
+			}
+
+			ps.interestingEvents <- event.Event
+			break
+		}
+	}
 
 	return &pb.Ack{State: true, Info: ""}, nil
 }
