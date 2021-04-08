@@ -26,7 +26,7 @@ type ScoutHubClient interface {
 	PremiumSubscribe(ctx context.Context, in *PremiumSubscription, opts ...grpc.CallOption) (*Ack, error)
 	PremiumPublish(ctx context.Context, in *PremiumEvent, opts ...grpc.CallOption) (*Ack, error)
 	RequestHelp(ctx context.Context, in *HelpRequest, opts ...grpc.CallOption) (*Ack, error)
-	DelegateSubToHelper(ctx context.Context, in *MinimalSubData, opts ...grpc.CallOption) (*Ack, error)
+	DelegateSubToHelper(ctx context.Context, in *DelegateSub, opts ...grpc.CallOption) (*Ack, error)
 }
 
 type scoutHubClient struct {
@@ -100,7 +100,7 @@ func (c *scoutHubClient) RequestHelp(ctx context.Context, in *HelpRequest, opts 
 	return out, nil
 }
 
-func (c *scoutHubClient) DelegateSubToHelper(ctx context.Context, in *MinimalSubData, opts ...grpc.CallOption) (*Ack, error) {
+func (c *scoutHubClient) DelegateSubToHelper(ctx context.Context, in *DelegateSub, opts ...grpc.CallOption) (*Ack, error) {
 	out := new(Ack)
 	err := c.cc.Invoke(ctx, "/contentpubsub.pb.ScoutHub/DelegateSubToHelper", in, out, opts...)
 	if err != nil {
@@ -121,7 +121,7 @@ type ScoutHubServer interface {
 	PremiumSubscribe(context.Context, *PremiumSubscription) (*Ack, error)
 	PremiumPublish(context.Context, *PremiumEvent) (*Ack, error)
 	RequestHelp(context.Context, *HelpRequest) (*Ack, error)
-	DelegateSubToHelper(context.Context, *MinimalSubData) (*Ack, error)
+	DelegateSubToHelper(context.Context, *DelegateSub) (*Ack, error)
 	mustEmbedUnimplementedScoutHubServer()
 }
 
@@ -150,7 +150,7 @@ func (UnimplementedScoutHubServer) PremiumPublish(context.Context, *PremiumEvent
 func (UnimplementedScoutHubServer) RequestHelp(context.Context, *HelpRequest) (*Ack, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RequestHelp not implemented")
 }
-func (UnimplementedScoutHubServer) DelegateSubToHelper(context.Context, *MinimalSubData) (*Ack, error) {
+func (UnimplementedScoutHubServer) DelegateSubToHelper(context.Context, *DelegateSub) (*Ack, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DelegateSubToHelper not implemented")
 }
 func (UnimplementedScoutHubServer) mustEmbedUnimplementedScoutHubServer() {}
@@ -293,7 +293,7 @@ func _ScoutHub_RequestHelp_Handler(srv interface{}, ctx context.Context, dec fun
 }
 
 func _ScoutHub_DelegateSubToHelper_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(MinimalSubData)
+	in := new(DelegateSub)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -305,7 +305,7 @@ func _ScoutHub_DelegateSubToHelper_Handler(srv interface{}, ctx context.Context,
 		FullMethod: "/contentpubsub.pb.ScoutHub/DelegateSubToHelper",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ScoutHubServer).DelegateSubToHelper(ctx, req.(*MinimalSubData))
+		return srv.(ScoutHubServer).DelegateSubToHelper(ctx, req.(*DelegateSub))
 	}
 	return interceptor(ctx, in, info, handler)
 }

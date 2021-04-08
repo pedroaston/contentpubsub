@@ -156,3 +156,19 @@ func (p *Predicate) TryMergePredicates(pOther *Predicate) (bool, *Predicate) {
 
 	return false, nil
 }
+
+// Equal
+func (p *Predicate) Equal(pred *Predicate) bool {
+	for _, attr := range p.attributes {
+		if _, ok := pred.attributes[attr.name]; !ok {
+			return false
+		} else if attr.attrType == Range && pred.attributes[attr.name].attrType == Range &&
+			attr.rangeQuery[0] != pred.attributes[attr.name].rangeQuery[0] &&
+			attr.rangeQuery[1] != pred.attributes[attr.name].rangeQuery[1] {
+			return false
+		}
+
+	}
+
+	return true
+}

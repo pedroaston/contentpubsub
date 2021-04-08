@@ -770,7 +770,6 @@ func (ps *PubSub) processLoop() {
 // ++++++++++++++++++++++++ Fast-Delivery ++++++++++++++++++++++++ //
 
 // CreateMulticastGroup
-// Proto Version
 func (ps *PubSub) CreateMulticastGroup(pred string) error {
 
 	p, err := NewPredicate(pred)
@@ -778,13 +777,13 @@ func (ps *PubSub) CreateMulticastGroup(pred string) error {
 		return err
 	}
 
-	ps.managedGroups = append(ps.managedGroups, NewMulticastGroup(p))
+	ps.managedGroups = append(ps.managedGroups, NewMulticastGroup(p, ps.serverAddr))
 
 	return nil
 }
 
 // CloseMulticastGroup
-// Proto Version
+// INCOMPLETE
 func (ps *PubSub) CloseMulticastGroup(info string) error {
 
 	return nil
@@ -817,6 +816,7 @@ func (ps *PubSub) MyPremiumSubscribe(info string, pubAddr string, pubPredicate s
 	ack, err := client.PremiumSubscribe(ctx, sub)
 	if ack.State && err == nil {
 		subG := &SubGroupView{
+			pubAddr:   pubAddr,
 			predicate: pubP,
 			helping:   false,
 		}
@@ -844,26 +844,21 @@ func (ps *PubSub) MyPremiumPublish(info string, event string) error {
 }
 
 // PremiumSubscribe
-// INCOMPLETE
 func (ps *PubSub) PremiumSubscribe(ctx context.Context, sub *pb.PremiumSubscription) (*pb.Ack, error) {
 
-	pubP, err := NewPredicate(sub.PubPredicate)
-	if err != nil {
-		return err
+	pubP, err1 := NewPredicate(sub.PubPredicate)
+	if err1 != nil {
+		return &pb.Ack{State: false, Info: ""}, err1
 	}
-	subP, err := NewPredicate(sub.OwnPredicate)
-	if err != nil {
-		return err
+
+	subP, err2 := NewPredicate(sub.OwnPredicate)
+	if err2 != nil {
+		return &pb.Ack{State: false, Info: ""}, err2
 	}
 
 	for _, mg := range ps.managedGroups {
 		if mg.predicate.Equal(pubP) {
-			// TODO >> Need to complete the PremiumSubscription Message
-			subData := &SubData{
-				pred: subP,
-				addr: sub.Addr,
-			}
-			mg.addSubToGroup()
+			mg.addSubToGroup(sub.Addr, int(sub.Cap), sub.Region, sub.SubRegion, subP)
 		}
 	}
 
@@ -878,15 +873,46 @@ func (ps *PubSub) PremiumPublish(ctx context.Context, event *pb.PremiumEvent) (*
 }
 
 // RequestHelp
-// INCOMPLETE
 func (ps *PubSub) RequestHelp(ctx context.Context, req *pb.HelpRequest) (*pb.Ack, error) {
+
+	p, err := NewPredicate(req.GroupID.Predicate)
+	if err != nil {
+		return &pb.Ack{State: false, Info: ""}, err
+	}
+
+	for _, grp := range ps.subbedGroups {
+		if grp.pubAddr == req.GroupID.OwnerAddr && grp.predicate.Equal(p) && !grp.helping {
+			err := grp.SetHasHelper(req)
+			if err != nil {
+				return &pb.Ack{State: false, Info: ""}, err
+			}
+
+			break
+		}
+	}
 
 	return &pb.Ack{State: true, Info: ""}, nil
 }
 
 // DelegateSubToHelper
 // INCOMPLETE
-func (ps *PubSub) DelegateSubToHelper(ctx context.Context, sub *pb.MinimalSubData) (*pb.Ack, error) {
+func (ps *PubSub) DelegateSubToHelper(ctx context.Context, sub *pb.DelegateSub) (*pb.Ack, error) {
+
+	p, err := NewPredicate(sub.GroupID.Predicate)
+	if err != nil {
+		return &pb.Ack{State: false, Info: ""}, err
+	}
+
+	for _, grp := range ps.subbedGroups {
+		if grp.pubAddr == sub.GroupID.OwnerAddr && grp.predicate.Equal(p) && grp.helping {
+			err := grp.AddSub(sub.Sub)
+			if err != nil {
+				return &pb.Ack{State: false, Info: ""}, err
+			}
+
+			break
+		}
+	}
 
 	return &pb.Ack{State: true, Info: ""}, nil
 }

@@ -1,6 +1,14 @@
 package contentpubsub
 
-import "sort"
+import (
+	"context"
+	"log"
+	"sort"
+	"time"
+
+	"github.com/pedroaston/contentpubsub/pb"
+	"google.golang.org/grpc"
+)
 
 const (
 	MaxSubsPerRegion  = 5
@@ -8,6 +16,7 @@ const (
 )
 
 type MulticastGroup struct {
+	selfAddr   string
 	predicate  *Predicate
 	subByPlace map[string]map[string]*SubRegionData
 	trackHelp  map[string]*HelperTracker
@@ -16,9 +25,10 @@ type MulticastGroup struct {
 
 // NewMulticastGroup
 // Proto Version
-func NewMulticastGroup(p *Predicate) *MulticastGroup {
+func NewMulticastGroup(p *Predicate, addr string) *MulticastGroup {
 
 	mg := &MulticastGroup{
+		selfAddr:   addr,
 		predicate:  p,
 		subByPlace: make(map[string]map[string]*SubRegionData),
 		trackHelp:  make(map[string]*HelperTracker),
@@ -59,17 +69,9 @@ type HelperTracker struct {
 	remainCap     int
 }
 
-// addSubToSubRegion
-// Proto Version
-func (sr *SubRegionData) addSubToSubRegion(sub *SubData) {
-
-	sr.subs = append(sr.subs, sub)
-	sr.unhelped++
-}
-
 // addSubToGroup
 // Proto Version
-func (mg *MulticastGroup) addSubToGroup(addr string, cap int, region string, subRegion string, pred *Predicate) {
+func (mg *MulticastGroup) addSubToGroup(addr string, cap int, region string, subRegion string, pred *Predicate) error {
 
 	sub := &SubData{
 		pred:      pred,
@@ -98,8 +100,11 @@ func (mg *MulticastGroup) addSubToGroup(addr string, cap int, region string, sub
 				indexCutter = subReg.unhelped - candidate.capacity + 1
 			}
 
-			// TODO >> Starts remote process that needs confirmation
-			RecruitHelper(candidate, append(subReg.subs[indexCutter:], sub))
+			err := mg.RecruitHelper(candidate, append(subReg.subs[indexCutter:], sub))
+			if err != nil {
+				return err
+			}
+
 			subReg.helpers = append(subReg.helpers, candidate)
 			toDelegate := append(subReg.subs[indexCutter+1:], sub)
 			subReg.subs = subReg.subs[1:indexCutter]
@@ -127,19 +132,87 @@ func (mg *MulticastGroup) addSubToGroup(addr string, cap int, region string, sub
 			mg.attrTrees[attr.name].AddSubToTree(sub)
 		}
 	}
+
+	return nil
 }
 
 // RecruitHelper
-// INCOMPLETE
-func RecruitHelper(helper *SubData, subs []*SubData) error {
+func (mg *MulticastGroup) RecruitHelper(helper *SubData, subs []*SubData) error {
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	defer cancel()
+
+	pubAddr := helper.addr
+	conn, err := grpc.Dial(pubAddr, grpc.WithInsecure())
+	if err != nil {
+		log.Fatalf("fail to dial: %v", err)
+	}
+	defer conn.Close()
+
+	gID := &pb.MulticastGroupID{
+		OwnerAddr: mg.selfAddr,
+		Predicate: mg.predicate.ToString(),
+	}
+
+	var aux map[int32]*pb.MinimalSubData = make(map[int32]*pb.MinimalSubData)
+	for i, sub := range subs {
+		mSub := &pb.MinimalSubData{
+			Addr:      sub.addr,
+			Predicate: sub.pred.ToString(),
+		}
+
+		aux[int32(i)] = mSub
+	}
+
+	req := &pb.HelpRequest{
+		GroupID: gID,
+		Subs:    aux,
+	}
+
+	client := pb.NewScoutHubClient(conn)
+	ack, err := client.RequestHelp(ctx, req)
+	if !ack.State && err != nil {
+		return err
+	}
 
 	return nil
 }
 
 // AddSubToHelper
 // INCOMPLETE
-func (mg *MulticastGroup) AddSubToHelper(sub *SubData, addr string) {
+func (mg *MulticastGroup) AddSubToHelper(sub *SubData, addr string) error {
 
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	defer cancel()
+
+	conn, err := grpc.Dial(addr, grpc.WithInsecure())
+	if err != nil {
+		log.Fatalf("fail to dial: %v", err)
+	}
+	defer conn.Close()
+
+	gID := &pb.MulticastGroupID{
+		OwnerAddr: mg.selfAddr,
+		Predicate: mg.predicate.ToString(),
+	}
+
+	protoSub := &pb.MinimalSubData{
+		Addr:      sub.addr,
+		Predicate: sub.pred.ToString(),
+	}
+
+	help := &pb.DelegateSub{
+		GroupID: gID,
+		Sub:     protoSub,
+	}
+
+	client := pb.NewScoutHubClient(conn)
+	ack, err := client.DelegateSubToHelper(ctx, help)
+	if !ack.State && err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // AddToRangeTrees
@@ -190,7 +263,53 @@ func (mg *MulticastGroup) PublishEvent(p *Predicate, data string) {
 }
 
 type SubGroupView struct {
+	pubAddr   string
 	predicate *Predicate
 	helping   bool
 	attrTrees map[string]*RangeAttributeTree
+}
+
+// SetHasHelper
+func (sg *SubGroupView) SetHasHelper(req *pb.HelpRequest) error {
+
+	sg.helping = true
+	for _, attr := range sg.predicate.attributes {
+		if attr.attrType == Range {
+			sg.attrTrees[attr.name] = &RangeAttributeTree{}
+		}
+	}
+
+	for _, sub := range req.Subs {
+		sg.AddSub(sub)
+	}
+
+	return nil
+}
+
+// AddSub
+func (sg *SubGroupView) AddSub(sub *pb.MinimalSubData) error {
+
+	p, err := NewPredicate(sub.Predicate)
+	if err != nil {
+		return err
+	}
+
+	protoSub := &SubData{
+		addr: sub.Addr,
+		pred: p,
+	}
+	sg.AddToRangeTrees(protoSub)
+
+	return nil
+}
+
+// AddToRangeTrees
+func (sg *SubGroupView) AddToRangeTrees(sub *SubData) {
+	for attr, tree := range sg.attrTrees {
+		if _, ok := sub.pred.attributes[attr]; !ok {
+			tree.AddSubToTreeRoot(sub)
+		} else {
+			tree.AddSubToTree(sub)
+		}
+	}
 }

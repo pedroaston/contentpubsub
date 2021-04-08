@@ -14,7 +14,7 @@ service ScoutHub {
     rpc PremiumSubscribe(PremiumSubscription) returns (Ack) {}
     rpc PremiumPublish(PremiumEvent) returns (Ack) {}
     rpc RequestHelp(HelpRequest) returns (Ack) {}
-    rpc DelegateSubToHelper(MinimalSubData) returns (Ack) {}
+    rpc DelegateSubToHelper(DelegateSub) returns (Ack) {}
 }
 
 // Acknowledge response
@@ -48,7 +48,7 @@ message Update {
 // Fast-Delivery
 
 message MulticastGroupID {
-    string ownerID = 1;
+    string ownerAddr = 1;
     string predicate = 2;
 }
 
@@ -59,13 +59,21 @@ message PremiumEvent {
 
 message PremiumSubscription {
     string addr = 1;
-    string ownPredicate = 2;
-    string pubPredicate = 3;
+    int32 cap = 2;
+    string region = 3;
+    string subRegion = 4;
+    string ownPredicate = 5;
+    string pubPredicate = 6;
 }
 
 message HelpRequest {
     MulticastGroupID groupID = 1;
     map<int32, MinimalSubData> subs = 2;
+}
+
+message DelegateSub {
+    MulticastGroupID groupID = 1;
+    MinimalSubData sub = 2;
 }
 
 message MinimalSubData {
