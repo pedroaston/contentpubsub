@@ -81,8 +81,16 @@ func (mg *MulticastGroup) addSubToGroup(addr string, cap int, region string, sub
 		subRegion: subRegion,
 	}
 
-	subReg := mg.subByPlace[region][subRegion]
+	if _, ok := mg.subByPlace[region]; !ok {
+		subReg := &SubRegionData{unhelped: 0}
+		mg.subByPlace[region] = map[string]*SubRegionData{}
+		mg.subByPlace[region][subRegion] = subReg
+	} else if _, ok := mg.subByPlace[region][subRegion]; !ok {
+		subReg := &SubRegionData{unhelped: 0}
+		mg.subByPlace[region][subRegion] = subReg
+	}
 
+	subReg := mg.subByPlace[region][subRegion]
 	var lastHelper *SubData = nil
 	if len(subReg.helpers) != 0 {
 		lastHelper = subReg.helpers[len(subReg.helpers)-1]
