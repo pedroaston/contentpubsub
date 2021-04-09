@@ -853,11 +853,10 @@ func (ps *PubSub) MyPremiumPublish(grpPred string, event string, eventInfo strin
 		return err2
 	}
 
-	var helpersAddrs []*SubData
-	var subsAddrs []*SubData
+	var mGrp *MulticastGroup
 	for _, grp := range ps.managedGroups {
 		if grp.predicate.Equal(gP) {
-			helpersAddrs, subsAddrs = grp.AddrsToPublishEvent(eP)
+			mGrp = grp
 			break
 		}
 	}
@@ -872,8 +871,9 @@ func (ps *PubSub) MyPremiumPublish(grpPred string, event string, eventInfo strin
 		EventPred: eventInfo,
 	}
 
-	for _, helper := range helpersAddrs {
-		conn, err := grpc.Dial(helper.addr, grpc.WithInsecure())
+	var helperFailedSubs []*SubData
+	for _, tracker := range mGrp.trackHelp {
+		conn, err := grpc.Dial(tracker.helper.addr, grpc.WithInsecure())
 		if err != nil {
 			log.Fatalf("fail to dial: %v", err)
 		}
@@ -882,11 +882,16 @@ func (ps *PubSub) MyPremiumPublish(grpPred string, event string, eventInfo strin
 		client := pb.NewScoutHubClient(conn)
 		ack, err := client.PremiumPublish(ctx, premiumE)
 		if !ack.State && err != nil {
-			// TODO >> Fault-Tolerance
+			helperFailedSubs = append(helperFailedSubs, mGrp.trackHelp[tracker.helper.addr].subsDelegated...)
+			mGrp.StopDelegating(tracker)
 		}
 	}
 
-	for _, sub := range subsAddrs {
+	for _, sub := range helperFailedSubs {
+		mGrp.addSubToGroup(sub.addr, sub.capacity, sub.region, sub.subRegion, sub.pred)
+	}
+
+	for _, sub := range mGrp.AddrsToPublishEvent(eP) {
 		conn, err := grpc.Dial(sub.addr, grpc.WithInsecure())
 		if err != nil {
 			log.Fatalf("fail to dial: %v", err)

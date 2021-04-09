@@ -244,7 +244,7 @@ func (mg *MulticastGroup) RemoveFromRangeTrees(sub *SubData) {
 }
 
 // AddrsToPublishEvent
-func (mg *MulticastGroup) AddrsToPublishEvent(p *Predicate) ([]*SubData, []*SubData) {
+func (mg *MulticastGroup) AddrsToPublishEvent(p *Predicate) []*SubData {
 	var interested []*SubData = nil
 	for attr, tree := range mg.attrTrees {
 		if interested == nil {
@@ -263,7 +263,30 @@ func (mg *MulticastGroup) AddrsToPublishEvent(p *Predicate) ([]*SubData, []*SubD
 		}
 	}
 
-	return mg.helpers, interested
+	return interested
+}
+
+// StopDelegating
+func (mg *MulticastGroup) StopDelegating(tracker *HelperTracker) {
+
+	for i := 0; i < len(mg.subByPlace[tracker.helper.region][tracker.helper.subRegion].helpers); i++ {
+		if mg.subByPlace[tracker.helper.region][tracker.helper.subRegion].helpers[i].addr == tracker.helper.addr {
+			if i == 0 {
+				mg.subByPlace[tracker.helper.region][tracker.helper.subRegion].helpers = mg.subByPlace[tracker.helper.region][tracker.helper.subRegion].helpers[1:]
+			} else if len(mg.subByPlace[tracker.helper.region][tracker.helper.subRegion].helpers) == i+1 {
+				mg.subByPlace[tracker.helper.region][tracker.helper.subRegion].helpers = mg.subByPlace[tracker.helper.region][tracker.helper.subRegion].helpers[:i-1]
+			} else {
+				mg.subByPlace[tracker.helper.region][tracker.helper.subRegion].helpers = append(mg.subByPlace[tracker.helper.region][tracker.helper.subRegion].helpers[:i-1],
+					mg.subByPlace[tracker.helper.region][tracker.helper.subRegion].helpers[i+1:]...)
+			}
+
+			break
+		}
+	}
+
+	mg.trackHelp[tracker.helper.addr] = nil
+	tracker.helper.capacity = 0
+	mg.addSubToGroup(tracker.helper.addr, tracker.helper.capacity, tracker.helper.region, tracker.helper.subRegion, tracker.helper.pred)
 }
 
 type SubGroupView struct {
