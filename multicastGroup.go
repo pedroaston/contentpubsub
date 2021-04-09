@@ -2,6 +2,7 @@ package contentpubsub
 
 import (
 	"context"
+	"errors"
 	"log"
 	"sort"
 	"time"
@@ -129,6 +130,76 @@ func (mg *MulticastGroup) addSubToGroup(addr string, cap int, region string, sub
 	for _, attr := range sub.pred.attributes {
 		if attr.attrType == Range {
 			mg.attrTrees[attr.name].AddSubToTree(sub)
+		}
+	}
+
+	return nil
+}
+
+// RemoveSubFromGroup
+func (mg *MulticastGroup) RemoveSubFromGroup(sub *pb.PremiumSubscription) error {
+
+	for i, s := range mg.subByPlace[sub.Region][sub.SubRegion].subs {
+		if s.addr == sub.Addr {
+			toRemove := s
+			if i == 0 {
+				mg.subByPlace[sub.Region][sub.SubRegion].subs = mg.subByPlace[sub.Region][sub.SubRegion].subs[1:]
+			} else if i+1 == len(mg.subByPlace[sub.Region][sub.SubRegion].subs) {
+				mg.subByPlace[sub.Region][sub.SubRegion].subs = mg.subByPlace[sub.Region][sub.SubRegion].subs[:i-1]
+			} else {
+				mg.subByPlace[sub.Region][sub.SubRegion].subs = append(mg.subByPlace[sub.Region][sub.SubRegion].subs[:i-1],
+					mg.subByPlace[sub.Region][sub.SubRegion].subs[i+1:]...)
+			}
+
+			mg.subByPlace[sub.Region][sub.SubRegion].unhelped--
+			mg.RemoveFromRangeTrees(toRemove)
+			return nil
+		}
+	}
+
+	for _, helper := range mg.trackHelp {
+		if helper.helper.addr == sub.Addr {
+			helperFailedSubs := helper.subsDelegated
+			mg.StopDelegating(helper, false)
+
+			for _, sub := range helperFailedSubs {
+				mg.addSubToGroup(sub.addr, sub.capacity, sub.region, sub.subRegion, sub.pred)
+			}
+
+			return nil
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	defer cancel()
+
+	for _, helper := range mg.subByPlace[sub.Region][sub.SubRegion].helpers {
+		for i, s := range mg.trackHelp[helper.addr].subsDelegated {
+			if s.addr == sub.Addr {
+				conn, err := grpc.Dial(helper.addr, grpc.WithInsecure())
+				if err != nil {
+					log.Fatalf("fail to dial: %v", err)
+				}
+				defer conn.Close()
+
+				client := pb.NewScoutHubClient(conn)
+				ack, err := client.PremiumUnsubscribe(ctx, sub)
+				if !ack.State && err != nil {
+					return errors.New("Failed to PremiumUnsubscribe from helper")
+				}
+
+				if i == 0 {
+					mg.trackHelp[helper.addr].subsDelegated = mg.trackHelp[helper.addr].subsDelegated[1:]
+				} else if i+1 == len(mg.subByPlace[sub.Region][sub.SubRegion].subs) {
+					mg.trackHelp[helper.addr].subsDelegated = mg.trackHelp[helper.addr].subsDelegated[:i-1]
+				} else {
+					mg.trackHelp[helper.addr].subsDelegated = append(mg.trackHelp[helper.addr].subsDelegated[:i-1],
+						mg.trackHelp[helper.addr].subsDelegated[i+1:]...)
+				}
+
+				mg.trackHelp[helper.addr].helper.capacity++
+				return nil
+			}
 		}
 	}
 
@@ -267,7 +338,7 @@ func (mg *MulticastGroup) AddrsToPublishEvent(p *Predicate) []*SubData {
 }
 
 // StopDelegating
-func (mg *MulticastGroup) StopDelegating(tracker *HelperTracker) {
+func (mg *MulticastGroup) StopDelegating(tracker *HelperTracker, add bool) {
 
 	for i := 0; i < len(mg.subByPlace[tracker.helper.region][tracker.helper.subRegion].helpers); i++ {
 		if mg.subByPlace[tracker.helper.region][tracker.helper.subRegion].helpers[i].addr == tracker.helper.addr {
@@ -285,8 +356,11 @@ func (mg *MulticastGroup) StopDelegating(tracker *HelperTracker) {
 	}
 
 	mg.trackHelp[tracker.helper.addr] = nil
-	tracker.helper.capacity = 0
-	mg.addSubToGroup(tracker.helper.addr, tracker.helper.capacity, tracker.helper.region, tracker.helper.subRegion, tracker.helper.pred)
+
+	if add {
+		tracker.helper.capacity = 0
+		mg.addSubToGroup(tracker.helper.addr, tracker.helper.capacity, tracker.helper.region, tracker.helper.subRegion, tracker.helper.pred)
+	}
 }
 
 type SubGroupView struct {
@@ -330,6 +404,23 @@ func (sg *SubGroupView) AddSub(sub *pb.MinimalSubData) error {
 	return nil
 }
 
+// RemoveSub
+func (sg *SubGroupView) RemoveSub(sub *pb.PremiumSubscription) error {
+
+	p, err := NewPredicate(sub.OwnPredicate)
+	if err != nil {
+		return err
+	}
+
+	subData := &SubData{
+		addr: sub.Addr,
+		pred: p,
+	}
+	sg.RemoveFromRangeTrees(subData)
+
+	return nil
+}
+
 // AddToRangeTrees
 func (sg *SubGroupView) AddToRangeTrees(sub *SubData) {
 	for attr, tree := range sg.attrTrees {
@@ -337,6 +428,17 @@ func (sg *SubGroupView) AddToRangeTrees(sub *SubData) {
 			tree.AddSubToTreeRoot(sub)
 		} else {
 			tree.AddSubToTree(sub)
+		}
+	}
+}
+
+// RemoveFromRangeTrees
+func (sg *SubGroupView) RemoveFromRangeTrees(sub *SubData) {
+	for attr, tree := range sg.attrTrees {
+		if _, ok := sub.pred.attributes[attr]; !ok {
+			tree.RemoveSubFromTreeRoot(sub)
+		} else {
+			tree.DeleteSubFromTree(sub)
 		}
 	}
 }

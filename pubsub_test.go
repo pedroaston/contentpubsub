@@ -20,7 +20,7 @@ func TestPubSubServerComms(t *testing.T) {
 
 	var pubsubs [2]*PubSub
 	for i, dht := range dhts {
-		pubsubs[i] = NewPubSub(dht)
+		pubsubs[i] = NewPubSub(dht, "EU", "PT")
 	}
 
 	err := pubsubs[0].MySubscribe("tenis T")
@@ -45,7 +45,7 @@ func TestSimpleUnsubscribing(t *testing.T) {
 
 	var pubsubs [2]*PubSub
 	for i, dht := range dhts {
-		pubsubs[i] = NewPubSub(dht)
+		pubsubs[i] = NewPubSub(dht, "EU", "PT")
 	}
 
 	err := pubsubs[0].MySubscribe("portugal T")
@@ -72,7 +72,7 @@ func TestSimplePublish(t *testing.T) {
 
 	var pubsubs [3]*PubSub
 	for i, dht := range dhts {
-		pubsubs[i] = NewPubSub(dht)
+		pubsubs[i] = NewPubSub(dht, "EU", "PT")
 	}
 
 	pubsubs[0].MySubscribe("portugal T")
@@ -104,7 +104,7 @@ func TestSubscriptionForwarding(t *testing.T) {
 
 	var pubsubs [7]*PubSub
 	for i, dht := range dhts {
-		pubsubs[i] = NewPubSub(dht)
+		pubsubs[i] = NewPubSub(dht, "EU", "PT")
 	}
 
 	err1 := pubsubs[0].MySubscribe("chocolate T")
@@ -146,7 +146,7 @@ func TestSimpleFaultTolerance(t *testing.T) {
 	fmt.Println("Start Tolerance Test!")
 	var pubsubs [5]*PubSub
 	for i, dht := range dhts {
-		pubsubs[i] = NewPubSub(dht)
+		pubsubs[i] = NewPubSub(dht, "EU", "PT")
 		fmt.Println(dht.PeerID())
 	}
 
@@ -172,7 +172,7 @@ func TestAproxRealSubscriptionScenario(t *testing.T) {
 
 	var pubsubs [100]*PubSub
 	for i, dht := range dhts {
-		pubsubs[i] = NewPubSub(dht)
+		pubsubs[i] = NewPubSub(dht, "EU", "PT")
 	}
 
 	var err1, err2 error

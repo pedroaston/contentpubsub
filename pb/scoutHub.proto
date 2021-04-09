@@ -12,6 +12,7 @@ service ScoutHub {
 
     // Fast-Delivery
     rpc PremiumSubscribe(PremiumSubscription) returns (Ack) {}
+    rpc PremiumUnsubscribe(PremiumSubscription) returns (Ack) {}
     rpc PremiumPublish(PremiumEvent) returns (Ack) {}
     rpc RequestHelp(HelpRequest) returns (Ack) {}
     rpc DelegateSubToHelper(DelegateSub) returns (Ack) {}

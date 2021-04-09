@@ -24,6 +24,7 @@ type ScoutHubClient interface {
 	UpdateBackup(ctx context.Context, in *Update, opts ...grpc.CallOption) (*Ack, error)
 	// Fast-Delivery
 	PremiumSubscribe(ctx context.Context, in *PremiumSubscription, opts ...grpc.CallOption) (*Ack, error)
+	PremiumUnsubscribe(ctx context.Context, in *PremiumSubscription, opts ...grpc.CallOption) (*Ack, error)
 	PremiumPublish(ctx context.Context, in *PremiumEvent, opts ...grpc.CallOption) (*Ack, error)
 	RequestHelp(ctx context.Context, in *HelpRequest, opts ...grpc.CallOption) (*Ack, error)
 	DelegateSubToHelper(ctx context.Context, in *DelegateSub, opts ...grpc.CallOption) (*Ack, error)
@@ -82,6 +83,15 @@ func (c *scoutHubClient) PremiumSubscribe(ctx context.Context, in *PremiumSubscr
 	return out, nil
 }
 
+func (c *scoutHubClient) PremiumUnsubscribe(ctx context.Context, in *PremiumSubscription, opts ...grpc.CallOption) (*Ack, error) {
+	out := new(Ack)
+	err := c.cc.Invoke(ctx, "/contentpubsub.pb.ScoutHub/PremiumUnsubscribe", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *scoutHubClient) PremiumPublish(ctx context.Context, in *PremiumEvent, opts ...grpc.CallOption) (*Ack, error) {
 	out := new(Ack)
 	err := c.cc.Invoke(ctx, "/contentpubsub.pb.ScoutHub/PremiumPublish", in, out, opts...)
@@ -119,6 +129,7 @@ type ScoutHubServer interface {
 	UpdateBackup(context.Context, *Update) (*Ack, error)
 	// Fast-Delivery
 	PremiumSubscribe(context.Context, *PremiumSubscription) (*Ack, error)
+	PremiumUnsubscribe(context.Context, *PremiumSubscription) (*Ack, error)
 	PremiumPublish(context.Context, *PremiumEvent) (*Ack, error)
 	RequestHelp(context.Context, *HelpRequest) (*Ack, error)
 	DelegateSubToHelper(context.Context, *DelegateSub) (*Ack, error)
@@ -143,6 +154,9 @@ func (UnimplementedScoutHubServer) UpdateBackup(context.Context, *Update) (*Ack,
 }
 func (UnimplementedScoutHubServer) PremiumSubscribe(context.Context, *PremiumSubscription) (*Ack, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PremiumSubscribe not implemented")
+}
+func (UnimplementedScoutHubServer) PremiumUnsubscribe(context.Context, *PremiumSubscription) (*Ack, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PremiumUnsubscribe not implemented")
 }
 func (UnimplementedScoutHubServer) PremiumPublish(context.Context, *PremiumEvent) (*Ack, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PremiumPublish not implemented")
@@ -256,6 +270,24 @@ func _ScoutHub_PremiumSubscribe_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ScoutHub_PremiumUnsubscribe_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PremiumSubscription)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ScoutHubServer).PremiumUnsubscribe(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/contentpubsub.pb.ScoutHub/PremiumUnsubscribe",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ScoutHubServer).PremiumUnsubscribe(ctx, req.(*PremiumSubscription))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ScoutHub_PremiumPublish_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(PremiumEvent)
 	if err := dec(in); err != nil {
@@ -336,6 +368,10 @@ var ScoutHub_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PremiumSubscribe",
 			Handler:    _ScoutHub_PremiumSubscribe_Handler,
+		},
+		{
+			MethodName: "PremiumUnsubscribe",
+			Handler:    _ScoutHub_PremiumUnsubscribe_Handler,
 		},
 		{
 			MethodName: "PremiumPublish",

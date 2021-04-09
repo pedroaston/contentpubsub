@@ -56,11 +56,13 @@ type PubSub struct {
 
 	managedGroups []*MulticastGroup
 	subbedGroups  []*SubGroupView
+	region        string
+	subRegion     string
 }
 
 // NewPubSub initializes the PubSub's data structure
 // setup the server and starts processloop
-func NewPubSub(dht *kaddht.IpfsDHT) *PubSub {
+func NewPubSub(dht *kaddht.IpfsDHT, region string, subRegion string) *PubSub {
 
 	filterTable := NewFilterTable(dht)
 	auxFilterTable := NewFilterTable(dht)
@@ -78,6 +80,8 @@ func NewPubSub(dht *kaddht.IpfsDHT) *PubSub {
 		eventsToForwardDown: make(chan *ForwardEvent, 2*len(filterTable.routes)),
 		terminate:           make(chan string),
 		tablesLock:          &sync.RWMutex{},
+		region:              region,
+		subRegion:           subRegion,
 	}
 
 	ps.ipfsDHT = dht
@@ -782,13 +786,6 @@ func (ps *PubSub) CreateMulticastGroup(pred string) error {
 	return nil
 }
 
-// CloseMulticastGroup
-// INCOMPLETE
-func (ps *PubSub) CloseMulticastGroup(info string) error {
-
-	return nil
-}
-
 // MyPremiumSubscribe
 func (ps *PubSub) MyPremiumSubscribe(info string, pubAddr string, pubPredicate string) error {
 
@@ -810,6 +807,8 @@ func (ps *PubSub) MyPremiumSubscribe(info string, pubAddr string, pubPredicate s
 		OwnPredicate: info,
 		PubPredicate: pubPredicate,
 		Addr:         ps.serverAddr,
+		Region:       ps.region,
+		SubRegion:    ps.subRegion,
 	}
 
 	client := pb.NewScoutHubClient(conn)
@@ -830,14 +829,50 @@ func (ps *PubSub) MyPremiumSubscribe(info string, pubAddr string, pubPredicate s
 }
 
 // MyPremiumUnsubscribe
-// INCOMPLETE
-func (ps *PubSub) MyPremiumUnsubscribe(info string) error {
+func (ps *PubSub) MyPremiumUnsubscribe(pubPred string, pubAddr string) error {
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	defer cancel()
+
+	pubP, err := NewPredicate(pubPred)
+	if err != nil {
+		return err
+	}
+
+	for i, sG := range ps.subbedGroups {
+		if sG.predicate.Equal(pubP) && sG.pubAddr == pubAddr {
+			conn, err := grpc.Dial(pubAddr, grpc.WithInsecure())
+			if err != nil {
+				log.Fatalf("fail to dial: %v", err)
+			}
+			defer conn.Close()
+
+			protoSub := &pb.PremiumSubscription{
+				Region:    ps.region,
+				SubRegion: ps.subRegion,
+				Addr:      ps.serverAddr,
+			}
+
+			client := pb.NewScoutHubClient(conn)
+			ack, err := client.PremiumUnsubscribe(ctx, protoSub)
+			if !ack.State && err != nil {
+				return errors.New("Failed Unsubscribing")
+			}
+
+			if i == 0 {
+				ps.subbedGroups = ps.subbedGroups[1:]
+			} else if len(ps.subbedGroups) == i+1 {
+				ps.subbedGroups = ps.subbedGroups[:i-1]
+			} else {
+				ps.subbedGroups = append(ps.subbedGroups[:i-1], ps.subbedGroups[i+1:]...)
+			}
+		}
+	}
 
 	return nil
 }
 
 // MyPremiumPublish
-// INCOMPLETE
 func (ps *PubSub) MyPremiumPublish(grpPred string, event string, eventInfo string) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
@@ -883,7 +918,7 @@ func (ps *PubSub) MyPremiumPublish(grpPred string, event string, eventInfo strin
 		ack, err := client.PremiumPublish(ctx, premiumE)
 		if !ack.State && err != nil {
 			helperFailedSubs = append(helperFailedSubs, mGrp.trackHelp[tracker.helper.addr].subsDelegated...)
-			mGrp.StopDelegating(tracker)
+			mGrp.StopDelegating(tracker, true)
 		}
 	}
 
@@ -921,6 +956,31 @@ func (ps *PubSub) PremiumSubscribe(ctx context.Context, sub *pb.PremiumSubscript
 	for _, mg := range ps.managedGroups {
 		if mg.predicate.Equal(pubP) {
 			mg.addSubToGroup(sub.Addr, int(sub.Cap), sub.Region, sub.SubRegion, subP)
+		}
+	}
+
+	return &pb.Ack{State: true, Info: ""}, nil
+}
+
+// PremiumUnsubscribe
+func (ps *PubSub) PremiumUnsubscribe(ctx context.Context, sub *pb.PremiumSubscription) (*pb.Ack, error) {
+
+	pubP, err1 := NewPredicate(sub.PubPredicate)
+	if err1 != nil {
+		return &pb.Ack{State: false, Info: ""}, err1
+	}
+
+	for _, mg := range ps.managedGroups {
+		if mg.predicate.Equal(pubP) {
+			mg.RemoveSubFromGroup(sub)
+			return &pb.Ack{State: true, Info: ""}, nil
+		}
+	}
+
+	for _, sg := range ps.subbedGroups {
+		if sg.predicate.Equal(pubP) {
+			sg.RemoveSub(sub)
+			return &pb.Ack{State: true, Info: ""}, nil
 		}
 	}
 
@@ -986,7 +1046,6 @@ func (ps *PubSub) RequestHelp(ctx context.Context, req *pb.HelpRequest) (*pb.Ack
 }
 
 // DelegateSubToHelper
-// INCOMPLETE
 func (ps *PubSub) DelegateSubToHelper(ctx context.Context, sub *pb.DelegateSub) (*pb.Ack, error) {
 
 	p, err := NewPredicate(sub.GroupID.Predicate)

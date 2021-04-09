@@ -74,8 +74,6 @@ func TestAddSubsToTreeAndRead(t *testing.T) {
 	}
 	rt.AddSubToTree(sub4)
 
-	PrintRT(rt.root)
-
 	if len(rt.root.subs) != 1 {
 		t.Fatal("Error 1")
 	}
@@ -88,12 +86,7 @@ func TestAddSubsToTreeAndRead(t *testing.T) {
 	if len(rt.root.left.left.right.subs) != 1 {
 		t.Fatal("Error 4")
 	}
-
 	if len(rt.GetInterestedSubs(2011)) != 4 {
-		fmt.Println(len(rt.GetInterestedSubs(2011)))
-		for _, sub := range rt.GetInterestedSubs(2011) {
-			fmt.Println(sub.addr)
-		}
 		t.Fatal("Wrong number of interested subs")
 	}
 }
