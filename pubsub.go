@@ -821,6 +821,7 @@ func (ps *PubSub) MyPremiumSubscribe(info string, pubAddr string, pubPredicate s
 			pubAddr:   pubAddr,
 			predicate: pubP,
 			helping:   false,
+			attrTrees: make(map[string]*RangeAttributeTree),
 		}
 
 		ps.subbedGroups = append(ps.subbedGroups, subG)
@@ -901,6 +902,10 @@ func (ps *PubSub) MyPremiumPublish(grpPred string, event string, eventInfo strin
 			mGrp = grp
 			break
 		}
+	}
+
+	if mGrp == nil {
+		return nil
 	}
 
 	gID := &pb.MulticastGroupID{
@@ -1049,7 +1054,6 @@ func (ps *PubSub) RequestHelp(ctx context.Context, req *pb.HelpRequest) (*pb.Ack
 	for _, grp := range ps.subbedGroups {
 		if grp.pubAddr == req.GroupID.OwnerAddr && grp.predicate.Equal(p) && !grp.helping {
 			err := grp.SetHasHelper(req)
-			fmt.Printf("helping >> %d\n", len(grp.simpleList))
 			if err != nil {
 				return &pb.Ack{State: false, Info: ""}, err
 			}
@@ -1063,7 +1067,7 @@ func (ps *PubSub) RequestHelp(ctx context.Context, req *pb.HelpRequest) (*pb.Ack
 
 // DelegateSubToHelper
 func (ps *PubSub) DelegateSubToHelper(ctx context.Context, sub *pb.DelegateSub) (*pb.Ack, error) {
-	fmt.Print("RequestHelp: ")
+	fmt.Print("DelegateSubToHelper: ")
 	fmt.Println(ps.ipfsDHT.PeerID())
 
 	p, err := NewPredicate(sub.GroupID.Predicate)

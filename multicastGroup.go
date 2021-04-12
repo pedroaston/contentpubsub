@@ -34,11 +34,12 @@ func NewMulticastGroup(p *Predicate, addr string) *MulticastGroup {
 		predicate:  p,
 		subByPlace: make(map[string]map[string]*SubRegionData),
 		trackHelp:  make(map[string]*HelperTracker),
+		attrTrees:  make(map[string]*RangeAttributeTree),
 	}
 
 	for _, attr := range p.attributes {
 		if attr.attrType == Range {
-			mg.attrTrees[attr.name] = &RangeAttributeTree{}
+			mg.attrTrees[attr.name] = NewRangeAttributeTree(attr)
 		}
 	}
 
@@ -56,7 +57,7 @@ type SubData struct {
 type ByCapacity []*SubData
 
 func (a ByCapacity) Len() int           { return len(a) }
-func (a ByCapacity) Less(i, j int) bool { return a[i].capacity < a[j].capacity }
+func (a ByCapacity) Less(i, j int) bool { return a[i].capacity > a[j].capacity }
 func (a ByCapacity) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 
 type SubRegionData struct {
@@ -104,7 +105,7 @@ func (mg *MulticastGroup) addSubToGroup(addr string, cap int, region string, sub
 			candidate := subReg.subs[0]
 			var indexCutter int
 			if candidate.capacity > subReg.unhelped-PowerSubsPoolSize+1 {
-				indexCutter = PowerSubsPoolSize
+				indexCutter = PowerSubsPoolSize + 1
 			} else {
 				indexCutter = subReg.unhelped - candidate.capacity + 1
 			}
@@ -115,12 +116,12 @@ func (mg *MulticastGroup) addSubToGroup(addr string, cap int, region string, sub
 			}
 
 			subReg.helpers = append(subReg.helpers, candidate)
-			toDelegate := append(subReg.subs[indexCutter+1:], sub)
+			toDelegate := subReg.subs[indexCutter:]
 			subReg.subs = subReg.subs[1:indexCutter]
 			subReg.unhelped = len(subReg.subs)
 			mg.trackHelp[candidate.addr] = &HelperTracker{
 				helper:        candidate,
-				subsDelegated: toDelegate,
+				subsDelegated: append(toDelegate, sub),
 				remainCap:     candidate.capacity - len(toDelegate),
 			}
 
@@ -343,9 +344,9 @@ func (mg *MulticastGroup) RemoveSubFromList(sub *SubData) {
 			if i == 0 {
 				mg.simpleList = mg.simpleList[1:]
 			} else if i+1 == len(mg.simpleList) {
-				mg.simpleList = mg.simpleList[:i-1]
+				mg.simpleList = mg.simpleList[:i]
 			} else {
-				mg.simpleList = append(mg.simpleList[:i-1], mg.simpleList[i+1:]...)
+				mg.simpleList = append(mg.simpleList[:i], mg.simpleList[i+1:]...)
 			}
 		}
 	}
@@ -419,7 +420,7 @@ func (sg *SubGroupView) SetHasHelper(req *pb.HelpRequest) error {
 	sg.helping = true
 	for _, attr := range sg.predicate.attributes {
 		if attr.attrType == Range {
-			sg.attrTrees[attr.name] = &RangeAttributeTree{}
+			sg.attrTrees[attr.name] = NewRangeAttributeTree(attr)
 		}
 	}
 
@@ -504,9 +505,9 @@ func (sg *SubGroupView) RemoveSubFromList(sub *SubData) {
 			if i == 0 {
 				sg.simpleList = sg.simpleList[1:]
 			} else if i+1 == len(sg.simpleList) {
-				sg.simpleList = sg.simpleList[:i-1]
+				sg.simpleList = sg.simpleList[:i]
 			} else {
-				sg.simpleList = append(sg.simpleList[:i-1], sg.simpleList[i+1:]...)
+				sg.simpleList = append(sg.simpleList[:i], sg.simpleList[i+1:]...)
 			}
 		}
 	}
@@ -514,23 +515,28 @@ func (sg *SubGroupView) RemoveSubFromList(sub *SubData) {
 
 // AddrsToPublishEvent
 func (sg *SubGroupView) AddrsToPublishEvent(p *Predicate) []*SubData {
-	var interested []*SubData = nil
-	for attr, tree := range sg.attrTrees {
-		if interested == nil {
-			interested = tree.GetInterestedSubs(p.attributes[attr].rangeQuery[0])
-		} else {
-			plus := tree.GetInterestedSubs(p.attributes[attr].rangeQuery[0])
-			aux := interested
-			interested = nil
-			for _, sub1 := range aux {
-				for _, sub2 := range plus {
-					if sub1.addr == sub2.addr {
-						interested = append(interested, sub1)
+
+	if len(sg.attrTrees) == 0 {
+		return sg.simpleList
+	} else {
+		var interested []*SubData = nil
+		for attr, tree := range sg.attrTrees {
+			if interested == nil {
+				interested = tree.GetInterestedSubs(p.attributes[attr].rangeQuery[0])
+			} else {
+				plus := tree.GetInterestedSubs(p.attributes[attr].rangeQuery[0])
+				aux := interested
+				interested = nil
+				for _, sub1 := range aux {
+					for _, sub2 := range plus {
+						if sub1.addr == sub2.addr {
+							interested = append(interested, sub1)
+						}
 					}
 				}
 			}
 		}
-	}
 
-	return interested
+		return interested
+	}
 }
