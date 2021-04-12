@@ -23,6 +23,7 @@ type MulticastGroup struct {
 	trackHelp  map[string]*HelperTracker
 	helpers    []*SubData
 	attrTrees  map[string]*RangeAttributeTree
+	simpleList []*SubData
 }
 
 // NewMulticastGroup
@@ -124,13 +125,20 @@ func (mg *MulticastGroup) addSubToGroup(addr string, cap int, region string, sub
 			}
 
 			for _, sub := range append(toDelegate, candidate) {
-				mg.RemoveFromRangeTrees(sub)
+				if len(mg.attrTrees) == 0 {
+					mg.RemoveSubFromList(sub)
+				} else {
+					mg.RemoveFromRangeTrees(sub)
+				}
 			}
 
 		} else {
 			subReg.subs = append(subReg.subs, sub)
 			sort.Sort(ByCapacity(subReg.subs))
 			subReg.unhelped++
+			if len(mg.attrTrees) == 0 {
+				mg.simpleList = append(mg.simpleList, sub)
+			}
 			mg.AddToRangeTrees(sub)
 		}
 	}
@@ -160,7 +168,12 @@ func (mg *MulticastGroup) RemoveSubFromGroup(sub *pb.PremiumSubscription) error 
 			}
 
 			mg.subByPlace[sub.Region][sub.SubRegion].unhelped--
-			mg.RemoveFromRangeTrees(toRemove)
+			if len(mg.attrTrees) == 0 {
+				mg.RemoveSubFromList(toRemove)
+			} else {
+				mg.RemoveFromRangeTrees(toRemove)
+			}
+
 			return nil
 		}
 	}
@@ -322,20 +335,41 @@ func (mg *MulticastGroup) RemoveFromRangeTrees(sub *SubData) {
 	}
 }
 
+// RemoveSubFromList
+func (mg *MulticastGroup) RemoveSubFromList(sub *SubData) {
+
+	for i, s := range mg.simpleList {
+		if s.addr == sub.addr {
+			if i == 0 {
+				mg.simpleList = mg.simpleList[1:]
+			} else if i+1 == len(mg.simpleList) {
+				mg.simpleList = mg.simpleList[:i-1]
+			} else {
+				mg.simpleList = append(mg.simpleList[:i-1], mg.simpleList[i+1:]...)
+			}
+		}
+	}
+}
+
 // AddrsToPublishEvent
 func (mg *MulticastGroup) AddrsToPublishEvent(p *Predicate) []*SubData {
+
 	var interested []*SubData = nil
-	for attr, tree := range mg.attrTrees {
-		if interested == nil {
-			interested = tree.GetInterestedSubs(p.attributes[attr].rangeQuery[0])
-		} else {
-			plus := tree.GetInterestedSubs(p.attributes[attr].rangeQuery[0])
-			aux := interested
-			interested = nil
-			for _, sub1 := range aux {
-				for _, sub2 := range plus {
-					if sub1.addr == sub2.addr {
-						interested = append(interested, sub1)
+	if len(mg.attrTrees) == 0 {
+		return mg.simpleList
+	} else {
+		for attr, tree := range mg.attrTrees {
+			if interested == nil {
+				interested = tree.GetInterestedSubs(p.attributes[attr].rangeQuery[0])
+			} else {
+				plus := tree.GetInterestedSubs(p.attributes[attr].rangeQuery[0])
+				aux := interested
+				interested = nil
+				for _, sub1 := range aux {
+					for _, sub2 := range plus {
+						if sub1.addr == sub2.addr {
+							interested = append(interested, sub1)
+						}
 					}
 				}
 			}
@@ -372,10 +406,11 @@ func (mg *MulticastGroup) StopDelegating(tracker *HelperTracker, add bool) {
 }
 
 type SubGroupView struct {
-	pubAddr   string
-	predicate *Predicate
-	helping   bool
-	attrTrees map[string]*RangeAttributeTree
+	pubAddr    string
+	predicate  *Predicate
+	helping    bool
+	attrTrees  map[string]*RangeAttributeTree
+	simpleList []*SubData
 }
 
 // SetHasHelper
@@ -407,7 +442,12 @@ func (sg *SubGroupView) AddSub(sub *pb.MinimalSubData) error {
 		addr: sub.Addr,
 		pred: p,
 	}
-	sg.AddToRangeTrees(protoSub)
+
+	if len(sg.attrTrees) == 0 {
+		sg.simpleList = append(sg.simpleList, protoSub)
+	} else {
+		sg.AddToRangeTrees(protoSub)
+	}
 
 	return nil
 }
@@ -424,7 +464,12 @@ func (sg *SubGroupView) RemoveSub(sub *pb.PremiumSubscription) error {
 		addr: sub.Addr,
 		pred: p,
 	}
-	sg.RemoveFromRangeTrees(subData)
+
+	if len(sg.attrTrees) == 0 {
+		sg.RemoveSubFromList(subData)
+	} else {
+		sg.RemoveFromRangeTrees(subData)
+	}
 
 	return nil
 }
@@ -447,6 +492,22 @@ func (sg *SubGroupView) RemoveFromRangeTrees(sub *SubData) {
 			tree.RemoveSubFromTreeRoot(sub)
 		} else {
 			tree.DeleteSubFromTree(sub)
+		}
+	}
+}
+
+// RemoveSubFromList
+func (sg *SubGroupView) RemoveSubFromList(sub *SubData) {
+
+	for i, s := range sg.simpleList {
+		if s.addr == sub.addr {
+			if i == 0 {
+				sg.simpleList = sg.simpleList[1:]
+			} else if i+1 == len(sg.simpleList) {
+				sg.simpleList = sg.simpleList[:i-1]
+			} else {
+				sg.simpleList = append(sg.simpleList[:i-1], sg.simpleList[i+1:]...)
+			}
 		}
 	}
 }
