@@ -3,6 +3,7 @@ package contentpubsub
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"sort"
 	"time"
@@ -93,13 +94,9 @@ func (mg *MulticastGroup) addSubToGroup(addr string, cap int, region string, sub
 	}
 
 	subReg := mg.subByPlace[region][subRegion]
-	var lastHelper *SubData = nil
-	if len(subReg.helpers) != 0 {
-		lastHelper = subReg.helpers[len(subReg.helpers)-1]
-
-		if mg.trackHelp[lastHelper.addr].remainCap > 0 {
-			mg.AddSubToHelper(sub, lastHelper.addr)
-		}
+	if len(subReg.helpers) != 0 && mg.trackHelp[subReg.helpers[len(subReg.helpers)-1].addr].remainCap > 0 {
+		lastHelper := subReg.helpers[len(subReg.helpers)-1]
+		mg.AddSubToHelper(sub, lastHelper.addr)
 	} else {
 		if subReg.unhelped+1 > MaxSubsPerRegion {
 			candidate := subReg.subs[0]
@@ -122,7 +119,7 @@ func (mg *MulticastGroup) addSubToGroup(addr string, cap int, region string, sub
 			mg.trackHelp[candidate.addr] = &HelperTracker{
 				helper:        candidate,
 				subsDelegated: append(toDelegate, sub),
-				remainCap:     candidate.capacity - len(toDelegate),
+				remainCap:     candidate.capacity - len(toDelegate) - 1,
 			}
 
 			for _, sub := range append(toDelegate, candidate) {
@@ -141,12 +138,6 @@ func (mg *MulticastGroup) addSubToGroup(addr string, cap int, region string, sub
 				mg.simpleList = append(mg.simpleList, sub)
 			}
 			mg.AddToRangeTrees(sub)
-		}
-	}
-
-	for _, attr := range sub.pred.attributes {
-		if attr.attrType == Range {
-			mg.attrTrees[attr.name].AddSubToTree(sub)
 		}
 	}
 
@@ -234,8 +225,7 @@ func (mg *MulticastGroup) RecruitHelper(helper *SubData, subs []*SubData) error 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()
 
-	pubAddr := helper.addr
-	conn, err := grpc.Dial(pubAddr, grpc.WithInsecure())
+	conn, err := grpc.Dial(helper.addr, grpc.WithInsecure())
 	if err != nil {
 		log.Fatalf("fail to dial: %v", err)
 	}
@@ -248,6 +238,7 @@ func (mg *MulticastGroup) RecruitHelper(helper *SubData, subs []*SubData) error 
 
 	var aux map[int32]*pb.MinimalSubData = make(map[int32]*pb.MinimalSubData)
 	for i, sub := range subs {
+		fmt.Printf("Delegate >> %s\n", sub.addr)
 		mSub := &pb.MinimalSubData{
 			Addr:      sub.addr,
 			Predicate: sub.pred.ToString(),
@@ -261,9 +252,11 @@ func (mg *MulticastGroup) RecruitHelper(helper *SubData, subs []*SubData) error 
 		Subs:    aux,
 	}
 
+	fmt.Printf("RequestHelp: %s\n", helper.addr)
+
 	client := pb.NewScoutHubClient(conn)
 	ack, err := client.RequestHelp(ctx, req)
-	if !ack.State && err != nil {
+	if err != nil || !ack.State {
 		return err
 	}
 
@@ -310,6 +303,9 @@ func (mg *MulticastGroup) AddSubToHelper(sub *SubData, addr string) error {
 	if !ack.State && err != nil {
 		return err
 	}
+
+	mg.trackHelp[addr].subsDelegated = append(mg.trackHelp[addr].subsDelegated, sub)
+	mg.trackHelp[addr].remainCap--
 
 	return nil
 }
@@ -402,7 +398,6 @@ func (mg *MulticastGroup) StopDelegating(tracker *HelperTracker, add bool) {
 
 	if add {
 		tracker.helper.capacity = 0
-		mg.addSubToGroup(tracker.helper.addr, tracker.helper.capacity, tracker.helper.region, tracker.helper.subRegion, tracker.helper.pred)
 	}
 }
 

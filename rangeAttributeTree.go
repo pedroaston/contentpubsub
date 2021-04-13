@@ -1,5 +1,7 @@
 package contentpubsub
 
+import "fmt"
+
 type Node struct {
 	subs       []*SubData
 	upperLimit int
@@ -187,4 +189,16 @@ func (rt *RangeAttributeTree) DeleteSubFromTree(sub *SubData) {
 	}
 
 	rt.root.DeleteSubFromNode(upper, lower, sub)
+}
+
+func PrintRT(n *Node) {
+
+	fmt.Printf("Node >> Lower %d and Upper: %d\n", n.lowerLimit, n.upperLimit)
+	for _, sub := range n.subs {
+		fmt.Println(sub.addr)
+	}
+	if n.left != nil {
+		PrintRT(n.left)
+		PrintRT(n.right)
+	}
 }

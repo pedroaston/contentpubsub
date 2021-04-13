@@ -1,21 +1,8 @@
 package contentpubsub
 
 import (
-	"fmt"
 	"testing"
 )
-
-func PrintRT(n *Node) {
-
-	fmt.Printf("Node >> Lower %d and Upper: %d\n", n.lowerLimit, n.upperLimit)
-	for _, sub := range n.subs {
-		fmt.Println(sub.addr)
-	}
-	if n.left != nil {
-		PrintRT(n.left)
-		PrintRT(n.right)
-	}
-}
 
 // TestAddSubsToTreeAndRead tests if the adding function works properly
 // as also the process to return the interested subs of a event

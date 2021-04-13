@@ -762,8 +762,7 @@ func (ps *PubSub) processLoop() {
 		case pid := <-ps.eventsToForwardDown:
 			ps.forwardEventDown(pid.dialAddr, pid.event, pid.originalRoute)
 		case pid := <-ps.interestingEvents:
-			fmt.Println("Received Event at: ")
-			fmt.Println(ps.ipfsDHT.PeerID())
+			fmt.Printf("Received Event at: %s\n", ps.serverAddr)
 			fmt.Println(">> " + pid)
 		case <-ps.terminate:
 			return
@@ -788,8 +787,7 @@ func (ps *PubSub) CreateMulticastGroup(pred string) error {
 
 // MyPremiumSubscribe
 func (ps *PubSub) MyPremiumSubscribe(info string, pubAddr string, pubPredicate string, cap int) error {
-	fmt.Print("MyPremiumSubscribe: ")
-	fmt.Println(ps.ipfsDHT.PeerID())
+	fmt.Printf("MyPremiumSubscribe: %s\n", ps.serverAddr)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()
@@ -834,8 +832,7 @@ func (ps *PubSub) MyPremiumSubscribe(info string, pubAddr string, pubPredicate s
 
 // MyPremiumUnsubscribe
 func (ps *PubSub) MyPremiumUnsubscribe(pubPred string, pubAddr string) error {
-	fmt.Print("MyPremiumUnsubscribe: ")
-	fmt.Println(ps.ipfsDHT.PeerID())
+	fmt.Printf("MyPremiumUnsubscribe: %s\n", ps.serverAddr)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()
@@ -880,8 +877,7 @@ func (ps *PubSub) MyPremiumUnsubscribe(pubPred string, pubAddr string) error {
 
 // MyPremiumPublish
 func (ps *PubSub) MyPremiumPublish(grpPred string, event string, eventInfo string) error {
-	fmt.Print("MyPremiumPublish: ")
-	fmt.Println(ps.ipfsDHT.PeerID())
+	fmt.Printf("MyPremiumPublish: %s\n", ps.serverAddr)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()
@@ -918,7 +914,7 @@ func (ps *PubSub) MyPremiumPublish(grpPred string, event string, eventInfo strin
 		EventPred: eventInfo,
 	}
 
-	var helperFailedSubs []*SubData
+	var helperFailedSubs []*SubData = nil
 	for _, tracker := range mGrp.trackHelp {
 		conn, err := grpc.Dial(tracker.helper.addr, grpc.WithInsecure())
 		if err != nil {
@@ -928,17 +924,19 @@ func (ps *PubSub) MyPremiumPublish(grpPred string, event string, eventInfo strin
 
 		client := pb.NewScoutHubClient(conn)
 		ack, err := client.PremiumPublish(ctx, premiumE)
-		if !ack.State && err != nil {
+		if err != nil || !ack.State {
 			helperFailedSubs = append(helperFailedSubs, mGrp.trackHelp[tracker.helper.addr].subsDelegated...)
 			mGrp.StopDelegating(tracker, true)
 		}
 	}
 
+	before := len(mGrp.helpers)
 	for _, sub := range helperFailedSubs {
 		mGrp.addSubToGroup(sub.addr, sub.capacity, sub.region, sub.subRegion, sub.pred)
 	}
+	aux := len(mGrp.helpers) - before
 
-	for _, sub := range mGrp.AddrsToPublishEvent(eP) {
+	for _, sub := range append(mGrp.helpers[len(mGrp.helpers)-aux:len(mGrp.helpers)], mGrp.AddrsToPublishEvent(eP)...) {
 		conn, err := grpc.Dial(sub.addr, grpc.WithInsecure())
 		if err != nil {
 			log.Fatalf("fail to dial: %v", err)
@@ -954,8 +952,7 @@ func (ps *PubSub) MyPremiumPublish(grpPred string, event string, eventInfo strin
 
 // PremiumSubscribe
 func (ps *PubSub) PremiumSubscribe(ctx context.Context, sub *pb.PremiumSubscription) (*pb.Ack, error) {
-	fmt.Print("PremiumSubscribe: ")
-	fmt.Println(ps.ipfsDHT.PeerID())
+	fmt.Printf("PremiumSubscribe: %s\n", ps.serverAddr)
 
 	pubP, err1 := NewPredicate(sub.PubPredicate)
 	if err1 != nil {
@@ -978,8 +975,7 @@ func (ps *PubSub) PremiumSubscribe(ctx context.Context, sub *pb.PremiumSubscript
 
 // PremiumUnsubscribe
 func (ps *PubSub) PremiumUnsubscribe(ctx context.Context, sub *pb.PremiumSubscription) (*pb.Ack, error) {
-	fmt.Print("PremiumUnsubscribe: ")
-	fmt.Println(ps.ipfsDHT.PeerID())
+	fmt.Printf("PremiumUnsubscribe: %s\n", ps.serverAddr)
 
 	pubP, err1 := NewPredicate(sub.PubPredicate)
 	if err1 != nil {
@@ -1005,8 +1001,7 @@ func (ps *PubSub) PremiumUnsubscribe(ctx context.Context, sub *pb.PremiumSubscri
 
 // PremiumPublish
 func (ps *PubSub) PremiumPublish(ctx context.Context, event *pb.PremiumEvent) (*pb.Ack, error) {
-	fmt.Print("PremiumPublish: ")
-	fmt.Println(ps.ipfsDHT.PeerID())
+	fmt.Printf("PremiumPublish: %s\n", ps.serverAddr)
 
 	pubP, err := NewPredicate(event.GroupID.Predicate)
 	if err != nil {
@@ -1043,8 +1038,7 @@ func (ps *PubSub) PremiumPublish(ctx context.Context, event *pb.PremiumEvent) (*
 
 // RequestHelp
 func (ps *PubSub) RequestHelp(ctx context.Context, req *pb.HelpRequest) (*pb.Ack, error) {
-	fmt.Print("RequestHelp: ")
-	fmt.Println(ps.ipfsDHT.PeerID())
+	fmt.Printf("RequestHelp: %s\n", ps.serverAddr)
 
 	p, err := NewPredicate(req.GroupID.Predicate)
 	if err != nil {
@@ -1067,8 +1061,7 @@ func (ps *PubSub) RequestHelp(ctx context.Context, req *pb.HelpRequest) (*pb.Ack
 
 // DelegateSubToHelper
 func (ps *PubSub) DelegateSubToHelper(ctx context.Context, sub *pb.DelegateSub) (*pb.Ack, error) {
-	fmt.Print("DelegateSubToHelper: ")
-	fmt.Println(ps.ipfsDHT.PeerID())
+	fmt.Printf("DelegateSubToHelper: %s\n", ps.serverAddr)
 
 	p, err := NewPredicate(sub.GroupID.Predicate)
 	if err != nil {
