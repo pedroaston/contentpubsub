@@ -4,6 +4,18 @@ import (
 	"testing"
 )
 
+func TestPredicateMaxSize(t *testing.T) {
+
+	p, err := NewPredicate("soccer T/portugal T/slb T/stadium T/eusebio T/red T")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(p.attributes) != 5 {
+		t.Fatal()
+	}
+}
+
 // Testing event predicate matching with Sub predicate
 // by analyzing all border scenarios
 func TestPredicateMatching(t *testing.T) {
