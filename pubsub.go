@@ -253,8 +253,7 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 
 // Notify is a remote function called by a external peer to send an Event downstream
 func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) {
-	fmt.Print("Notify: ")
-	fmt.Println(ps.ipfsDHT.PeerID())
+	fmt.Print("Notify: " + ps.serverAddr)
 
 	p, err := NewPredicate(event.Predicate)
 	if err != nil {
@@ -306,8 +305,8 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 // MySubscribe subscribes to certain event(s) and saves
 // it in myFilters for further resubing operations
 func (ps *PubSub) MySubscribe(info string) error {
-	fmt.Print("MySubscribe: ")
-	fmt.Println(ps.ipfsDHT.PeerID())
+	fmt.Println("MySubscribe: " + ps.serverAddr)
+
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()
 
@@ -352,7 +351,7 @@ func (ps *PubSub) MySubscribe(info string) error {
 	closest := ps.ipfsDHT.RoutingTable().NearestPeer(kb.ID(minID))
 	closestAddr := ps.ipfsDHT.FindLocal(closest).Addrs[0]
 	if closestAddr == nil {
-		return errors.New("No address for closest peer")
+		return errors.New("no address for closest peer")
 	} else {
 		aux := strings.Split(closestAddr.String(), "/")
 		dialAddr = aux[2] + ":4" + aux[4][1:]
@@ -462,8 +461,7 @@ func (ps *PubSub) MyUnsubscribe(info string) error {
 // predicate of that event data. The publish operation is made towards all
 // attributes rendezvous in order find the way to all subscribers
 func (ps *PubSub) MyPublish(data string, info string) error {
-	fmt.Print("MyPublish: ")
-	fmt.Println(ps.ipfsDHT.PeerID())
+	fmt.Printf("MyPublish: %s\n", ps.serverAddr)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()
@@ -495,7 +493,7 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 
 				nextAddr := ps.ipfsDHT.FindLocal(nextID).Addrs[0]
 				if nextAddr == nil {
-					return errors.New("no address to send!")
+					return errors.New("no address to send")
 				} else {
 					aux := strings.Split(nextAddr.String(), "/")
 					dialAddr = aux[2] + ":4" + aux[4][1:]
@@ -514,7 +512,7 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 		attrID := ps.ipfsDHT.RoutingTable().NearestPeer(kb.ID(attr.name))
 		attrAddr := ps.ipfsDHT.FindLocal(attrID).Addrs[0]
 		if attrAddr == nil {
-			return errors.New("No address for closest peer")
+			return errors.New("no address for closest peer")
 		} else {
 			aux := strings.Split(attrAddr.String(), "/")
 			dialAddr = aux[2] + ":4" + aux[4][1:]
@@ -826,7 +824,7 @@ func (ps *PubSub) MyPremiumSubscribe(info string, pubAddr string, pubPredicate s
 
 		return nil
 	} else {
-		return errors.New("Failed MyPremiumSubscribe")
+		return errors.New("failed my premium subscribe")
 	}
 }
 
@@ -860,7 +858,7 @@ func (ps *PubSub) MyPremiumUnsubscribe(pubPred string, pubAddr string) error {
 			client := pb.NewScoutHubClient(conn)
 			ack, err := client.PremiumUnsubscribe(ctx, protoSub)
 			if !ack.State && err != nil {
-				return errors.New("Failed Unsubscribing")
+				return errors.New("failed unsubscribing")
 			}
 
 			if i == 0 {

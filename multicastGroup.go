@@ -207,7 +207,7 @@ func (mg *MulticastGroup) RemoveSubFromGroup(sub *pb.PremiumSubscription) error 
 				client := pb.NewScoutHubClient(conn)
 				ack, err := client.PremiumUnsubscribe(ctx, sub)
 				if !ack.State && err != nil {
-					return errors.New("Failed to PremiumUnsubscribe from helper")
+					return errors.New("failed to unsubscribe from helper")
 				}
 
 				if i == 0 {

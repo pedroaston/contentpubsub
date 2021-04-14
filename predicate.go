@@ -1,6 +1,7 @@
 package contentpubsub
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -77,15 +78,28 @@ func NewPredicate(info string) (*Predicate, error) {
 
 	attrs := make(map[string]*Attribute)
 	firstParse := strings.Split(info, "/")
+	var limit int
+	if len(firstParse) > MaxAttributesPerPredicate {
+		limit = MaxAttributesPerPredicate
+	} else {
+		limit = len(firstParse)
+	}
 
-	for _, value := range firstParse {
-		secondParse := strings.Split(value, " ")
+	for i := 0; i < limit; i++ {
+		secondParse := strings.Split(firstParse[i], " ")
+		if len(secondParse) < 2 {
+			return nil, errors.New("invalid predicate input")
+		}
+
 		attr := &Attribute{name: secondParse[0]}
 
 		if secondParse[1] == "T" {
 			attr.attrType = Topic
 		} else if secondParse[1] == "R" {
 			attr.attrType = Range
+			if len(secondParse) != 4 {
+				return nil, errors.New("invalid range attribute input >> " + attr.name)
+			}
 
 			val0, err1 := strconv.Atoi(secondParse[2])
 			val1, err2 := strconv.Atoi(secondParse[3])
