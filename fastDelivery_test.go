@@ -91,7 +91,6 @@ func TestSimpleFastDeliveryWithHelper(t *testing.T) {
 }
 
 // TestSimpleFastDeliveryUnsubscribe
-// NOT PASSING
 func TestSimpleFastDeliveryUnsubscribe(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()
@@ -127,8 +126,42 @@ func TestSimpleFastDeliveryUnsubscribe(t *testing.T) {
 	time.Sleep(time.Second)
 }
 
+// TestFastDeliveryHelperUnsubscribe
+func TestFastDeliveryHelperUnsubscribe(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	defer cancel()
+
+	dhts := setupDHTS(t, ctx, 8)
+	connect(t, ctx, dhts[0], dhts[1])
+	connect(t, ctx, dhts[0], dhts[2])
+	connect(t, ctx, dhts[0], dhts[3])
+	connect(t, ctx, dhts[0], dhts[4])
+	connect(t, ctx, dhts[0], dhts[5])
+	connect(t, ctx, dhts[0], dhts[6])
+	connect(t, ctx, dhts[0], dhts[7])
+
+	var pubsubs [8]*PubSub
+	for i, dht := range dhts {
+		pubsubs[i] = NewPubSub(dht, "EU", "PT")
+	}
+
+	pubsubs[0].CreateMulticastGroup("portugal T")
+	pubsubs[1].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 10)
+	pubsubs[2].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 10)
+	pubsubs[3].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 20)
+	pubsubs[4].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 10)
+	pubsubs[5].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 10)
+	pubsubs[6].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 10)
+	pubsubs[7].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 10)
+	pubsubs[0].MyPremiumPublish("portugal T", "Portugal is great!", "portugal T")
+	time.Sleep(time.Second)
+
+	pubsubs[3].MyPremiumUnsubscribe("portugal T", pubsubs[0].serverAddr)
+	pubsubs[0].MyPremiumPublish("portugal T", "Portugal is really great!", "portugal T")
+	time.Sleep(time.Second)
+}
+
 // TestFastDeliveryWithHelperFailure
-// NOT PASSING
 func TestFastDeliveryWithHelperFailure(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()

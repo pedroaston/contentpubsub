@@ -3,7 +3,6 @@ package contentpubsub
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log"
 	"sort"
 	"time"
@@ -76,7 +75,7 @@ type HelperTracker struct {
 // addSubToGroup
 func (mg *MulticastGroup) addSubToGroup(addr string, cap int, region string, subRegion string, pred *Predicate) error {
 
-	sub := &SubData{
+	newSub := &SubData{
 		pred:      pred,
 		addr:      addr,
 		capacity:  cap,
@@ -96,7 +95,7 @@ func (mg *MulticastGroup) addSubToGroup(addr string, cap int, region string, sub
 	subReg := mg.subByPlace[region][subRegion]
 	if len(subReg.helpers) != 0 && mg.trackHelp[subReg.helpers[len(subReg.helpers)-1].addr].remainCap > 0 {
 		lastHelper := subReg.helpers[len(subReg.helpers)-1]
-		mg.AddSubToHelper(sub, lastHelper.addr)
+		mg.AddSubToHelper(newSub, lastHelper.addr)
 	} else {
 		if subReg.unhelped+1 > MaxSubsPerRegion {
 			candidate := subReg.subs[0]
@@ -107,22 +106,23 @@ func (mg *MulticastGroup) addSubToGroup(addr string, cap int, region string, sub
 				indexCutter = subReg.unhelped - candidate.capacity + 1
 			}
 
-			err := mg.RecruitHelper(candidate, append(subReg.subs[indexCutter:], sub))
+			err := mg.RecruitHelper(candidate, append(subReg.subs[indexCutter:], newSub))
 			if err != nil {
 				return err
+			}
+
+			mg.trackHelp[candidate.addr] = &HelperTracker{
+				helper:        candidate,
+				subsDelegated: append(subReg.subs[indexCutter:], newSub),
+				remainCap:     candidate.capacity - len(append(subReg.subs[indexCutter:], newSub)),
 			}
 
 			subReg.helpers = append(subReg.helpers, candidate)
 			toDelegate := subReg.subs[indexCutter:]
 			subReg.subs = subReg.subs[1:indexCutter]
 			subReg.unhelped = len(subReg.subs)
-			mg.trackHelp[candidate.addr] = &HelperTracker{
-				helper:        candidate,
-				subsDelegated: append(toDelegate, sub),
-				remainCap:     candidate.capacity - len(toDelegate) - 1,
-			}
 
-			for _, sub := range append(toDelegate, candidate) {
+			for _, sub := range toDelegate {
 				if len(mg.attrTrees) == 0 {
 					mg.RemoveSubFromList(sub)
 				} else {
@@ -130,14 +130,21 @@ func (mg *MulticastGroup) addSubToGroup(addr string, cap int, region string, sub
 				}
 			}
 
+			if len(mg.attrTrees) == 0 {
+				mg.RemoveSubFromList(candidate)
+			} else {
+				mg.RemoveFromRangeTrees(candidate)
+			}
+
 		} else {
-			subReg.subs = append(subReg.subs, sub)
+			subReg.subs = append(subReg.subs, newSub)
 			sort.Sort(ByCapacity(subReg.subs))
 			subReg.unhelped++
 			if len(mg.attrTrees) == 0 {
-				mg.simpleList = append(mg.simpleList, sub)
+				mg.simpleList = append(mg.simpleList, newSub)
+			} else {
+				mg.AddToRangeTrees(newSub)
 			}
-			mg.AddToRangeTrees(sub)
 		}
 	}
 
@@ -195,6 +202,8 @@ func (mg *MulticastGroup) RemoveSubFromGroup(sub *pb.PremiumSubscription) error 
 				}
 				defer conn.Close()
 
+				sub.OwnPredicate = s.pred.ToString()
+
 				client := pb.NewScoutHubClient(conn)
 				ack, err := client.PremiumUnsubscribe(ctx, sub)
 				if !ack.State && err != nil {
@@ -238,7 +247,6 @@ func (mg *MulticastGroup) RecruitHelper(helper *SubData, subs []*SubData) error 
 
 	var aux map[int32]*pb.MinimalSubData = make(map[int32]*pb.MinimalSubData)
 	for i, sub := range subs {
-		fmt.Printf("Delegate >> %s\n", sub.addr)
 		mSub := &pb.MinimalSubData{
 			Addr:      sub.addr,
 			Predicate: sub.pred.ToString(),
@@ -251,8 +259,6 @@ func (mg *MulticastGroup) RecruitHelper(helper *SubData, subs []*SubData) error 
 		GroupID: gID,
 		Subs:    aux,
 	}
-
-	fmt.Printf("RequestHelp: %s\n", helper.addr)
 
 	client := pb.NewScoutHubClient(conn)
 	ack, err := client.RequestHelp(ctx, req)
@@ -394,7 +400,7 @@ func (mg *MulticastGroup) StopDelegating(tracker *HelperTracker, add bool) {
 		}
 	}
 
-	mg.trackHelp[tracker.helper.addr] = nil
+	delete(mg.trackHelp, tracker.helper.addr)
 
 	if add {
 		tracker.helper.capacity = 0

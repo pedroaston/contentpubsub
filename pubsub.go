@@ -851,9 +851,10 @@ func (ps *PubSub) MyPremiumUnsubscribe(pubPred string, pubAddr string) error {
 			defer conn.Close()
 
 			protoSub := &pb.PremiumSubscription{
-				Region:    ps.region,
-				SubRegion: ps.subRegion,
-				Addr:      ps.serverAddr,
+				Region:       ps.region,
+				SubRegion:    ps.subRegion,
+				Addr:         ps.serverAddr,
+				PubPredicate: pubPred,
 			}
 
 			client := pb.NewScoutHubClient(conn)
@@ -926,7 +927,7 @@ func (ps *PubSub) MyPremiumPublish(grpPred string, event string, eventInfo strin
 		ack, err := client.PremiumPublish(ctx, premiumE)
 		if err != nil || !ack.State {
 			helperFailedSubs = append(helperFailedSubs, mGrp.trackHelp[tracker.helper.addr].subsDelegated...)
-			mGrp.StopDelegating(tracker, true)
+			mGrp.StopDelegating(tracker, false)
 		}
 	}
 
