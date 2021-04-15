@@ -9,6 +9,7 @@ service ScoutHub {
     rpc Publish(Event) returns (Ack) {}
     rpc Notify(Event) returns (Ack) {}
     rpc UpdateBackup(Update) returns (Ack) {}
+    rpc BackupRefresh(stream Update) returns (Ack) {}
 
     // Fast-Delivery
     rpc PremiumSubscribe(PremiumSubscription) returns (Ack) {}

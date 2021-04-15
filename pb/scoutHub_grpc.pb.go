@@ -22,6 +22,7 @@ type ScoutHubClient interface {
 	Publish(ctx context.Context, in *Event, opts ...grpc.CallOption) (*Ack, error)
 	Notify(ctx context.Context, in *Event, opts ...grpc.CallOption) (*Ack, error)
 	UpdateBackup(ctx context.Context, in *Update, opts ...grpc.CallOption) (*Ack, error)
+	BackupRefresh(ctx context.Context, opts ...grpc.CallOption) (ScoutHub_BackupRefreshClient, error)
 	// Fast-Delivery
 	PremiumSubscribe(ctx context.Context, in *PremiumSubscription, opts ...grpc.CallOption) (*Ack, error)
 	PremiumUnsubscribe(ctx context.Context, in *PremiumSubscription, opts ...grpc.CallOption) (*Ack, error)
@@ -72,6 +73,40 @@ func (c *scoutHubClient) UpdateBackup(ctx context.Context, in *Update, opts ...g
 		return nil, err
 	}
 	return out, nil
+}
+
+func (c *scoutHubClient) BackupRefresh(ctx context.Context, opts ...grpc.CallOption) (ScoutHub_BackupRefreshClient, error) {
+	stream, err := c.cc.NewStream(ctx, &ScoutHub_ServiceDesc.Streams[0], "/contentpubsub.pb.ScoutHub/BackupRefresh", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &scoutHubBackupRefreshClient{stream}
+	return x, nil
+}
+
+type ScoutHub_BackupRefreshClient interface {
+	Send(*Update) error
+	CloseAndRecv() (*Ack, error)
+	grpc.ClientStream
+}
+
+type scoutHubBackupRefreshClient struct {
+	grpc.ClientStream
+}
+
+func (x *scoutHubBackupRefreshClient) Send(m *Update) error {
+	return x.ClientStream.SendMsg(m)
+}
+
+func (x *scoutHubBackupRefreshClient) CloseAndRecv() (*Ack, error) {
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	m := new(Ack)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
 }
 
 func (c *scoutHubClient) PremiumSubscribe(ctx context.Context, in *PremiumSubscription, opts ...grpc.CallOption) (*Ack, error) {
@@ -127,6 +162,7 @@ type ScoutHubServer interface {
 	Publish(context.Context, *Event) (*Ack, error)
 	Notify(context.Context, *Event) (*Ack, error)
 	UpdateBackup(context.Context, *Update) (*Ack, error)
+	BackupRefresh(ScoutHub_BackupRefreshServer) error
 	// Fast-Delivery
 	PremiumSubscribe(context.Context, *PremiumSubscription) (*Ack, error)
 	PremiumUnsubscribe(context.Context, *PremiumSubscription) (*Ack, error)
@@ -151,6 +187,9 @@ func (UnimplementedScoutHubServer) Notify(context.Context, *Event) (*Ack, error)
 }
 func (UnimplementedScoutHubServer) UpdateBackup(context.Context, *Update) (*Ack, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateBackup not implemented")
+}
+func (UnimplementedScoutHubServer) BackupRefresh(ScoutHub_BackupRefreshServer) error {
+	return status.Errorf(codes.Unimplemented, "method BackupRefresh not implemented")
 }
 func (UnimplementedScoutHubServer) PremiumSubscribe(context.Context, *PremiumSubscription) (*Ack, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PremiumSubscribe not implemented")
@@ -250,6 +289,32 @@ func _ScoutHub_UpdateBackup_Handler(srv interface{}, ctx context.Context, dec fu
 		return srv.(ScoutHubServer).UpdateBackup(ctx, req.(*Update))
 	}
 	return interceptor(ctx, in, info, handler)
+}
+
+func _ScoutHub_BackupRefresh_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(ScoutHubServer).BackupRefresh(&scoutHubBackupRefreshServer{stream})
+}
+
+type ScoutHub_BackupRefreshServer interface {
+	SendAndClose(*Ack) error
+	Recv() (*Update, error)
+	grpc.ServerStream
+}
+
+type scoutHubBackupRefreshServer struct {
+	grpc.ServerStream
+}
+
+func (x *scoutHubBackupRefreshServer) SendAndClose(m *Ack) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func (x *scoutHubBackupRefreshServer) Recv() (*Update, error) {
+	m := new(Update)
+	if err := x.ServerStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
 }
 
 func _ScoutHub_PremiumSubscribe_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -386,6 +451,12 @@ var ScoutHub_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _ScoutHub_DelegateSubToHelper_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "BackupRefresh",
+			Handler:       _ScoutHub_BackupRefresh_Handler,
+			ClientStreams: true,
+		},
+	},
 	Metadata: "pb/scoutHub.proto",
 }

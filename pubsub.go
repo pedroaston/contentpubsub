@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"math/big"
 	"net"
@@ -108,8 +109,7 @@ func NewPubSub(dht *kaddht.IpfsDHT, region string, subRegion string) *PubSub {
 
 // Subscribe is a remote function called by a external peer to send subscriptions
 func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack, error) {
-	fmt.Print("Subscribe: ")
-	fmt.Println(ps.ipfsDHT.PeerID())
+	fmt.Println("Subscribe: " + ps.serverAddr)
 
 	p, err := NewPredicate(sub.Predicate)
 	if err != nil {
@@ -191,8 +191,7 @@ func (ps *PubSub) UpdateBackup(ctx context.Context, update *pb.Update) (*pb.Ack,
 
 // Publish is a remote function called by a external peer to send an Event upstream
 func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error) {
-	fmt.Print("Publish: ")
-	fmt.Println(ps.ipfsDHT.PeerID())
+	fmt.Println("Publish: " + ps.serverAddr)
 
 	p, err := NewPredicate(event.Predicate)
 	if err != nil {
@@ -704,6 +703,100 @@ func (ps *PubSub) alternativesToRv(rvID string) []string {
 	return validAlt
 }
 
+// RefreashBackups
+func (ps *PubSub) RefreshBackups() error {
+
+	var updates []*pb.Update
+	for route, routeS := range ps.currentFilterTable.routes {
+		routeID, err := peer.Decode(route)
+		if err != nil {
+			return err
+		}
+
+		var routeAddr string
+		addr := ps.ipfsDHT.FindLocal(routeID).Addrs[0]
+		if addr != nil {
+			aux := strings.Split(addr.String(), "/")
+			routeAddr = aux[2] + ":4" + aux[4][1:]
+		}
+
+		for _, filters := range routeS.filters {
+			for _, filter := range filters {
+				u := &pb.Update{
+					Sender:    peer.Encode(ps.ipfsDHT.PeerID()),
+					Route:     route,
+					RouteAddr: routeAddr,
+					Predicate: filter.ToString()}
+				updates = append(updates, u)
+			}
+		}
+	}
+
+	for _, backup := range ps.myBackups {
+		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+		defer cancel()
+
+		conn, err := grpc.Dial(backup, grpc.WithInsecure())
+		if err != nil {
+			log.Fatalf("fail to dial: %v", err)
+		}
+		defer conn.Close()
+
+		client := pb.NewScoutHubClient(conn)
+		stream, err := client.BackupRefresh(ctx)
+		if err != nil {
+			return err
+		}
+
+		for _, up := range updates {
+			if err := stream.Send(up); err != nil {
+				return err
+			}
+		}
+
+		ack, err := stream.CloseAndRecv()
+		if err != nil || !ack.State {
+			return err
+		}
+
+	}
+
+	return nil
+}
+
+// BackupRefresh
+func (ps *PubSub) BackupRefresh(stream pb.ScoutHub_BackupRefreshServer) error {
+
+	var i = 0
+	for {
+		update, err := stream.Recv()
+		if i == 0 {
+			ps.myBackupsFilters[update.Sender] = nil
+		}
+		if err == io.EOF {
+			return stream.SendAndClose(&pb.Ack{State: true, Info: ""})
+		}
+		if err != nil {
+			return err
+		}
+
+		p, err := NewPredicate(update.Predicate)
+		if err != nil {
+			return err
+		} else if _, ok := ps.myBackupsFilters[update.Sender]; !ok {
+			ps.myBackupsFilters[update.Sender] = &FilterTable{routes: make(map[string]*RouteStats)}
+		}
+
+		if _, ok := ps.myBackupsFilters[update.Sender].routes[update.Route]; !ok {
+			ps.myBackupsFilters[update.Sender].routes[update.Route] = NewRouteStats()
+		}
+
+		ps.myBackupsFilters[update.Sender].routes[update.Route].SimpleAddSummarizedFilter(p)
+		ps.mapBackupAddr[update.Route] = update.RouteAddr
+		i = 1
+	}
+}
+
 type ForwardSubRequest struct {
 	dialAddr string
 	sub      *pb.Subscription
@@ -740,6 +833,7 @@ func (ps *PubSub) refreshingProtocol() {
 		ps.tablesLock.Lock()
 		ps.currentFilterTable = ps.nextFilterTable
 		ps.nextFilterTable = NewFilterTable(ps.ipfsDHT)
+		ps.RefreshBackups()
 		ps.tablesLock.Unlock()
 	}
 }
