@@ -941,6 +941,8 @@ func (ps *PubSub) processLoop() {
 		case pid := <-ps.eventsToForwardDown:
 			ps.forwardEventDown(pid.dialAddr, pid.event, pid.originalRoute)
 		case pid := <-ps.interestingEvents:
+			// Statistical-Code
+			ps.record.SaveReceivedEvent(pid, "TODO")
 			fmt.Printf("Received Event at: %s\n", ps.serverAddr)
 			fmt.Println(">> " + pid)
 		case <-ps.terminate:
