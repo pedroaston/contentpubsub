@@ -626,7 +626,7 @@ func (ps *PubSub) updateMyBackups(route string, info string) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()
-	fmt.Println("Que passa!")
+
 	for _, addrB := range ps.myBackups {
 		conn, err := grpc.Dial(addrB, grpc.WithInsecure())
 		if err != nil {
@@ -673,6 +673,9 @@ func (ps *PubSub) getBackups() []string {
 	var dialAddr string
 	for _, backup := range ps.ipfsDHT.RoutingTable().NearestPeers(kb.ConvertPeerID(ps.ipfsDHT.PeerID()), FaultToleranceFactor) {
 		backupAddr := ps.ipfsDHT.FindLocal(backup).Addrs[0]
+		if backupAddr == nil {
+			continue
+		}
 		aux := strings.Split(backupAddr.String(), "/")
 		dialAddr = aux[2] + ":4" + aux[4][1:]
 		backups = append(backups, dialAddr)
@@ -697,6 +700,9 @@ func (ps *PubSub) eraseOldFetchNewBackup(oldAddr string) {
 	}
 
 	backupAddr := ps.ipfsDHT.FindLocal(candidate[FaultToleranceFactor]).Addrs[0]
+	if backupAddr == nil {
+		return
+	}
 	aux := strings.Split(backupAddr.String(), "/")
 	newAddr := aux[2] + ":4" + aux[4][1:]
 	ps.myBackups[refIndex] = newAddr
