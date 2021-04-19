@@ -23,7 +23,7 @@ import (
 )
 
 // FaultToleranceFactor >> number of backups
-// MaxAttributesPerSub >> maximum allowed number of attributes per predicate (TODO)
+// MaxAttributesPerSub >> maximum allowed number of attributes per predicate
 // SubRefreshRateMin >> frequency in which a subscriber needs to resub in minutes
 const (
 	FaultToleranceFactor      = 3
@@ -108,6 +108,17 @@ func NewPubSub(dht *kaddht.IpfsDHT, region string, subRegion string) *PubSub {
 }
 
 // +++++++++++++++++++++++++++++++ ScoutSubs ++++++++++++++++++++++++++++++++
+
+type ForwardSubRequest struct {
+	dialAddr string
+	sub      *pb.Subscription
+}
+
+type ForwardEvent struct {
+	originalRoute string
+	dialAddr      string
+	event         *pb.Event
+}
 
 // MySubscribe subscribes to certain event(s) and saves
 // it in myFilters for further resubing operations
@@ -588,15 +599,36 @@ func (ps *PubSub) forwardEventDown(dialAddr string, event *pb.Event, originalRou
 	}
 }
 
+// updateBackup sends the new version of the filter table to the backup
+func (ps *PubSub) UpdateBackup(ctx context.Context, update *pb.Update) (*pb.Ack, error) {
+	fmt.Println("UpdateBackup >> " + ps.serverAddr)
+
+	p, err := NewPredicate(update.Predicate)
+	if err != nil {
+		return &pb.Ack{State: false, Info: err.Error()}, err
+	} else if _, ok := ps.myBackupsFilters[update.Sender]; !ok {
+		ps.myBackupsFilters[update.Sender] = &FilterTable{routes: make(map[string]*RouteStats)}
+	}
+
+	if _, ok := ps.myBackupsFilters[update.Sender].routes[update.Route]; !ok {
+		ps.myBackupsFilters[update.Sender].routes[update.Route] = NewRouteStats()
+	}
+
+	ps.myBackupsFilters[update.Sender].routes[update.Route].SimpleAddSummarizedFilter(p)
+	ps.mapBackupAddr[update.Route] = update.RouteAddr
+
+	return &pb.Ack{State: true, Info: ""}, nil
+}
+
 // updateMyBackups basically sends updates rpcs to its backups
 // to update their versions of his filter table
 func (ps *PubSub) updateMyBackups(route string, info string) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()
-
-	for _, addr := range ps.myBackups {
-		conn, err := grpc.Dial(addr, grpc.WithInsecure())
+	fmt.Println("Que passa!")
+	for _, addrB := range ps.myBackups {
+		conn, err := grpc.Dial(addrB, grpc.WithInsecure())
 		if err != nil {
 			log.Fatalf("fail to dial: %v", err)
 		}
@@ -623,34 +655,13 @@ func (ps *PubSub) updateMyBackups(route string, info string) error {
 		}
 
 		ack, err := client.UpdateBackup(ctx, update)
-
-		if !ack.State || err != nil {
+		if err != nil || !ack.State {
+			ps.eraseOldFetchNewBackup(addrB)
 			return errors.New("failed update")
 		}
-
 	}
 
 	return nil
-}
-
-// updateBackup sends the new version of the filter table to the backup
-func (ps *PubSub) UpdateBackup(ctx context.Context, update *pb.Update) (*pb.Ack, error) {
-
-	p, err := NewPredicate(update.Predicate)
-	if err != nil {
-		return &pb.Ack{State: false, Info: err.Error()}, err
-	} else if _, ok := ps.myBackupsFilters[update.Sender]; !ok {
-		ps.myBackupsFilters[update.Sender] = &FilterTable{routes: make(map[string]*RouteStats)}
-	}
-
-	if _, ok := ps.myBackupsFilters[update.Sender].routes[update.Route]; !ok {
-		ps.myBackupsFilters[update.Sender].routes[update.Route] = NewRouteStats()
-	}
-
-	ps.myBackupsFilters[update.Sender].routes[update.Route].SimpleAddSummarizedFilter(p)
-	ps.mapBackupAddr[update.Route] = update.RouteAddr
-
-	return &pb.Ack{State: true, Info: ""}, nil
 }
 
 // getBackups selects f backups peers for the node,
@@ -668,6 +679,153 @@ func (ps *PubSub) getBackups() []string {
 	}
 
 	return backups
+}
+
+// eraseOldFetchNewBackup
+func (ps *PubSub) eraseOldFetchNewBackup(oldAddr string) {
+
+	ps.ipfsDHT.RefreshRoutingTable()
+
+	var refIndex int
+	for i, backup := range ps.myBackups {
+		if backup == oldAddr {
+			refIndex = i
+		}
+	}
+
+	candidate := ps.ipfsDHT.RoutingTable().NearestPeers(kb.ConvertPeerID(ps.ipfsDHT.PeerID()), FaultToleranceFactor)
+	if len(candidate) != FaultToleranceFactor {
+		return
+	}
+
+	backupAddr := ps.ipfsDHT.FindLocal(candidate[FaultToleranceFactor-1]).Addrs[0]
+	aux := strings.Split(backupAddr.String(), "/")
+	newAddr := aux[2] + ":4" + aux[4][1:]
+	ps.myBackups[refIndex] = newAddr
+
+	updates, err := ps.filtersForBackupRefresh()
+	if err != nil {
+		return
+	}
+
+	ps.refreshOneBackup(newAddr, updates)
+}
+
+// BackupRefresh
+func (ps *PubSub) BackupRefresh(stream pb.ScoutHub_BackupRefreshServer) error {
+	fmt.Println("BackupRefresh >> " + ps.serverAddr)
+
+	var i = 0
+	for {
+		update, err := stream.Recv()
+		if err == io.EOF {
+			return stream.SendAndClose(&pb.Ack{State: true, Info: ""})
+		}
+		if err != nil {
+			return err
+		}
+		if i == 0 {
+			ps.myBackupsFilters[update.Sender] = nil
+		}
+
+		p, err := NewPredicate(update.Predicate)
+		if err != nil {
+			return err
+		}
+
+		if ps.myBackupsFilters[update.Sender] == nil {
+			ps.myBackupsFilters[update.Sender] = &FilterTable{routes: make(map[string]*RouteStats)}
+		}
+
+		if _, ok := ps.myBackupsFilters[update.Sender].routes[update.Route]; !ok {
+			ps.myBackupsFilters[update.Sender].routes[update.Route] = NewRouteStats()
+		}
+
+		ps.myBackupsFilters[update.Sender].routes[update.Route].SimpleAddSummarizedFilter(p)
+		ps.mapBackupAddr[update.Route] = update.RouteAddr
+		i = 1
+	}
+}
+
+// refreashBackups
+func (ps *PubSub) refreshAllBackups() error {
+
+	updates, err := ps.filtersForBackupRefresh()
+	if err != nil {
+		return err
+	}
+
+	for _, backup := range ps.myBackups {
+		err := ps.refreshOneBackup(backup, updates)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// filtersForBackupRefresh
+func (ps *PubSub) filtersForBackupRefresh() ([]*pb.Update, error) {
+
+	var updates []*pb.Update
+	for route, routeS := range ps.currentFilterTable.routes {
+		routeID, err := peer.Decode(route)
+		if err != nil {
+			return nil, err
+		}
+
+		var routeAddr string
+		addr := ps.ipfsDHT.FindLocal(routeID).Addrs[0]
+		if addr != nil {
+			aux := strings.Split(addr.String(), "/")
+			routeAddr = aux[2] + ":4" + aux[4][1:]
+		}
+
+		for _, filters := range routeS.filters {
+			for _, filter := range filters {
+				u := &pb.Update{
+					Sender:    peer.Encode(ps.ipfsDHT.PeerID()),
+					Route:     route,
+					RouteAddr: routeAddr,
+					Predicate: filter.ToString()}
+				updates = append(updates, u)
+			}
+		}
+	}
+
+	return updates, nil
+}
+
+func (ps *PubSub) refreshOneBackup(backup string, updates []*pb.Update) error {
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	defer cancel()
+
+	conn, err := grpc.Dial(backup, grpc.WithInsecure())
+	if err != nil {
+		log.Fatalf("fail to dial: %v", err)
+	}
+	defer conn.Close()
+
+	client := pb.NewScoutHubClient(conn)
+	stream, err := client.BackupRefresh(ctx)
+	if err != nil {
+		return err
+	}
+
+	for _, up := range updates {
+		if err := stream.Send(up); err != nil {
+			return err
+		}
+	}
+
+	ack, err := stream.CloseAndRecv()
+	if err != nil || !ack.State {
+		return err
+	}
+
+	return nil
 }
 
 // rendezvousSelfCheck evaluates if the peer is the rendezvous node
@@ -705,111 +863,6 @@ func (ps *PubSub) alternativesToRv(rvID string) []string {
 	return validAlt
 }
 
-// refreashBackups
-func (ps *PubSub) refreshBackups() error {
-
-	var updates []*pb.Update
-	for route, routeS := range ps.currentFilterTable.routes {
-		routeID, err := peer.Decode(route)
-		if err != nil {
-			return err
-		}
-
-		var routeAddr string
-		addr := ps.ipfsDHT.FindLocal(routeID).Addrs[0]
-		if addr != nil {
-			aux := strings.Split(addr.String(), "/")
-			routeAddr = aux[2] + ":4" + aux[4][1:]
-		}
-
-		for _, filters := range routeS.filters {
-			for _, filter := range filters {
-				u := &pb.Update{
-					Sender:    peer.Encode(ps.ipfsDHT.PeerID()),
-					Route:     route,
-					RouteAddr: routeAddr,
-					Predicate: filter.ToString()}
-				updates = append(updates, u)
-			}
-		}
-	}
-
-	for _, backup := range ps.myBackups {
-		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
-		defer cancel()
-
-		conn, err := grpc.Dial(backup, grpc.WithInsecure())
-		if err != nil {
-			log.Fatalf("fail to dial: %v", err)
-		}
-		defer conn.Close()
-
-		client := pb.NewScoutHubClient(conn)
-		stream, err := client.BackupRefresh(ctx)
-		if err != nil {
-			return err
-		}
-
-		for _, up := range updates {
-			if err := stream.Send(up); err != nil {
-				return err
-			}
-		}
-
-		ack, err := stream.CloseAndRecv()
-		if err != nil || !ack.State {
-			return err
-		}
-
-	}
-
-	return nil
-}
-
-// BackupRefresh
-func (ps *PubSub) BackupRefresh(stream pb.ScoutHub_BackupRefreshServer) error {
-
-	var i = 0
-	for {
-		update, err := stream.Recv()
-		if i == 0 {
-			ps.myBackupsFilters[update.Sender] = nil
-		}
-		if err == io.EOF {
-			return stream.SendAndClose(&pb.Ack{State: true, Info: ""})
-		}
-		if err != nil {
-			return err
-		}
-
-		p, err := NewPredicate(update.Predicate)
-		if err != nil {
-			return err
-		} else if _, ok := ps.myBackupsFilters[update.Sender]; !ok {
-			ps.myBackupsFilters[update.Sender] = &FilterTable{routes: make(map[string]*RouteStats)}
-		}
-
-		if _, ok := ps.myBackupsFilters[update.Sender].routes[update.Route]; !ok {
-			ps.myBackupsFilters[update.Sender].routes[update.Route] = NewRouteStats()
-		}
-
-		ps.myBackupsFilters[update.Sender].routes[update.Route].SimpleAddSummarizedFilter(p)
-		ps.mapBackupAddr[update.Route] = update.RouteAddr
-		i = 1
-	}
-}
-
-type ForwardSubRequest struct {
-	dialAddr string
-	sub      *pb.Subscription
-}
-
-type ForwardEvent struct {
-	originalRoute string
-	dialAddr      string
-	event         *pb.Event
-}
-
 // heartbeatProtocol is the routine responsible to
 // refresh periodically the subscriptions of a peer
 // and the filterTables after 2 subs refreshings
@@ -835,7 +888,7 @@ func (ps *PubSub) refreshingProtocol() {
 		ps.tablesLock.Lock()
 		ps.currentFilterTable = ps.nextFilterTable
 		ps.nextFilterTable = NewFilterTable(ps.ipfsDHT)
-		ps.refreshBackups()
+		ps.refreshAllBackups()
 		ps.tablesLock.Unlock()
 	}
 }
@@ -843,6 +896,7 @@ func (ps *PubSub) refreshingProtocol() {
 func (ps *PubSub) terminateService() {
 	ps.terminate <- "end"
 	ps.server.Stop()
+	ps.ipfsDHT.Close()
 }
 
 // processLopp

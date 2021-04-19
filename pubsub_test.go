@@ -147,7 +147,6 @@ func TestSimpleFaultTolerance(t *testing.T) {
 	var pubsubs [5]*PubSub
 	for i, dht := range dhts {
 		pubsubs[i] = NewPubSub(dht, "EU", "PT")
-		fmt.Println(dht.PeerID())
 	}
 
 	pubsubs[0].mySubscribe("portugal T")
@@ -159,6 +158,32 @@ func TestSimpleFaultTolerance(t *testing.T) {
 	pubsubs[4].myPublish("valmitão tem as melhores marolas do mundo!", "portugal T")
 	time.Sleep(time.Second)
 
+}
+
+// TestBackupReplacement
+func TestBackupReplacement(t *testing.T) {
+	fmt.Println("Starting TestBackupReplacement!")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	defer cancel()
+
+	dhts := setupDHTS(t, ctx, 6)
+
+	connect(t, ctx, dhts[0], dhts[1])
+	connect(t, ctx, dhts[0], dhts[2])
+	connect(t, ctx, dhts[0], dhts[3])
+	connect(t, ctx, dhts[0], dhts[4])
+	connect(t, ctx, dhts[0], dhts[5])
+
+	var pubsubs [6]*PubSub
+	for i, dht := range dhts {
+		pubsubs[i] = NewPubSub(dht, "EU", "PT")
+	}
+
+	time.Sleep(time.Second)
+	pubsubs[3].terminateService()
+	pubsubs[5].mySubscribe("soccer T")
+	time.Sleep(time.Second)
 }
 
 // TestAproxRealSubscriptionScenario with 100 peers randomly connected to
