@@ -93,3 +93,34 @@ func TestSearchSelf(t *testing.T) {
 		t.Fatal("Error getting backups")
 	}
 }
+
+// TestDHTRefreshing
+// Conclusions >> this function should not be used how it is being used
+// because we should not be refreshing the table instantly because
+// in order to receive confirmation that a node is down we need to wait
+// for a long time
+func TestDHTRefreshing(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	defer cancel()
+
+	dhts := setupDHTS(t, ctx, 10)
+
+	connect(t, ctx, dhts[0], dhts[1])
+	connect(t, ctx, dhts[0], dhts[2])
+	connect(t, ctx, dhts[0], dhts[3])
+	connect(t, ctx, dhts[0], dhts[4])
+	connect(t, ctx, dhts[0], dhts[5])
+	connect(t, ctx, dhts[0], dhts[6])
+	connect(t, ctx, dhts[0], dhts[7])
+	connect(t, ctx, dhts[0], dhts[8])
+	connect(t, ctx, dhts[0], dhts[9])
+
+	if len(dhts[0].RoutingTable().GetPeerInfos()) != 9 {
+		t.Fatal("Wrong number of peers")
+	}
+
+	dhts[1].Close()
+	time.Sleep(time.Second)
+
+	dhts[0].RefreshRoutingTable()
+}

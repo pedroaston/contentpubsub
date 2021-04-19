@@ -684,8 +684,6 @@ func (ps *PubSub) getBackups() []string {
 // eraseOldFetchNewBackup
 func (ps *PubSub) eraseOldFetchNewBackup(oldAddr string) {
 
-	ps.ipfsDHT.RefreshRoutingTable()
-
 	var refIndex int
 	for i, backup := range ps.myBackups {
 		if backup == oldAddr {
@@ -693,12 +691,12 @@ func (ps *PubSub) eraseOldFetchNewBackup(oldAddr string) {
 		}
 	}
 
-	candidate := ps.ipfsDHT.RoutingTable().NearestPeers(kb.ConvertPeerID(ps.ipfsDHT.PeerID()), FaultToleranceFactor)
-	if len(candidate) != FaultToleranceFactor {
+	candidate := ps.ipfsDHT.RoutingTable().NearestPeers(kb.ConvertPeerID(ps.ipfsDHT.PeerID()), FaultToleranceFactor+1)
+	if len(candidate) != FaultToleranceFactor+1 {
 		return
 	}
 
-	backupAddr := ps.ipfsDHT.FindLocal(candidate[FaultToleranceFactor-1]).Addrs[0]
+	backupAddr := ps.ipfsDHT.FindLocal(candidate[FaultToleranceFactor]).Addrs[0]
 	aux := strings.Split(backupAddr.String(), "/")
 	newAddr := aux[2] + ":4" + aux[4][1:]
 	ps.myBackups[refIndex] = newAddr
