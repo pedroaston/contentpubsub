@@ -59,6 +59,8 @@ type PubSub struct {
 	subbedGroups  []*SubGroupView
 	region        string
 	subRegion     string
+
+	record *HistoryRecord
 }
 
 // NewPubSub initializes the PubSub's data structure
@@ -83,6 +85,7 @@ func NewPubSub(dht *kaddht.IpfsDHT, region string, subRegion string) *PubSub {
 		tablesLock:          &sync.RWMutex{},
 		region:              region,
 		subRegion:           subRegion,
+		record:              NewHistoryRecord(),
 	}
 
 	ps.ipfsDHT = dht
@@ -211,6 +214,9 @@ func (ps *PubSub) mySubscribe(info string) error {
 		}
 	}
 
+	// Statistical Code
+	ps.record.AddOperationStat("mySubscribe")
+
 	return nil
 }
 
@@ -273,6 +279,9 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 		return &pb.Ack{State: false, Info: "rendezvous check failed"}, nil
 	}
 
+	// Statistical Code
+	ps.record.AddOperationStat("Subscribe")
+
 	return &pb.Ack{State: true, Info: ""}, nil
 }
 
@@ -321,6 +330,9 @@ func (ps *PubSub) myUnsubscribe(info string) error {
 	}
 
 	ps.myFilters.SimpleSubtractFilter(p)
+
+	// Statistical Code
+	ps.record.AddOperationStat("myUnsubscribe")
 
 	return nil
 }
@@ -414,6 +426,9 @@ func (ps *PubSub) myPublish(data string, info string) error {
 		}
 	}
 
+	// Statistical Code
+	ps.record.AddOperationStat("myPublish")
+
 	return nil
 }
 
@@ -474,6 +489,9 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 		}
 	}
 	ps.tablesLock.RUnlock()
+
+	// Statistical Code
+	ps.record.AddOperationStat("Publish")
 
 	return &pb.Ack{State: true, Info: ""}, nil
 }
@@ -561,6 +579,9 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 	}
 	ps.tablesLock.RUnlock()
 
+	// Statistical Code
+	ps.record.AddOperationStat("Notify")
+
 	return &pb.Ack{State: true, Info: ""}, nil
 }
 
@@ -616,6 +637,9 @@ func (ps *PubSub) UpdateBackup(ctx context.Context, update *pb.Update) (*pb.Ack,
 
 	ps.myBackupsFilters[update.Sender].routes[update.Route].SimpleAddSummarizedFilter(p)
 	ps.mapBackupAddr[update.Route] = update.RouteAddr
+
+	// Statistical Code
+	ps.record.AddOperationStat("UpdateBackup")
 
 	return &pb.Ack{State: true, Info: ""}, nil
 }
@@ -723,6 +747,9 @@ func (ps *PubSub) BackupRefresh(stream pb.ScoutHub_BackupRefreshServer) error {
 	for {
 		update, err := stream.Recv()
 		if err == io.EOF {
+			// Statistical Code
+			ps.record.AddOperationStat("BackupRefresh")
+
 			return stream.SendAndClose(&pb.Ack{State: true, Info: ""})
 		}
 		if err != nil {
@@ -976,6 +1003,9 @@ func (ps *PubSub) myPremiumSubscribe(info string, pubAddr string, pubPredicate s
 
 		ps.subbedGroups = append(ps.subbedGroups, subG)
 
+		// Statistical Code
+		ps.record.AddOperationStat("myPremiumSubscribe")
+
 		return nil
 	} else {
 		return errors.New("failed my premium subscribe")
@@ -1001,6 +1031,9 @@ func (ps *PubSub) PremiumSubscribe(ctx context.Context, sub *pb.PremiumSubscript
 			mg.addSubToGroup(sub.Addr, int(sub.Cap), sub.Region, sub.SubRegion, subP)
 		}
 	}
+
+	// Statistical Code
+	ps.record.AddOperationStat("PremiumSubscribe")
 
 	return &pb.Ack{State: true, Info: ""}, nil
 }
@@ -1048,6 +1081,9 @@ func (ps *PubSub) myPremiumUnsubscribe(pubPred string, pubAddr string) error {
 		}
 	}
 
+	// Statistical Code
+	ps.record.AddOperationStat("myPremiumUnsubscribe")
+
 	return nil
 }
 
@@ -1073,6 +1109,9 @@ func (ps *PubSub) PremiumUnsubscribe(ctx context.Context, sub *pb.PremiumSubscri
 			return &pb.Ack{State: true, Info: ""}, nil
 		}
 	}
+
+	// Statistical Code
+	ps.record.AddOperationStat("PremiumSubscribe")
 
 	return &pb.Ack{State: true, Info: ""}, nil
 }
@@ -1149,6 +1188,9 @@ func (ps *PubSub) myPremiumPublish(grpPred string, event string, eventInfo strin
 		client.PremiumPublish(ctx, premiumE)
 	}
 
+	// Statistical Code
+	ps.record.AddOperationStat("myPremiumPublish")
+
 	return nil
 }
 
@@ -1186,6 +1228,9 @@ func (ps *PubSub) PremiumPublish(ctx context.Context, event *pb.PremiumEvent) (*
 		}
 	}
 
+	// Statistical Code
+	ps.record.AddOperationStat("PremiumPublish")
+
 	return &pb.Ack{State: true, Info: ""}, nil
 }
 
@@ -1209,6 +1254,9 @@ func (ps *PubSub) RequestHelp(ctx context.Context, req *pb.HelpRequest) (*pb.Ack
 		}
 	}
 
+	// Statistical Code
+	ps.record.AddOperationStat("RequestHelp")
+
 	return &pb.Ack{State: true, Info: ""}, nil
 }
 
@@ -1231,6 +1279,9 @@ func (ps *PubSub) DelegateSubToHelper(ctx context.Context, sub *pb.DelegateSub) 
 			break
 		}
 	}
+
+	// Statistical Code
+	ps.record.AddOperationStat("DelegateSubToHelper")
 
 	return &pb.Ack{State: true, Info: ""}, nil
 }
