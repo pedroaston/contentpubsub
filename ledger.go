@@ -8,6 +8,7 @@ type HistoryRecord struct {
 type EventRecord struct {
 	eventSource string
 	eventData   string
+	protocol    string
 }
 
 // NewHistoryRecord
@@ -28,11 +29,12 @@ func (r *HistoryRecord) AddOperationStat(opName string) {
 }
 
 // SaveReceivedEvent
-func (r *HistoryRecord) SaveReceivedEvent(eventData string, eventSource string) {
+func (r *HistoryRecord) SaveReceivedEvent(eventData string, eventSource string, protocol string) {
 
 	event := &EventRecord{
 		eventSource: eventSource,
 		eventData:   eventData,
+		protocol:    protocol,
 	}
 
 	r.receivedEvents = append(r.receivedEvents, event)

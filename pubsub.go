@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"math/big"
+	"math/rand"
 	"net"
 	"strings"
 	"sync"
@@ -47,7 +48,7 @@ type PubSub struct {
 	myBackupsFilters map[string]*FilterTable
 	mapBackupAddr    map[string]string
 
-	interestingEvents   chan string
+	interestingEvents   chan *pb.Event
 	subsToForward       chan *ForwardSubRequest
 	eventsToForwardUp   chan *ForwardEvent
 	eventsToForwardDown chan *ForwardEvent
@@ -59,8 +60,11 @@ type PubSub struct {
 	subbedGroups  []*SubGroupView
 	region        string
 	subRegion     string
+	premiumEvents chan *pb.PremiumEvent
 
-	record *HistoryRecord
+	record   *HistoryRecord
+	session  int
+	eventSeq int
 }
 
 // NewPubSub initializes the PubSub's data structure
@@ -77,7 +81,8 @@ func NewPubSub(dht *kaddht.IpfsDHT, region string, subRegion string) *PubSub {
 		myFilters:           mySubs,
 		myBackupsFilters:    make(map[string]*FilterTable),
 		mapBackupAddr:       make(map[string]string),
-		interestingEvents:   make(chan string),
+		interestingEvents:   make(chan *pb.Event),
+		premiumEvents:       make(chan *pb.PremiumEvent),
 		subsToForward:       make(chan *ForwardSubRequest, 2*len(filterTable.routes)),
 		eventsToForwardUp:   make(chan *ForwardEvent, 2*len(filterTable.routes)),
 		eventsToForwardDown: make(chan *ForwardEvent, 2*len(filterTable.routes)),
@@ -86,6 +91,8 @@ func NewPubSub(dht *kaddht.IpfsDHT, region string, subRegion string) *PubSub {
 		region:              region,
 		subRegion:           subRegion,
 		record:              NewHistoryRecord(),
+		session:             rand.Intn(9999),
+		eventSeq:            0,
 	}
 
 	ps.ipfsDHT = dht
@@ -355,7 +362,14 @@ func (ps *PubSub) myPublish(data string, info string) error {
 	var dialAddr string
 	for _, attr := range p.attributes {
 
+		eventID := &pb.EventID{
+			PublisherID:   peer.Encode(ps.ipfsDHT.PeerID()),
+			SessionNumber: int32(ps.session),
+			SeqID:         int32(ps.eventSeq),
+		}
+
 		event := &pb.Event{
+			EventID:   eventID,
 			Event:     data,
 			Predicate: info,
 			RvId:      attr.name,
@@ -442,7 +456,7 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 	}
 
 	if ps.myFilters.IsInterested(p) {
-		ps.interestingEvents <- event.Event
+		ps.interestingEvents <- event
 	}
 
 	isRv, nextHop := ps.rendezvousSelfCheck(event.RvId)
@@ -541,7 +555,7 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 	}
 
 	if ps.myFilters.IsInterested(p) {
-		ps.interestingEvents <- event.Event
+		ps.interestingEvents <- event
 	}
 
 	ps.tablesLock.RLock()
@@ -942,9 +956,15 @@ func (ps *PubSub) processLoop() {
 			ps.forwardEventDown(pid.dialAddr, pid.event, pid.originalRoute)
 		case pid := <-ps.interestingEvents:
 			// Statistical-Code
-			ps.record.SaveReceivedEvent(pid, "TODO")
+			ps.record.SaveReceivedEvent(pid.Event, pid.EventID.PublisherID, "ScoutSubs")
 			fmt.Printf("Received Event at: %s\n", ps.serverAddr)
-			fmt.Println(">> " + pid)
+			fmt.Println(">> " + pid.Event)
+		case pid := <-ps.premiumEvents:
+			// Statistical-Code
+			ps.record.SaveReceivedEvent(pid.Event, pid.GroupID.Predicate, "FastDelivery")
+			fmt.Printf("Received Event at: %s\n", ps.serverAddr)
+			fmt.Println(">> " + pid.Event)
+
 		case <-ps.terminate:
 			return
 		}
@@ -1225,7 +1245,7 @@ func (ps *PubSub) PremiumPublish(ctx context.Context, event *pb.PremiumEvent) (*
 				}
 			}
 
-			ps.interestingEvents <- event.Event
+			ps.premiumEvents <- event
 			break
 		}
 	}

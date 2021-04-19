@@ -33,11 +33,18 @@ message Subscription {
 }
 
 message Event { 
-    string predicate = 1;
-    string rvId = 2;
-    string event = 3;
-    string lastHop = 4;
-    string backup = 5;
+    EventID eventID = 1;
+    string predicate = 2;
+    string rvId = 3;
+    string event = 4;
+    string lastHop = 5;
+    string backup = 6;
+}
+
+message EventID {
+    string publisherID = 1;
+    int32 sessionNumber = 2;
+    int32 seqID = 3;
 }
 
 message Update {
