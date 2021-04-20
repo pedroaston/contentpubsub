@@ -13,14 +13,14 @@ import (
 type RouteStats struct {
 	filters   map[int][]*Predicate
 	backups   []string
-	routeLock *sync.Mutex
+	routeLock *sync.RWMutex
 }
 
 // NewRouteStats initializes a routestat
 func NewRouteStats() *RouteStats {
 	r := &RouteStats{
 		filters:   make(map[int][]*Predicate),
-		routeLock: &sync.Mutex{},
+		routeLock: &sync.RWMutex{},
 	}
 
 	return r
@@ -149,6 +149,9 @@ func (rs *RouteStats) SimpleSubtractFilter(p *Predicate) {
 }
 
 func (rs *RouteStats) IsInterested(p *Predicate) bool {
+
+	rs.routeLock.RLock()
+	defer rs.routeLock.RUnlock()
 
 	for i, filters := range rs.filters {
 		if len(p.attributes) <= i {

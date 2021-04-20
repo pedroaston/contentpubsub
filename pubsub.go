@@ -243,11 +243,10 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 	for _, addr := range sub.Backups {
 		aux = append(aux, addr)
 	}
-	ps.currentFilterTable.routes[sub.PeerID].routeLock.Lock()
-	ps.currentFilterTable.routes[sub.PeerID].backups = aux
-	ps.currentFilterTable.routes[sub.PeerID].routeLock.Unlock()
 
 	ps.tablesLock.RLock()
+	ps.currentFilterTable.routes[sub.PeerID].backups = aux
+	ps.nextFilterTable.routes[sub.PeerID].backups = aux
 	ps.currentFilterTable.routes[sub.PeerID].SimpleAddSummarizedFilter(p)
 	alreadyDone, pNew := ps.nextFilterTable.routes[sub.PeerID].SimpleAddSummarizedFilter(p)
 	ps.tablesLock.RUnlock()
