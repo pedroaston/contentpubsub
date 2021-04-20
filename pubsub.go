@@ -609,6 +609,10 @@ func (ps *PubSub) forwardEventDown(dialAddr string, event *pb.Event, originalRou
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()
 
+	if dialAddr == ps.serverAddr {
+		ps.Notify(ctx, event)
+	}
+
 	conn, err := grpc.Dial(dialAddr, grpc.WithInsecure())
 	if err != nil {
 		log.Fatalf("fail to dial: %v", err)
