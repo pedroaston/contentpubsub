@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/pedroaston/contentpubsub/pb"
@@ -24,6 +25,7 @@ type MulticastGroup struct {
 	helpers    []*SubData
 	attrTrees  map[string]*RangeAttributeTree
 	simpleList []*SubData
+	lock       *sync.RWMutex
 }
 
 // NewMulticastGroup
@@ -35,6 +37,7 @@ func NewMulticastGroup(p *Predicate, addr string) *MulticastGroup {
 		subByPlace: make(map[string]map[string]*SubRegionData),
 		trackHelp:  make(map[string]*HelperTracker),
 		attrTrees:  make(map[string]*RangeAttributeTree),
+		lock:       &sync.RWMutex{},
 	}
 
 	for _, attr := range p.attributes {
@@ -64,6 +67,7 @@ type SubRegionData struct {
 	subs     []*SubData
 	unhelped int
 	helpers  []*SubData
+	lock     *sync.RWMutex
 }
 
 type HelperTracker struct {
@@ -84,15 +88,18 @@ func (mg *MulticastGroup) addSubToGroup(addr string, cap int, region string, sub
 	}
 
 	if _, ok := mg.subByPlace[region]; !ok {
-		subReg := &SubRegionData{unhelped: 0}
+		subReg := &SubRegionData{unhelped: 0, lock: &sync.RWMutex{}}
 		mg.subByPlace[region] = map[string]*SubRegionData{}
 		mg.subByPlace[region][subRegion] = subReg
 	} else if _, ok := mg.subByPlace[region][subRegion]; !ok {
-		subReg := &SubRegionData{unhelped: 0}
+		subReg := &SubRegionData{unhelped: 0, lock: &sync.RWMutex{}}
 		mg.subByPlace[region][subRegion] = subReg
 	}
 
 	subReg := mg.subByPlace[region][subRegion]
+	subReg.lock.Lock()
+	defer subReg.lock.Unlock()
+
 	if len(subReg.helpers) != 0 && mg.trackHelp[subReg.helpers[len(subReg.helpers)-1].addr].remainCap > 0 {
 		lastHelper := subReg.helpers[len(subReg.helpers)-1]
 		mg.AddSubToHelper(newSub, lastHelper.addr)
@@ -154,6 +161,9 @@ func (mg *MulticastGroup) addSubToGroup(addr string, cap int, region string, sub
 // RemoveSubFromGroup
 func (mg *MulticastGroup) RemoveSubFromGroup(sub *pb.PremiumSubscription) error {
 
+	mg.subByPlace[sub.Region][sub.SubRegion].lock.Lock()
+	defer mg.subByPlace[sub.Region][sub.SubRegion].lock.Unlock()
+
 	for i, s := range mg.subByPlace[sub.Region][sub.SubRegion].subs {
 		if s.addr == sub.Addr {
 			toRemove := s
@@ -182,9 +192,11 @@ func (mg *MulticastGroup) RemoveSubFromGroup(sub *pb.PremiumSubscription) error 
 			helperFailedSubs := helper.subsDelegated
 			mg.StopDelegating(helper, false)
 
+			mg.subByPlace[sub.Region][sub.SubRegion].lock.Unlock()
 			for _, sub := range helperFailedSubs {
 				mg.addSubToGroup(sub.addr, sub.capacity, sub.region, sub.subRegion, sub.pred)
 			}
+			mg.subByPlace[sub.Region][sub.SubRegion].lock.Lock()
 
 			return nil
 		}
