@@ -12,10 +12,19 @@ import (
 // TestPubSubServerComms only wants to assure that pubsub servers can communicate
 // by initializing both and subscribing to events about portugal
 func TestPubSubServerComms(t *testing.T) {
+	fmt.Printf("\n $$$ TestPubSubServerComms $$$\n")
+
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()
 
 	dhts := setupDHTS(t, ctx, 2)
+	defer func() {
+		for _, dht := range dhts {
+			dht.Close()
+			defer dht.Host().Close()
+		}
+	}()
+
 	connect(t, ctx, dhts[0], dhts[1])
 
 	var pubsubs [2]*PubSub
@@ -37,10 +46,19 @@ func TestPubSubServerComms(t *testing.T) {
 // TestSimpleUnsubscribing just subscribes to certain
 // events and then unsubscribes to them
 func TestSimpleUnsubscribing(t *testing.T) {
+	fmt.Printf("\n $$$ TestSimpleUnsubscribing $$$\n")
+
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()
 
 	dhts := setupDHTS(t, ctx, 2)
+	defer func() {
+		for _, dht := range dhts {
+			dht.Close()
+			defer dht.Host().Close()
+		}
+	}()
+
 	connect(t, ctx, dhts[0], dhts[1])
 
 	var pubsubs [2]*PubSub
@@ -63,10 +81,19 @@ func TestSimpleUnsubscribing(t *testing.T) {
 
 // TestSimplePublish simply subscribes to a event and then publishes it
 func TestSimplePublish(t *testing.T) {
+	fmt.Printf("\n $$$ TestSimplePublish $$$\n")
+
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()
 
 	dhts := setupDHTS(t, ctx, 3)
+	defer func() {
+		for _, dht := range dhts {
+			dht.Close()
+			defer dht.Host().Close()
+		}
+	}()
+
 	connect(t, ctx, dhts[0], dhts[1])
 	connect(t, ctx, dhts[1], dhts[2])
 
@@ -91,10 +118,19 @@ func TestSimplePublish(t *testing.T) {
 // TestSubscriptionForwarding attemps to see if the subscription
 // travels to several nodes until it reaches the rendezvous
 func TestSubscriptionForwarding(t *testing.T) {
+	fmt.Printf("\n $$$ TestSubscriptionForwarding $$$\n")
+
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()
 
 	dhts := setupDHTS(t, ctx, 7)
+	defer func() {
+		for _, dht := range dhts {
+			dht.Close()
+			defer dht.Host().Close()
+		}
+	}()
+
 	connect(t, ctx, dhts[0], dhts[1])
 	connect(t, ctx, dhts[2], dhts[1])
 	connect(t, ctx, dhts[1], dhts[3])
@@ -133,17 +169,24 @@ func TestSubscriptionForwarding(t *testing.T) {
 // TestSimpleFaultTolerance just tries to show the system
 // working with failures in different situations
 func TestSimpleFaultTolerance(t *testing.T) {
+	fmt.Printf("\n $$$ TestSimpleFaultTolerance $$$\n")
+
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()
 
 	dhts := setupDHTS(t, ctx, 5)
+	defer func() {
+		for _, dht := range dhts {
+			dht.Close()
+			defer dht.Host().Close()
+		}
+	}()
 
 	connect(t, ctx, dhts[0], dhts[1])
 	connect(t, ctx, dhts[1], dhts[2])
 	connect(t, ctx, dhts[2], dhts[3])
 	connect(t, ctx, dhts[2], dhts[4])
 
-	fmt.Println("Start Tolerance Test!")
 	var pubsubs [5]*PubSub
 	for i, dht := range dhts {
 		pubsubs[i] = NewPubSub(dht, "EU", "PT")
@@ -162,12 +205,18 @@ func TestSimpleFaultTolerance(t *testing.T) {
 
 // TestBackupReplacement
 func TestBackupReplacement(t *testing.T) {
-	fmt.Println("Starting TestBackupReplacement!")
+	fmt.Printf("\n $$$ TestBackupReplacement $$$\n")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()
 
 	dhts := setupDHTS(t, ctx, 6)
+	defer func() {
+		for _, dht := range dhts {
+			dht.Close()
+			defer dht.Host().Close()
+		}
+	}()
 
 	connect(t, ctx, dhts[0], dhts[1])
 	connect(t, ctx, dhts[0], dhts[2])
@@ -189,10 +238,19 @@ func TestBackupReplacement(t *testing.T) {
 // TestAproxRealSubscriptionScenario with 100 peers randomly connected to
 // each other, where half subscribe to one topic and the rest to another
 func TestAproxRealSubscriptionScenario(t *testing.T) {
+	fmt.Printf("\n $$$ TestAproxRealSubscriptionScenario $$$\n")
+
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()
 
 	dhts := setupDHTS(t, ctx, 100)
+	defer func() {
+		for _, dht := range dhts {
+			dht.Close()
+			defer dht.Host().Close()
+		}
+	}()
+
 	bootstrapDhts(t, ctx, dhts)
 
 	var pubsubs [100]*PubSub

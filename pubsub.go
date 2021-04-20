@@ -56,11 +56,13 @@ type PubSub struct {
 
 	tablesLock *sync.RWMutex
 
-	managedGroups []*MulticastGroup
-	subbedGroups  []*SubGroupView
-	region        string
-	subRegion     string
-	premiumEvents chan *pb.PremiumEvent
+	managedGroups  []*MulticastGroup
+	subbedGroups   []*SubGroupView
+	region         string
+	subRegion      string
+	premiumEvents  chan *pb.PremiumEvent
+	advertiseBoard []*pb.MulticastGroupID
+	advToForward   chan *ForwardAdvert
 
 	record   *HistoryRecord
 	session  int
@@ -87,6 +89,7 @@ func NewPubSub(dht *kaddht.IpfsDHT, region string, subRegion string) *PubSub {
 		eventsToForwardUp:   make(chan *ForwardEvent, 2*len(filterTable.routes)),
 		eventsToForwardDown: make(chan *ForwardEvent, 2*len(filterTable.routes)),
 		terminate:           make(chan string),
+		advToForward:        make(chan *ForwardAdvert),
 		tablesLock:          &sync.RWMutex{},
 		region:              region,
 		subRegion:           subRegion,
@@ -964,7 +967,8 @@ func (ps *PubSub) processLoop() {
 			ps.record.SaveReceivedEvent(pid.Event, pid.GroupID.Predicate, "FastDelivery")
 			fmt.Printf("Received Event at: %s\n", ps.serverAddr)
 			fmt.Println(">> " + pid.Event)
-
+		case pid := <-ps.advToForward:
+			ps.forwardAdvertising(pid.dialAddr, pid.adv)
 		case <-ps.terminate:
 			return
 		}
@@ -972,6 +976,11 @@ func (ps *PubSub) processLoop() {
 }
 
 // ++++++++++++++++++++++++ Fast-Delivery ++++++++++++++++++++++++ //
+
+type ForwardAdvert struct {
+	dialAddr string
+	adv      *pb.AdvertRequest
+}
 
 // CreateMulticastGroup
 func (ps *PubSub) CreateMulticastGroup(pred string) error {
@@ -982,8 +991,340 @@ func (ps *PubSub) CreateMulticastGroup(pred string) error {
 	}
 
 	ps.managedGroups = append(ps.managedGroups, NewMulticastGroup(p, ps.serverAddr))
+	ps.myAdvertiseGroup(p)
 
 	return nil
+}
+
+func (ps *PubSub) myAdvertiseGroup(pred *Predicate) error {
+	fmt.Printf("myAdvertiseGroup: %s\n", ps.serverAddr)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	defer cancel()
+
+	var dialAddr string
+	for _, attr := range pred.attributes {
+
+		groupID := &pb.MulticastGroupID{
+			OwnerAddr: ps.serverAddr,
+			Predicate: pred.ToString(),
+		}
+
+		advReq := &pb.AdvertRequest{
+			GroupID: groupID,
+			RvId:    attr.name,
+		}
+
+		res, _ := ps.rendezvousSelfCheck(attr.name)
+		if res {
+			ps.advertiseBoard = append(ps.advertiseBoard, groupID)
+		}
+
+		attrID := ps.ipfsDHT.RoutingTable().NearestPeer(kb.ID(attr.name))
+		attrAddr := ps.ipfsDHT.FindLocal(attrID).Addrs[0]
+		if attrAddr == nil {
+			return errors.New("no address for closest peer")
+		} else {
+			aux := strings.Split(attrAddr.String(), "/")
+			dialAddr = aux[2] + ":4" + aux[4][1:]
+		}
+
+		conn, err := grpc.Dial(dialAddr, grpc.WithInsecure())
+		if err != nil {
+			log.Fatalf("fail to dial: %v", err)
+		}
+		defer conn.Close()
+
+		client := pb.NewScoutHubClient(conn)
+
+		ack, err := client.AdvertiseGroup(ctx, advReq)
+		if err != nil || !ack.State {
+			alternatives := ps.alternativesToRv(attr.name)
+			for _, addr := range alternatives {
+				conn, err := grpc.Dial(addr, grpc.WithInsecure())
+				if err != nil {
+					log.Fatalf("fail to dial: %v", err)
+				}
+				defer conn.Close()
+
+				client := pb.NewScoutHubClient(conn)
+				ack, err := client.AdvertiseGroup(ctx, advReq)
+				if ack.State && err == nil {
+					break
+				}
+			}
+		}
+	}
+
+	// Statistical Code
+	ps.record.AddOperationStat("myPublish")
+
+	return nil
+}
+
+// AdvertiseGroup
+func (ps *PubSub) AdvertiseGroup(ctx context.Context, adv *pb.AdvertRequest) (*pb.Ack, error) {
+	fmt.Printf("AdvertiseGroup: %s\n", ps.serverAddr)
+
+	res, _ := ps.rendezvousSelfCheck(adv.RvId)
+	if res {
+		ps.advertiseBoard = append(ps.advertiseBoard, adv.GroupID)
+		return &pb.Ack{State: true, Info: ""}, nil
+	}
+
+	attrID := ps.ipfsDHT.RoutingTable().NearestPeer(kb.ID(adv.RvId))
+	attrAddr := ps.ipfsDHT.FindLocal(attrID).Addrs[0]
+
+	var dialAddr string
+	if attrAddr == nil {
+		return nil, errors.New("no address for closest peer")
+	} else {
+		aux := strings.Split(attrAddr.String(), "/")
+		dialAddr = aux[2] + ":4" + aux[4][1:]
+	}
+
+	ps.advToForward <- &ForwardAdvert{
+		dialAddr: dialAddr,
+		adv:      adv,
+	}
+
+	// Statistical Code
+	ps.record.AddOperationStat("AdvertiseGroup")
+
+	return &pb.Ack{State: true, Info: ""}, nil
+}
+
+// forwardAdvertising
+func (ps *PubSub) forwardAdvertising(dialAddr string, adv *pb.AdvertRequest) {
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	defer cancel()
+
+	conn, err := grpc.Dial(dialAddr, grpc.WithInsecure())
+	if err != nil {
+		log.Fatalf("fail to dial: %v", err)
+	}
+	defer conn.Close()
+
+	client := pb.NewScoutHubClient(conn)
+	ack, err := client.AdvertiseGroup(ctx, adv)
+
+	if err != nil || !ack.State {
+		alternatives := ps.alternativesToRv(adv.RvId)
+		for _, addr := range alternatives {
+			conn, err := grpc.Dial(addr, grpc.WithInsecure())
+			if err != nil {
+				log.Fatalf("fail to dial: %v", err)
+			}
+			defer conn.Close()
+
+			client := pb.NewScoutHubClient(conn)
+			ack, err := client.AdvertiseGroup(ctx, adv)
+			if ack.State && err == nil {
+				break
+			}
+		}
+	}
+}
+
+// myGroupSearchRequest
+func (ps *PubSub) myGroupSearchRequest(pred string) error {
+	fmt.Println("myGroupSearchRequest: " + ps.serverAddr)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	defer cancel()
+
+	p, err := NewPredicate(pred)
+	if err != nil {
+		return err
+	}
+
+	marshalSelf, err := ps.ipfsDHT.Host().ID().MarshalBinary()
+	if err != nil {
+		return err
+	}
+
+	selfKey := key.XORKeySpace.Key(marshalSelf)
+	var minAttr string
+	var minID peer.ID
+	var minDist *big.Int = nil
+
+	for _, attr := range p.attributes {
+		candidateID := peer.ID(kb.ConvertKey(attr.name))
+		aux, err := candidateID.MarshalBinary()
+		if err != nil {
+			return err
+		}
+
+		candidateDist := key.XORKeySpace.Distance(selfKey, key.XORKeySpace.Key(aux))
+		if minDist == nil || candidateDist.Cmp(minDist) == -1 {
+			minAttr = attr.name
+			minID = candidateID
+			minDist = candidateDist
+		}
+	}
+
+	res, _ := ps.rendezvousSelfCheck(minAttr)
+	if res {
+		for _, g := range ps.returnGroupsOfInterest(p) {
+			fmt.Println("Pub: " + g.OwnerAddr + " Theme: " + g.Predicate)
+		}
+		return nil
+	}
+
+	var dialAddr string
+	closest := ps.ipfsDHT.RoutingTable().NearestPeer(kb.ID(minID))
+	closestAddr := ps.ipfsDHT.FindLocal(closest).Addrs[0]
+	if closestAddr == nil {
+		return errors.New("no address for closest peer")
+	} else {
+		aux := strings.Split(closestAddr.String(), "/")
+		dialAddr = aux[2] + ":4" + aux[4][1:]
+	}
+
+	conn, err := grpc.Dial(dialAddr, grpc.WithInsecure())
+	if err != nil {
+		log.Fatalf("fail to dial: %v", err)
+	}
+	defer conn.Close()
+
+	req := &pb.SearchRequest{
+		Predicate: pred,
+		RvID:      minAttr,
+	}
+
+	client := pb.NewScoutHubClient(conn)
+	reply, err := client.GroupSearchRequest(ctx, req)
+	if err != nil {
+		alternatives := ps.alternativesToRv(req.RvID)
+		for _, addr := range alternatives {
+			conn, err := grpc.Dial(addr, grpc.WithInsecure())
+			if err != nil {
+				log.Fatalf("fail to dial: %v", err)
+			}
+			defer conn.Close()
+
+			client := pb.NewScoutHubClient(conn)
+			reply, err := client.GroupSearchRequest(ctx, req)
+			if err == nil {
+				for _, g := range reply.Groups {
+					fmt.Println("Pub: " + g.OwnerAddr + " Theme: " + g.Predicate)
+				}
+				break
+			}
+		}
+	} else {
+		for _, g := range reply.Groups {
+			fmt.Println("Pub: " + g.OwnerAddr + " Theme: " + g.Predicate)
+		}
+	}
+
+	// Statistical Code
+	ps.record.AddOperationStat("myGroupSearchRequest")
+
+	return nil
+}
+
+// GroupSearchRequest
+func (ps *PubSub) GroupSearchRequest(ctx context.Context, req *pb.SearchRequest) (*pb.SearchReply, error) {
+
+	p, err := NewPredicate(req.Predicate)
+	if err != nil {
+		return nil, err
+	}
+
+	marshalSelf, err := ps.ipfsDHT.Host().ID().MarshalBinary()
+	if err != nil {
+		return nil, err
+	}
+
+	selfKey := key.XORKeySpace.Key(marshalSelf)
+	var minAttr string
+	var minID peer.ID
+	var minDist *big.Int = nil
+
+	for _, attr := range p.attributes {
+		candidateID := peer.ID(kb.ConvertKey(attr.name))
+		aux, err := candidateID.MarshalBinary()
+		if err != nil {
+			return nil, err
+		}
+
+		candidateDist := key.XORKeySpace.Distance(selfKey, key.XORKeySpace.Key(aux))
+		if minDist == nil || candidateDist.Cmp(minDist) == -1 {
+			minAttr = attr.name
+			minID = candidateID
+			minDist = candidateDist
+		}
+	}
+
+	res, _ := ps.rendezvousSelfCheck(minAttr)
+	if res {
+		var groups map[int32]*pb.MulticastGroupID = make(map[int32]*pb.MulticastGroupID)
+		for i, g := range ps.returnGroupsOfInterest(p) {
+			groups[int32(i)] = g
+		}
+
+		return &pb.SearchReply{Groups: groups}, nil
+	}
+
+	var dialAddr string
+	closest := ps.ipfsDHT.RoutingTable().NearestPeer(kb.ID(minID))
+	closestAddr := ps.ipfsDHT.FindLocal(closest).Addrs[0]
+	if closestAddr == nil {
+		return nil, errors.New("no address for closest peer")
+	} else {
+		aux := strings.Split(closestAddr.String(), "/")
+		dialAddr = aux[2] + ":4" + aux[4][1:]
+	}
+
+	conn, err := grpc.Dial(dialAddr, grpc.WithInsecure())
+	if err != nil {
+		log.Fatalf("fail to dial: %v", err)
+	}
+	defer conn.Close()
+
+	client := pb.NewScoutHubClient(conn)
+	reply, err := client.GroupSearchRequest(ctx, req)
+	if err != nil {
+		alternatives := ps.alternativesToRv(req.RvID)
+		for _, addr := range alternatives {
+			conn, err := grpc.Dial(addr, grpc.WithInsecure())
+			if err != nil {
+				log.Fatalf("fail to dial: %v", err)
+			}
+			defer conn.Close()
+
+			client := pb.NewScoutHubClient(conn)
+			reply, err := client.GroupSearchRequest(ctx, req)
+			if err == nil {
+				// Statistical Code
+				ps.record.AddOperationStat("myGroupSearchRequest")
+
+				return reply, nil
+			}
+		}
+	} else {
+		// Statistical Code
+		ps.record.AddOperationStat("myGroupSearchRequest")
+
+		return reply, nil
+	}
+
+	return nil, errors.New("dead end search")
+}
+
+func (ps *PubSub) returnGroupsOfInterest(p *Predicate) []*pb.MulticastGroupID {
+
+	var interestGs []*pb.MulticastGroupID
+	for _, g := range ps.advertiseBoard {
+		pG, _ := NewPredicate(g.Predicate)
+		if pG.SimplePredicateMatch(p) {
+			interestGs = append(interestGs, g)
+		}
+	}
+
+	return interestGs
 }
 
 // myPremiumSubscribe

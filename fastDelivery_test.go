@@ -2,16 +2,26 @@ package contentpubsub
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 )
 
-// TestSimpleFastDelivery
-func TestSimpleFastDelivery(t *testing.T) {
+// TestSimpleFastDeliveryWithSearch
+func TestSimpleFastDeliveryWithSearch(t *testing.T) {
+	fmt.Printf("\n $$$ TestSimpleFastDeliveryWithSearch $$$\n")
+
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()
 
 	dhts := setupDHTS(t, ctx, 5)
+	defer func() {
+		for _, dht := range dhts {
+			dht.Close()
+			defer dht.Host().Close()
+		}
+	}()
+
 	connect(t, ctx, dhts[0], dhts[1])
 	connect(t, ctx, dhts[0], dhts[2])
 	connect(t, ctx, dhts[0], dhts[3])
@@ -22,22 +32,32 @@ func TestSimpleFastDelivery(t *testing.T) {
 		pubsubs[i] = NewPubSub(dht, "EU", "PT")
 	}
 
-	pubsubs[0].CreateMulticastGroup("portugal T")
+	pubsubs[4].CreateMulticastGroup("portugal T")
+	pubsubs[1].myGroupSearchRequest("portugal T")
 	pubsubs[1].myPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 10)
 	pubsubs[2].myPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 10)
 	pubsubs[3].myPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 10)
-	pubsubs[4].myPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 10)
-	pubsubs[0].myPremiumPublish("portugal T", "Portugal is great!", "portugal T")
+	pubsubs[0].myPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 10)
+	pubsubs[4].myPremiumPublish("portugal T", "Portugal is great!", "portugal T")
 
 	time.Sleep(time.Second)
 }
 
 // TestSimpleFastDeliveryWithRanges
 func TestSimpleFastDeliveryWithRanges(t *testing.T) {
+	fmt.Printf("\n $$$ TestSimpleFastDeliveryWithRanges $$$\n")
+
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()
 
 	dhts := setupDHTS(t, ctx, 5)
+	defer func() {
+		for _, dht := range dhts {
+			dht.Close()
+			defer dht.Host().Close()
+		}
+	}()
+
 	connect(t, ctx, dhts[0], dhts[1])
 	connect(t, ctx, dhts[0], dhts[2])
 	connect(t, ctx, dhts[0], dhts[3])
@@ -60,10 +80,19 @@ func TestSimpleFastDeliveryWithRanges(t *testing.T) {
 
 // TestSimpleFastDeliveryWithHelper
 func TestSimpleFastDeliveryWithHelper(t *testing.T) {
+	fmt.Printf("\n $$$ TestSimpleFastDeliveryWithHelper $$$\n")
+
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()
 
 	dhts := setupDHTS(t, ctx, 8)
+	defer func() {
+		for _, dht := range dhts {
+			dht.Close()
+			defer dht.Host().Close()
+		}
+	}()
+
 	connect(t, ctx, dhts[0], dhts[1])
 	connect(t, ctx, dhts[0], dhts[2])
 	connect(t, ctx, dhts[0], dhts[3])
@@ -92,10 +121,19 @@ func TestSimpleFastDeliveryWithHelper(t *testing.T) {
 
 // TestSimpleFastDeliveryUnsubscribe
 func TestSimpleFastDeliveryUnsubscribe(t *testing.T) {
+	fmt.Printf("\n $$$ TestSimpleFastDeliveryUnsubscribe $$$\n")
+
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()
 
 	dhts := setupDHTS(t, ctx, 8)
+	defer func() {
+		for _, dht := range dhts {
+			dht.Close()
+			defer dht.Host().Close()
+		}
+	}()
+
 	connect(t, ctx, dhts[0], dhts[1])
 	connect(t, ctx, dhts[0], dhts[2])
 	connect(t, ctx, dhts[0], dhts[3])
@@ -128,10 +166,19 @@ func TestSimpleFastDeliveryUnsubscribe(t *testing.T) {
 
 // TestFastDeliveryHelperUnsubscribe
 func TestFastDeliveryHelperUnsubscribe(t *testing.T) {
+	fmt.Printf("\n $$$ TestFastDeliveryHelperUnsubscribe $$$\n")
+
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()
 
 	dhts := setupDHTS(t, ctx, 8)
+	defer func() {
+		for _, dht := range dhts {
+			dht.Close()
+			defer dht.Host().Close()
+		}
+	}()
+
 	connect(t, ctx, dhts[0], dhts[1])
 	connect(t, ctx, dhts[0], dhts[2])
 	connect(t, ctx, dhts[0], dhts[3])
@@ -163,10 +210,19 @@ func TestFastDeliveryHelperUnsubscribe(t *testing.T) {
 
 // TestFastDeliveryWithHelperFailure
 func TestFastDeliveryWithHelperFailure(t *testing.T) {
+	fmt.Printf("\n $$$ TestFastDeliveryWithHelperFailure $$$\n")
+
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()
 
 	dhts := setupDHTS(t, ctx, 8)
+	defer func() {
+		for _, dht := range dhts {
+			dht.Close()
+			defer dht.Host().Close()
+		}
+	}()
+
 	connect(t, ctx, dhts[0], dhts[1])
 	connect(t, ctx, dhts[0], dhts[2])
 	connect(t, ctx, dhts[0], dhts[3])

@@ -18,12 +18,15 @@ const _ = grpc.SupportPackageIsVersion7
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ScoutHubClient interface {
+	// ScoutSubs
 	Subscribe(ctx context.Context, in *Subscription, opts ...grpc.CallOption) (*Ack, error)
 	Publish(ctx context.Context, in *Event, opts ...grpc.CallOption) (*Ack, error)
 	Notify(ctx context.Context, in *Event, opts ...grpc.CallOption) (*Ack, error)
 	UpdateBackup(ctx context.Context, in *Update, opts ...grpc.CallOption) (*Ack, error)
 	BackupRefresh(ctx context.Context, opts ...grpc.CallOption) (ScoutHub_BackupRefreshClient, error)
-	// Fast-Delivery
+	// FastDelivery
+	AdvertiseGroup(ctx context.Context, in *AdvertRequest, opts ...grpc.CallOption) (*Ack, error)
+	GroupSearchRequest(ctx context.Context, in *SearchRequest, opts ...grpc.CallOption) (*SearchReply, error)
 	PremiumSubscribe(ctx context.Context, in *PremiumSubscription, opts ...grpc.CallOption) (*Ack, error)
 	PremiumUnsubscribe(ctx context.Context, in *PremiumSubscription, opts ...grpc.CallOption) (*Ack, error)
 	PremiumPublish(ctx context.Context, in *PremiumEvent, opts ...grpc.CallOption) (*Ack, error)
@@ -109,6 +112,24 @@ func (x *scoutHubBackupRefreshClient) CloseAndRecv() (*Ack, error) {
 	return m, nil
 }
 
+func (c *scoutHubClient) AdvertiseGroup(ctx context.Context, in *AdvertRequest, opts ...grpc.CallOption) (*Ack, error) {
+	out := new(Ack)
+	err := c.cc.Invoke(ctx, "/contentpubsub.pb.ScoutHub/AdvertiseGroup", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *scoutHubClient) GroupSearchRequest(ctx context.Context, in *SearchRequest, opts ...grpc.CallOption) (*SearchReply, error) {
+	out := new(SearchReply)
+	err := c.cc.Invoke(ctx, "/contentpubsub.pb.ScoutHub/GroupSearchRequest", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *scoutHubClient) PremiumSubscribe(ctx context.Context, in *PremiumSubscription, opts ...grpc.CallOption) (*Ack, error) {
 	out := new(Ack)
 	err := c.cc.Invoke(ctx, "/contentpubsub.pb.ScoutHub/PremiumSubscribe", in, out, opts...)
@@ -158,12 +179,15 @@ func (c *scoutHubClient) DelegateSubToHelper(ctx context.Context, in *DelegateSu
 // All implementations must embed UnimplementedScoutHubServer
 // for forward compatibility
 type ScoutHubServer interface {
+	// ScoutSubs
 	Subscribe(context.Context, *Subscription) (*Ack, error)
 	Publish(context.Context, *Event) (*Ack, error)
 	Notify(context.Context, *Event) (*Ack, error)
 	UpdateBackup(context.Context, *Update) (*Ack, error)
 	BackupRefresh(ScoutHub_BackupRefreshServer) error
-	// Fast-Delivery
+	// FastDelivery
+	AdvertiseGroup(context.Context, *AdvertRequest) (*Ack, error)
+	GroupSearchRequest(context.Context, *SearchRequest) (*SearchReply, error)
 	PremiumSubscribe(context.Context, *PremiumSubscription) (*Ack, error)
 	PremiumUnsubscribe(context.Context, *PremiumSubscription) (*Ack, error)
 	PremiumPublish(context.Context, *PremiumEvent) (*Ack, error)
@@ -190,6 +214,12 @@ func (UnimplementedScoutHubServer) UpdateBackup(context.Context, *Update) (*Ack,
 }
 func (UnimplementedScoutHubServer) BackupRefresh(ScoutHub_BackupRefreshServer) error {
 	return status.Errorf(codes.Unimplemented, "method BackupRefresh not implemented")
+}
+func (UnimplementedScoutHubServer) AdvertiseGroup(context.Context, *AdvertRequest) (*Ack, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AdvertiseGroup not implemented")
+}
+func (UnimplementedScoutHubServer) GroupSearchRequest(context.Context, *SearchRequest) (*SearchReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GroupSearchRequest not implemented")
 }
 func (UnimplementedScoutHubServer) PremiumSubscribe(context.Context, *PremiumSubscription) (*Ack, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PremiumSubscribe not implemented")
@@ -317,6 +347,42 @@ func (x *scoutHubBackupRefreshServer) Recv() (*Update, error) {
 	return m, nil
 }
 
+func _ScoutHub_AdvertiseGroup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AdvertRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ScoutHubServer).AdvertiseGroup(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/contentpubsub.pb.ScoutHub/AdvertiseGroup",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ScoutHubServer).AdvertiseGroup(ctx, req.(*AdvertRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ScoutHub_GroupSearchRequest_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SearchRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ScoutHubServer).GroupSearchRequest(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/contentpubsub.pb.ScoutHub/GroupSearchRequest",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ScoutHubServer).GroupSearchRequest(ctx, req.(*SearchRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ScoutHub_PremiumSubscribe_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(PremiumSubscription)
 	if err := dec(in); err != nil {
@@ -429,6 +495,14 @@ var ScoutHub_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpdateBackup",
 			Handler:    _ScoutHub_UpdateBackup_Handler,
+		},
+		{
+			MethodName: "AdvertiseGroup",
+			Handler:    _ScoutHub_AdvertiseGroup_Handler,
+		},
+		{
+			MethodName: "GroupSearchRequest",
+			Handler:    _ScoutHub_GroupSearchRequest_Handler,
 		},
 		{
 			MethodName: "PremiumSubscribe",

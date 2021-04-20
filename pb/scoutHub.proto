@@ -5,13 +5,17 @@ option go_package = "github.com/pedroaston/contentpubsub/pb";
 package contentpubsub.pb;
 
 service ScoutHub {
+
+    // ScoutSubs
     rpc Subscribe(Subscription) returns (Ack) {}
     rpc Publish(Event) returns (Ack) {}
     rpc Notify(Event) returns (Ack) {}
     rpc UpdateBackup(Update) returns (Ack) {}
     rpc BackupRefresh(stream Update) returns (Ack) {}
 
-    // Fast-Delivery
+    // FastDelivery
+    rpc AdvertiseGroup(AdvertRequest) returns (Ack) {}
+    rpc GroupSearchRequest(SearchRequest) returns (SearchReply) {}
     rpc PremiumSubscribe(PremiumSubscription) returns (Ack) {}
     rpc PremiumUnsubscribe(PremiumSubscription) returns (Ack) {}
     rpc PremiumPublish(PremiumEvent) returns (Ack) {}
@@ -19,11 +23,12 @@ service ScoutHub {
     rpc DelegateSubToHelper(DelegateSub) returns (Ack) {}
 }
 
-// Acknowledge response
 message Ack {
     bool state = 1;
     string info = 2;
 }
+
+// ++++++++++++++ ScoutSubs message types ++++++++++++++
 
 message Subscription {
     string peerID = 1;
@@ -54,7 +59,21 @@ message Update {
     string predicate = 4;
 }
 
-// Fast-Delivery
+// +++++++++++++++++++ FastDelivery message types +++++++++++++++++++
+
+message AdvertRequest {
+    MulticastGroupID groupID = 1;
+    string rvId = 2;
+}
+
+message SearchRequest {
+    string predicate = 1;
+    string rvID = 2;
+}
+
+message SearchReply {
+    map<int32, MulticastGroupID> groups = 1;
+}
 
 message MulticastGroupID {
     string ownerAddr = 1;
