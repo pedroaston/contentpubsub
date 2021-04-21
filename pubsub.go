@@ -56,13 +56,14 @@ type PubSub struct {
 
 	tablesLock *sync.RWMutex
 
-	managedGroups  []*MulticastGroup
-	subbedGroups   []*SubGroupView
-	region         string
-	subRegion      string
-	premiumEvents  chan *pb.PremiumEvent
-	advertiseBoard []*pb.MulticastGroupID
-	advToForward   chan *ForwardAdvert
+	managedGroups         []*MulticastGroup
+	subbedGroups          []*SubGroupView
+	region                string
+	subRegion             string
+	premiumEvents         chan *pb.PremiumEvent
+	currentAdvertiseBoard []*pb.MulticastGroupID
+	nextAdvertiseBoard    []*pb.MulticastGroupID
+	advToForward          chan *ForwardAdvert
 
 	record   *HistoryRecord
 	session  int
@@ -146,10 +147,8 @@ func (ps *PubSub) mySubscribe(info string) error {
 		return err
 	}
 
-	alreadyDone, pNew := ps.myFilters.SimpleAddSummarizedFilter(p)
-	if alreadyDone {
-		return nil
-	} else if pNew != nil {
+	_, pNew := ps.myFilters.SimpleAddSummarizedFilter(p)
+	if pNew != nil {
 		p = pNew
 	}
 
@@ -927,6 +926,9 @@ func (ps *PubSub) refreshingProtocol() {
 				ps.mySubscribe(filter.ToString())
 			}
 		}
+		for _, g := range ps.managedGroups {
+			ps.myAdvertiseGroup(g.predicate)
+		}
 
 		time.Sleep(SubRefreshRateMin * time.Minute)
 
@@ -935,11 +937,16 @@ func (ps *PubSub) refreshingProtocol() {
 				ps.mySubscribe(filter.ToString())
 			}
 		}
+		for _, g := range ps.managedGroups {
+			ps.myAdvertiseGroup(g.predicate)
+		}
 
 		ps.tablesLock.Lock()
 		ps.currentFilterTable = ps.nextFilterTable
 		ps.nextFilterTable = NewFilterTable(ps.ipfsDHT)
 		ps.refreshAllBackups()
+		ps.currentAdvertiseBoard = ps.nextAdvertiseBoard
+		ps.nextAdvertiseBoard = nil
 		ps.tablesLock.Unlock()
 	}
 }
@@ -1020,7 +1027,8 @@ func (ps *PubSub) myAdvertiseGroup(pred *Predicate) error {
 
 		res, _ := ps.rendezvousSelfCheck(attr.name)
 		if res {
-			ps.advertiseBoard = append(ps.advertiseBoard, groupID)
+			ps.addAdvertToBoards(advReq)
+			return nil
 		}
 
 		attrID := ps.ipfsDHT.RoutingTable().NearestPeer(kb.ID(attr.name))
@@ -1071,7 +1079,7 @@ func (ps *PubSub) AdvertiseGroup(ctx context.Context, adv *pb.AdvertRequest) (*p
 
 	res, _ := ps.rendezvousSelfCheck(adv.RvId)
 	if res {
-		ps.advertiseBoard = append(ps.advertiseBoard, adv.GroupID)
+		ps.addAdvertToBoards(adv)
 		return &pb.Ack{State: true, Info: ""}, nil
 	}
 
@@ -1128,6 +1136,40 @@ func (ps *PubSub) forwardAdvertising(dialAddr string, adv *pb.AdvertRequest) {
 			}
 		}
 	}
+}
+
+// addAdvertToBoard
+func (ps *PubSub) addAdvertToBoards(adv *pb.AdvertRequest) error {
+
+	pAdv, err := NewPredicate(adv.GroupID.Predicate)
+	if err != nil {
+		return err
+	}
+
+	miss := true
+	ps.tablesLock.Lock()
+	for _, a := range ps.currentAdvertiseBoard {
+		pA, _ := NewPredicate(a.Predicate)
+		if a.OwnerAddr == adv.GroupID.OwnerAddr && pA.Equal(pAdv) {
+			miss = false
+		}
+	}
+
+	if miss {
+		ps.currentAdvertiseBoard = append(ps.currentAdvertiseBoard, adv.GroupID)
+	}
+
+	for _, a := range ps.nextAdvertiseBoard {
+		pA, _ := NewPredicate(a.Predicate)
+		if a.OwnerAddr == adv.GroupID.OwnerAddr && pA.Equal(pAdv) {
+			return nil
+		}
+	}
+
+	ps.nextAdvertiseBoard = append(ps.nextAdvertiseBoard, adv.GroupID)
+	ps.tablesLock.Unlock()
+
+	return nil
 }
 
 // myGroupSearchRequest
@@ -1320,13 +1362,15 @@ func (ps *PubSub) GroupSearchRequest(ctx context.Context, req *pb.SearchRequest)
 func (ps *PubSub) returnGroupsOfInterest(p *Predicate) []*pb.MulticastGroupID {
 
 	var interestGs []*pb.MulticastGroupID
-	for _, g := range ps.advertiseBoard {
+	ps.tablesLock.RLock()
+	for _, g := range ps.currentAdvertiseBoard {
 		pG, _ := NewPredicate(g.Predicate)
 		if pG.SimplePredicateMatch(p) {
 			interestGs = append(interestGs, g)
 		}
 	}
 
+	ps.tablesLock.RUnlock()
 	return interestGs
 }
 
