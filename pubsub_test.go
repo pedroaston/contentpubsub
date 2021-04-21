@@ -235,6 +235,48 @@ func TestBackupReplacement(t *testing.T) {
 	time.Sleep(time.Second)
 }
 
+// TestRefreshRoutine
+// To experience this test must switch refresh rate to 2 seconds
+func TestRefreshRoutine(t *testing.T) {
+	fmt.Printf("\n$$$ TestRefreshRoutine $$$\n")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	defer cancel()
+
+	dhts := setupDHTS(t, ctx, 6)
+	defer func() {
+		for _, dht := range dhts {
+			dht.Close()
+			defer dht.Host().Close()
+		}
+	}()
+
+	connect(t, ctx, dhts[0], dhts[1])
+	connect(t, ctx, dhts[0], dhts[2])
+	connect(t, ctx, dhts[0], dhts[3])
+	connect(t, ctx, dhts[0], dhts[4])
+	connect(t, ctx, dhts[0], dhts[5])
+
+	var pubsubs [6]*PubSub
+	for i, dht := range dhts {
+		pubsubs[i] = NewPubSub(dht, "EU", "PT")
+	}
+
+	pubsubs[4].CreateMulticastGroup("portugal T")
+	pubsubs[1].mySubscribe("portugal T")
+	pubsubs[2].mySubscribe("portugal T")
+	pubsubs[2].CreateMulticastGroup("portugal T")
+	pubsubs[1].myUnsubscribe("portugal T")
+	pubsubs[3].mySubscribe("bali T")
+	pubsubs[2].terminateService()
+
+	time.Sleep(5 * time.Second)
+
+	pubsubs[0].myPublish("bali has some good waves", "bali T")
+	pubsubs[0].myPublish("portugal has epic waves", "portugal T")
+	pubsubs[3].myGroupSearchRequest("portugal T")
+}
+
 // TestAproxRealSubscriptionScenario with 100 peers randomly connected to
 // each other, where half subscribe to one topic and the rest to another
 func TestAproxRealSubscriptionScenario(t *testing.T) {

@@ -944,9 +944,9 @@ func (ps *PubSub) refreshingProtocol() {
 		ps.tablesLock.Lock()
 		ps.currentFilterTable = ps.nextFilterTable
 		ps.nextFilterTable = NewFilterTable(ps.ipfsDHT)
-		ps.refreshAllBackups()
 		ps.currentAdvertiseBoard = ps.nextAdvertiseBoard
 		ps.nextAdvertiseBoard = nil
+		ps.refreshAllBackups()
 		ps.tablesLock.Unlock()
 	}
 }
@@ -1148,6 +1148,8 @@ func (ps *PubSub) addAdvertToBoards(adv *pb.AdvertRequest) error {
 
 	miss := true
 	ps.tablesLock.Lock()
+	defer ps.tablesLock.Unlock()
+
 	for _, a := range ps.currentAdvertiseBoard {
 		pA, _ := NewPredicate(a.Predicate)
 		if a.OwnerAddr == adv.GroupID.OwnerAddr && pA.Equal(pAdv) {
@@ -1167,7 +1169,6 @@ func (ps *PubSub) addAdvertToBoards(adv *pb.AdvertRequest) error {
 	}
 
 	ps.nextAdvertiseBoard = append(ps.nextAdvertiseBoard, adv.GroupID)
-	ps.tablesLock.Unlock()
 
 	return nil
 }
@@ -1240,6 +1241,7 @@ func (ps *PubSub) myGroupSearchRequest(pred string) error {
 
 	client := pb.NewScoutHubClient(conn)
 	reply, err := client.GroupSearchRequest(ctx, req)
+	fmt.Println("Oh wii!")
 	if err != nil {
 		alternatives := ps.alternativesToRv(req.RvID)
 		for _, addr := range alternatives {
@@ -1259,10 +1261,13 @@ func (ps *PubSub) myGroupSearchRequest(pred string) error {
 			}
 		}
 	} else {
+		fmt.Println("Oh yeah!")
 		for _, g := range reply.Groups {
 			fmt.Println("Pub: " + g.OwnerAddr + " Theme: " + g.Predicate)
 		}
 	}
+
+	fmt.Println("Ola lindo!")
 
 	// Statistical Code
 	ps.record.AddOperationStat("myGroupSearchRequest")
@@ -1272,6 +1277,7 @@ func (ps *PubSub) myGroupSearchRequest(pred string) error {
 
 // GroupSearchRequest
 func (ps *PubSub) GroupSearchRequest(ctx context.Context, req *pb.SearchRequest) (*pb.SearchReply, error) {
+	fmt.Println("GroupSearchRequest: " + ps.serverAddr)
 
 	p, err := NewPredicate(req.Predicate)
 	if err != nil {
