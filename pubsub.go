@@ -52,6 +52,8 @@ type PubSub struct {
 	subsToForward       chan *ForwardSubRequest
 	eventsToForwardUp   chan *ForwardEvent
 	eventsToForwardDown chan *ForwardEvent
+	heartbeatTicker     *time.Ticker
+	refreshTicker       *time.Ticker
 	terminate           chan string
 
 	tablesLock *sync.RWMutex
@@ -91,6 +93,8 @@ func NewPubSub(dht *kaddht.IpfsDHT, region string, subRegion string) *PubSub {
 		eventsToForwardDown: make(chan *ForwardEvent, 2*len(filterTable.routes)),
 		terminate:           make(chan string),
 		advToForward:        make(chan *ForwardAdvert),
+		heartbeatTicker:     time.NewTicker(SubRefreshRateMin * time.Minute),
+		refreshTicker:       time.NewTicker(2 * SubRefreshRateMin * time.Minute),
 		tablesLock:          &sync.RWMutex{},
 		region:              region,
 		subRegion:           subRegion,
@@ -116,7 +120,6 @@ func NewPubSub(dht *kaddht.IpfsDHT, region string, subRegion string) *PubSub {
 	pb.RegisterScoutHubServer(ps.server, ps)
 	go ps.server.Serve(lis)
 	go ps.processLoop()
-	go ps.refreshingProtocol()
 
 	return ps
 }
@@ -913,44 +916,6 @@ func (ps *PubSub) alternativesToRv(rvID string) []string {
 	return validAlt
 }
 
-// heartbeatProtocol is the routine responsible to
-// refresh periodically the subscriptions of a peer
-// and the filterTables after 2 subs refreshings
-func (ps *PubSub) refreshingProtocol() {
-
-	for {
-		time.Sleep(SubRefreshRateMin * time.Minute)
-
-		for _, filters := range ps.myFilters.filters {
-			for _, filter := range filters {
-				ps.mySubscribe(filter.ToString())
-			}
-		}
-		for _, g := range ps.managedGroups {
-			ps.myAdvertiseGroup(g.predicate)
-		}
-
-		time.Sleep(SubRefreshRateMin * time.Minute)
-
-		for _, filters := range ps.myFilters.filters {
-			for _, filter := range filters {
-				ps.mySubscribe(filter.ToString())
-			}
-		}
-		for _, g := range ps.managedGroups {
-			ps.myAdvertiseGroup(g.predicate)
-		}
-
-		ps.tablesLock.Lock()
-		ps.currentFilterTable = ps.nextFilterTable
-		ps.nextFilterTable = NewFilterTable(ps.ipfsDHT)
-		ps.currentAdvertiseBoard = ps.nextAdvertiseBoard
-		ps.nextAdvertiseBoard = nil
-		ps.refreshAllBackups()
-		ps.tablesLock.Unlock()
-	}
-}
-
 func (ps *PubSub) terminateService() {
 	ps.terminate <- "end"
 	ps.server.Stop()
@@ -979,6 +944,23 @@ func (ps *PubSub) processLoop() {
 			fmt.Println(">> " + pid.Event)
 		case pid := <-ps.advToForward:
 			ps.forwardAdvertising(pid.dialAddr, pid.adv)
+		case <-ps.heartbeatTicker.C:
+			for _, filters := range ps.myFilters.filters {
+				for _, filter := range filters {
+					ps.mySubscribe(filter.ToString())
+				}
+			}
+			for _, g := range ps.managedGroups {
+				ps.myAdvertiseGroup(g.predicate)
+			}
+		case <-ps.refreshTicker.C:
+			ps.tablesLock.Lock()
+			ps.currentFilterTable = ps.nextFilterTable
+			ps.nextFilterTable = NewFilterTable(ps.ipfsDHT)
+			ps.currentAdvertiseBoard = ps.nextAdvertiseBoard
+			ps.nextAdvertiseBoard = nil
+			ps.refreshAllBackups()
+			ps.tablesLock.Unlock()
 		case <-ps.terminate:
 			return
 		}
@@ -1241,7 +1223,6 @@ func (ps *PubSub) myGroupSearchRequest(pred string) error {
 
 	client := pb.NewScoutHubClient(conn)
 	reply, err := client.GroupSearchRequest(ctx, req)
-	fmt.Println("Oh wii!")
 	if err != nil {
 		alternatives := ps.alternativesToRv(req.RvID)
 		for _, addr := range alternatives {
@@ -1261,13 +1242,10 @@ func (ps *PubSub) myGroupSearchRequest(pred string) error {
 			}
 		}
 	} else {
-		fmt.Println("Oh yeah!")
 		for _, g := range reply.Groups {
 			fmt.Println("Pub: " + g.OwnerAddr + " Theme: " + g.Predicate)
 		}
 	}
-
-	fmt.Println("Ola lindo!")
 
 	// Statistical Code
 	ps.record.AddOperationStat("myGroupSearchRequest")
