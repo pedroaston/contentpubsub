@@ -7,9 +7,13 @@ import (
 	"time"
 )
 
-// TestSimpleFastDeliveryWithSearch
+// TestSimpleFastDeliveryWithSearch tests subscription, publishing
+// and advertising/search of the FastDelivery protocol
+// Test composition: 5 nodes
+// >> 1 Premium Publisher that creates and publishes in a MulticastGroup
+// >> 4 Premium Subscribers that subscribe to a MulticastGroup
 func TestSimpleFastDeliveryWithSearch(t *testing.T) {
-	fmt.Printf("\n $$$ TestSimpleFastDeliveryWithSearch $$$\n")
+	fmt.Printf("\n$$$ TestSimpleFastDeliveryWithSearch $$$\n")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()
@@ -43,9 +47,13 @@ func TestSimpleFastDeliveryWithSearch(t *testing.T) {
 	time.Sleep(time.Second)
 }
 
-// TestSimpleFastDeliveryWithRanges
+// TestSimpleFastDeliveryWithRanges is similar to the test above but instead of using
+// a simple predicate it uses one composed by a topic attribute and a range one
+// Test composition: 5 nodes
+// >> 1 Premium Publisher that creates and publishes in a MulticastGroup
+// >> 4 Premium Subscribers that subscribe to a MulticastGroup
 func TestSimpleFastDeliveryWithRanges(t *testing.T) {
-	fmt.Printf("\n $$$ TestSimpleFastDeliveryWithRanges $$$\n")
+	fmt.Printf("\n$$$ TestSimpleFastDeliveryWithRanges $$$\n")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()
@@ -78,9 +86,14 @@ func TestSimpleFastDeliveryWithRanges(t *testing.T) {
 	time.Sleep(time.Second)
 }
 
-// TestSimpleFastDeliveryWithHelper
+// TestSimpleFastDeliveryWithHelper shows the correct dissemination of events
+// when the publisher recruits a helper to assist him
+// Test composition: 8 nodes
+// >> 1 Premium Publisher that creates and publishes in a MulticastGroup
+// >> 7 Premium Subscribers that subscribe to a MulticastGroup being one
+// of them more powerfull than the others and so will become a helper
 func TestSimpleFastDeliveryWithHelper(t *testing.T) {
-	fmt.Printf("\n $$$ TestSimpleFastDeliveryWithHelper $$$\n")
+	fmt.Printf("\n$$$ TestSimpleFastDeliveryWithHelper $$$\n")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()
@@ -119,9 +132,16 @@ func TestSimpleFastDeliveryWithHelper(t *testing.T) {
 	time.Sleep(time.Second)
 }
 
-// TestSimpleFastDeliveryUnsubscribe
+// TestSimpleFastDeliveryUnsubscribe shows that non-helpers can successfully unsubscribe
+// the Group, stoping receiving events and not hurt the rest of the Group
+// Test composition: 8 nodes
+// >> 1 Premium Publisher that creates and publishes in a MulticastGroup
+// >> 7 Premium Subscribers that subscribe to a MulticastGroup being one
+// of them more powerfull than the others and so will become a helper
+// >>>> 2 of the non-helper unsubscribe being one of the helper responsability
+// and the other of the publisher responsibility
 func TestSimpleFastDeliveryUnsubscribe(t *testing.T) {
-	fmt.Printf("\n $$$ TestSimpleFastDeliveryUnsubscribe $$$\n")
+	fmt.Printf("\n$$$ TestSimpleFastDeliveryUnsubscribe $$$\n")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()
@@ -164,9 +184,15 @@ func TestSimpleFastDeliveryUnsubscribe(t *testing.T) {
 	time.Sleep(time.Second)
 }
 
-// TestFastDeliveryHelperUnsubscribe
+// TestFastDeliveryHelperUnsubscribe shows that a MulticastGroup knows how
+// to react to when a helper sub unsubscribes to the Group
+// Test composition: 8 nodes
+// >> 1 Premium Publisher that creates and publishes in a MulticastGroup
+// >> 7 Premium Subscribers that subscribe to a MulticastGroup being one
+// of them more powerfull than the others and so will become a helper
+// and then unsubscribe
 func TestFastDeliveryHelperUnsubscribe(t *testing.T) {
-	fmt.Printf("\n $$$ TestFastDeliveryHelperUnsubscribe $$$\n")
+	fmt.Printf("\n$$$ TestFastDeliveryHelperUnsubscribe $$$\n")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()
@@ -208,9 +234,16 @@ func TestFastDeliveryHelperUnsubscribe(t *testing.T) {
 	time.Sleep(time.Second)
 }
 
-// TestFastDeliveryWithHelperFailure
+// TestFastDeliveryWithHelperFailure shows that a MulticastGroup recovers
+// from a helper node failure without losing subs and without lefting the
+// subscribers without their premium events
+// Test composition: 8 nodes
+// >> 1 Premium Publisher that creates and publishes in a MulticastGroup
+// >> 7 Premium Subscribers that subscribe to a MulticastGroup being one
+// of them more powerfull than the others and so will become a helper
+// and then fail abruptly
 func TestFastDeliveryWithHelperFailure(t *testing.T) {
-	fmt.Printf("\n $$$ TestFastDeliveryWithHelperFailure $$$\n")
+	fmt.Printf("\n$$$ TestFastDeliveryWithHelperFailure $$$\n")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()

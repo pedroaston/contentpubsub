@@ -11,8 +11,10 @@ import (
 
 // TestPubSubServerComms only wants to assure that pubsub servers can communicate
 // by initializing both and subscribing to events about portugal
+// Test composition: 2 nodes
+// >> 1 Subscriber that subscribes to that event
 func TestPubSubServerComms(t *testing.T) {
-	fmt.Printf("\n $$$ TestPubSubServerComms $$$\n")
+	fmt.Printf("\n$$$ TestPubSubServerComms $$$\n")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()
@@ -45,6 +47,9 @@ func TestPubSubServerComms(t *testing.T) {
 
 // TestSimpleUnsubscribing just subscribes to certain
 // events and then unsubscribes to them
+// Test composition: 2 nodes
+// >> 1 Subscriber that subscribes and unsubscribes
+// to a kind of event
 func TestSimpleUnsubscribing(t *testing.T) {
 	fmt.Printf("\n $$$ TestSimpleUnsubscribing $$$\n")
 
@@ -80,6 +85,9 @@ func TestSimpleUnsubscribing(t *testing.T) {
 }
 
 // TestSimplePublish simply subscribes to a event and then publishes it
+// Test composition: 2 nodes
+// >> 1 Publisher that publishes a event
+// >> 1 Subscriber that subscribe to a event
 func TestSimplePublish(t *testing.T) {
 	fmt.Printf("\n $$$ TestSimplePublish $$$\n")
 
@@ -117,6 +125,9 @@ func TestSimplePublish(t *testing.T) {
 
 // TestSubscriptionForwarding attemps to see if the subscription
 // travels to several nodes until it reaches the rendezvous
+// Test composition: 7 nodes
+// >> 4 Subscribers subscribing to different kinds of events
+// >> 3 Passive nodes that just diffuse the subscriptions
 func TestSubscriptionForwarding(t *testing.T) {
 	fmt.Printf("\n $$$ TestSubscriptionForwarding $$$\n")
 
@@ -167,9 +178,16 @@ func TestSubscriptionForwarding(t *testing.T) {
 }
 
 // TestSimpleFaultTolerance just tries to show the system
-// working with failures in different situations
+// working with failures in different situations and
+// maitaining its functioning
+// Test composition: 5 nodes
+// >> 1 Publisher puiblishes a kind of event
+// >> 1 Subscriber subscribing a kind of event
+// >> 3 Passive nodes that just diffuse the subscriptions
+// being one of the intermidiante nodes of the subscription
+// chain terminated
 func TestSimpleFaultTolerance(t *testing.T) {
-	fmt.Printf("\n $$$ TestSimpleFaultTolerance $$$\n")
+	fmt.Printf("\n$$$ TestSimpleFaultTolerance $$$\n")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()
@@ -203,9 +221,15 @@ func TestSimpleFaultTolerance(t *testing.T) {
 
 }
 
-// TestBackupReplacement
+// TestBackupReplacement shows the scoutsubs overlay reation
+// once a backup node crashes, and the substitution process
+// Test composition: 6 nodes
+// >> 1 Subscribers subscribing to a kind of event
+// >> 5 Passive nodes that just diffuse the subscriptions
+// being one the backups of the subscriber replaced once
+// one of its backups fails
 func TestBackupReplacement(t *testing.T) {
-	fmt.Printf("\n $$$ TestBackupReplacement $$$\n")
+	fmt.Printf("\n$$$ TestBackupReplacement $$$\n")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()
@@ -235,7 +259,15 @@ func TestBackupReplacement(t *testing.T) {
 	time.Sleep(time.Second)
 }
 
-// TestRefreshRoutine
+// TestRefreshRoutine is used to show how the filter tables
+// and advertising boards are periodically replaced
+// Test composition: 6 nodes
+// >> 2 Stadard Subscriber and 1 unsubscribes and the
+// other makes a group search
+// >> 1 Premium Publisher & Standard Subscriber that fails
+// >> 1 Premium Publisher
+// >> 1 Standard Publisher that publishes two kinds of events
+// >> 3 Passive nodes that just diffuse the subscriptions
 // To experience this test must switch refresh rate to 2 seconds
 func TestRefreshRoutine(t *testing.T) {
 	fmt.Printf("\n$$$ TestRefreshRoutine $$$\n")

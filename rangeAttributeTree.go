@@ -60,8 +60,7 @@ func (n *Node) GetSubsOfEvent(value int) []*SubData {
 
 }
 
-// DeleteSubsFromNode
-// UNTESTED
+// DeleteSubsFromNode recursively called to delete a node throught a tree
 func (n *Node) DeleteSubFromNode(upper int, lower int, sub *SubData) {
 	localCap := n.upperLimit - n.lowerLimit + 1
 	if upper >= n.upperLimit && lower <= n.lowerLimit {
@@ -121,12 +120,12 @@ func NewRangeAttributeTree(attr *Attribute) *RangeAttributeTree {
 	return rt
 }
 
-// AddSubToTreeRoot
+// AddSubToTreeRoot adds a sub to a tree root
 func (rt *RangeAttributeTree) AddSubToTreeRoot(sub *SubData) {
 	rt.root.subs = append(rt.root.subs, sub)
 }
 
-// RemoveSubFromTreeRoot
+// RemoveSubFromTreeRoot removes a sub from the tree root
 func (rt *RangeAttributeTree) RemoveSubFromTreeRoot(sub *SubData) {
 	for i := 0; i < len(rt.root.subs); i++ {
 		if rt.root.subs[i].addr == sub.addr {
@@ -144,7 +143,8 @@ func (rt *RangeAttributeTree) RemoveSubFromTreeRoot(sub *SubData) {
 	}
 }
 
-// AddSubToTree adds a sub to the tree translating the attribute values for tree insertion
+// AddSubToTree adds a sub to the tree translating
+// the attribute values for tree insertion
 func (rt *RangeAttributeTree) AddSubToTree(sub *SubData) {
 
 	var upper, lower int
@@ -164,14 +164,14 @@ func (rt *RangeAttributeTree) AddSubToTree(sub *SubData) {
 	rt.root.InsertSub(upper, lower, sub)
 }
 
-// GetInterestedSubs
+// GetInterestedSubs collects the subs that are
+// interested in an attribute specific value
 func (rt *RangeAttributeTree) GetInterestedSubs(value int) []*SubData {
 
 	return rt.root.GetSubsOfEvent(value - rt.lowerValue)
 }
 
-// DeleteSubFromTree
-// UNTESTED
+// DeleteSubFromTree removes a subs from the tree
 func (rt *RangeAttributeTree) DeleteSubFromTree(sub *SubData) {
 
 	var upper, lower int
@@ -191,6 +191,7 @@ func (rt *RangeAttributeTree) DeleteSubFromTree(sub *SubData) {
 	rt.root.DeleteSubFromNode(upper, lower, sub)
 }
 
+// PrintRT is used to print the contents of a rangeTree
 func PrintRT(n *Node) {
 
 	fmt.Printf("Node >> Lower %d and Upper: %d\n", n.lowerLimit, n.upperLimit)

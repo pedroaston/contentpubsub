@@ -32,7 +32,6 @@ const (
 	SubRefreshRateMin         = 15
 )
 
-// PubSub data structure
 type PubSub struct {
 	pb.UnimplementedScoutHubServer
 	server     *grpc.Server
@@ -73,7 +72,7 @@ type PubSub struct {
 }
 
 // NewPubSub initializes the PubSub's data structure
-// setup the server and starts processloop
+// sets up the server and starts processloop
 func NewPubSub(dht *kaddht.IpfsDHT, region string, subRegion string) *PubSub {
 
 	filterTable := NewFilterTable(dht)
@@ -137,8 +136,9 @@ type ForwardEvent struct {
 	event         *pb.Event
 }
 
-// MySubscribe subscribes to certain event(s) and saves
-// it in myFilters for further resubing operations
+// mySubscribe subscribes to certain event(s) and saves
+// it in myFilters for further resubing operations and
+// assess if node is interested in the events it receives
 func (ps *PubSub) mySubscribe(info string) error {
 	fmt.Println("MySubscribe: " + ps.serverAddr)
 
@@ -232,7 +232,8 @@ func (ps *PubSub) mySubscribe(info string) error {
 	return nil
 }
 
-// Subscribe is a remote function called by a external peer to send subscriptions
+// Subscribe is a remote function called by a external peer to send
+// subscriptions towards the rendezvous node
 func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack, error) {
 	fmt.Println("Subscribe: " + ps.serverAddr)
 
@@ -296,8 +297,8 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 	return &pb.Ack{State: true, Info: ""}, nil
 }
 
-// forwardSub is called upon finishing the processing a
-// received subscription that needs forwarding
+// forwardSub is called once a received subscription
+// still needs to be forward towards the rendevous
 func (ps *PubSub) forwardSub(dialAddr string, sub *pb.Subscription) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
@@ -330,10 +331,11 @@ func (ps *PubSub) forwardSub(dialAddr string, sub *pb.Subscription) {
 	}
 }
 
-// MyUnsubscribe deletes specific predicate out of
-// mySubs list which will stop the node of sending
-// a subscribing operation every refreshing cycle
+// myUnsubscribe deletes a specific predicate out of mySubs
+// list which will stop the refreshing of thatsub and stop
+// delivering to the user those contained events
 func (ps *PubSub) myUnsubscribe(info string) error {
+	fmt.Printf("myUnsubscribe: %s\n", ps.serverAddr)
 
 	p, err := NewPredicate(info)
 	if err != nil {
@@ -348,12 +350,12 @@ func (ps *PubSub) myUnsubscribe(info string) error {
 	return nil
 }
 
-// MyPublish function is used when we want to publish an event on the overlay.
+// myPublish function is used when we want to publish an event on the overlay.
 // Data is the message we want to publish and info is the representative
 // predicate of that event data. The publish operation is made towards all
 // attributes rendezvous in order find the way to all subscribers
 func (ps *PubSub) myPublish(data string, info string) error {
-	fmt.Printf("MyPublish: %s\n", ps.serverAddr)
+	fmt.Printf("myPublish: %s\n", ps.serverAddr)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()
@@ -642,7 +644,7 @@ func (ps *PubSub) forwardEventDown(dialAddr string, event *pb.Event, originalRou
 	}
 }
 
-// updateBackup sends the new version of the filter table to the backup
+// UpdateBackup sends a new filter of the filter table to the backup
 func (ps *PubSub) UpdateBackup(ctx context.Context, update *pb.Update) (*pb.Ack, error) {
 	fmt.Println("UpdateBackup >> " + ps.serverAddr)
 
@@ -710,8 +712,8 @@ func (ps *PubSub) updateMyBackups(route string, info string) error {
 	return nil
 }
 
-// getBackups selects f backups peers for the node,
-// which are the ones closer its own ID
+// getBackups selects f backup peers for the node,
+// which are the ones closer to him by ID
 func (ps *PubSub) getBackups() []string {
 
 	var backups []string
@@ -730,7 +732,8 @@ func (ps *PubSub) getBackups() []string {
 	return backups
 }
 
-// eraseOldFetchNewBackup
+// eraseOldFetchNewBackup rases a old backup and recruits
+// and updates another to replace him
 func (ps *PubSub) eraseOldFetchNewBackup(oldAddr string) {
 
 	var refIndex int
@@ -761,7 +764,7 @@ func (ps *PubSub) eraseOldFetchNewBackup(oldAddr string) {
 	ps.refreshOneBackup(newAddr, updates)
 }
 
-// BackupRefresh
+// BackupRefresh refreshes the filter table the backup keeps of the peer
 func (ps *PubSub) BackupRefresh(stream pb.ScoutHub_BackupRefreshServer) error {
 	fmt.Println("BackupRefresh >> " + ps.serverAddr)
 
@@ -800,7 +803,8 @@ func (ps *PubSub) BackupRefresh(stream pb.ScoutHub_BackupRefreshServer) error {
 	}
 }
 
-// refreashBackups
+// refreashBackups sends a BackupRefresh
+// to  all backup nodes
 func (ps *PubSub) refreshAllBackups() error {
 
 	updates, err := ps.filtersForBackupRefresh()
@@ -818,7 +822,8 @@ func (ps *PubSub) refreshAllBackups() error {
 	return nil
 }
 
-// filtersForBackupRefresh
+// filtersForBackupRefresh coverts an entire filterTable into a
+// sequence of updates for easier delivery via gRPC
 func (ps *PubSub) filtersForBackupRefresh() ([]*pb.Update, error) {
 
 	var updates []*pb.Update
@@ -850,6 +855,7 @@ func (ps *PubSub) filtersForBackupRefresh() ([]*pb.Update, error) {
 	return updates, nil
 }
 
+// refreshOneBackup refreshes one of the nodes backup
 func (ps *PubSub) refreshOneBackup(backup string, updates []*pb.Update) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
@@ -895,7 +901,8 @@ func (ps *PubSub) rendezvousSelfCheck(rvID string) (bool, peer.ID) {
 	return false, closestID
 }
 
-// alternativesToRv checks for alternative ways to reach RV
+// alternativesToRv checks for alternative
+// ways to reach the rendevous node
 func (ps *PubSub) alternativesToRv(rvID string) []string {
 
 	var validAlt []string
@@ -916,13 +923,15 @@ func (ps *PubSub) alternativesToRv(rvID string) []string {
 	return validAlt
 }
 
+// terminateService closes the PubSub service
 func (ps *PubSub) terminateService() {
 	ps.terminate <- "end"
 	ps.server.Stop()
 	ps.ipfsDHT.Close()
 }
 
-// processLopp
+// processLopp processes async operations and proceeds
+// to execute cyclical functions of refreshing
 func (ps *PubSub) processLoop() {
 	for {
 		select {
@@ -974,7 +983,8 @@ type ForwardAdvert struct {
 	adv      *pb.AdvertRequest
 }
 
-// CreateMulticastGroup
+// CreateMulticastGroup is used by a premium
+// publisher to create a MulticastGroup
 func (ps *PubSub) CreateMulticastGroup(pred string) error {
 
 	p, err := NewPredicate(pred)
@@ -988,6 +998,9 @@ func (ps *PubSub) CreateMulticastGroup(pred string) error {
 	return nil
 }
 
+// myAdvertiseGroup advertise towards the overlay the
+// existing of a new multicastGroup by sharing it
+// with rendezvous nodes of the Group Predicate
 func (ps *PubSub) myAdvertiseGroup(pred *Predicate) error {
 	fmt.Printf("myAdvertiseGroup: %s\n", ps.serverAddr)
 
@@ -1055,7 +1068,7 @@ func (ps *PubSub) myAdvertiseGroup(pred *Predicate) error {
 	return nil
 }
 
-// AdvertiseGroup
+// AdvertiseGroup remote call used to propagate the advertisement to the rendezvous
 func (ps *PubSub) AdvertiseGroup(ctx context.Context, adv *pb.AdvertRequest) (*pb.Ack, error) {
 	fmt.Printf("AdvertiseGroup: %s\n", ps.serverAddr)
 
@@ -1087,7 +1100,7 @@ func (ps *PubSub) AdvertiseGroup(ctx context.Context, adv *pb.AdvertRequest) (*p
 	return &pb.Ack{State: true, Info: ""}, nil
 }
 
-// forwardAdvertising
+// forwardAdvertising forwards the advertisement asynchronously to the rendezvous
 func (ps *PubSub) forwardAdvertising(dialAddr string, adv *pb.AdvertRequest) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
@@ -1120,7 +1133,7 @@ func (ps *PubSub) forwardAdvertising(dialAddr string, adv *pb.AdvertRequest) {
 	}
 }
 
-// addAdvertToBoard
+// addAdvertToBoard adds the advertisement to both the current and next boards
 func (ps *PubSub) addAdvertToBoards(adv *pb.AdvertRequest) error {
 
 	pAdv, err := NewPredicate(adv.GroupID.Predicate)
@@ -1155,7 +1168,8 @@ func (ps *PubSub) addAdvertToBoards(adv *pb.AdvertRequest) error {
 	return nil
 }
 
-// myGroupSearchRequest
+// myGroupSearchRequest requests to the closest rendezvous of his whished
+// Group predicate for MulticastGroups of his interest
 func (ps *PubSub) myGroupSearchRequest(pred string) error {
 	fmt.Println("myGroupSearchRequest: " + ps.serverAddr)
 
@@ -1253,7 +1267,8 @@ func (ps *PubSub) myGroupSearchRequest(pred string) error {
 	return nil
 }
 
-// GroupSearchRequest
+// GroupSearchRequest is a piggybacked remote call that deliveres to the myGroupSerchRequest caller
+// all the multicastGroups he has in his AdvertiseBoard that comply with his search predicate
 func (ps *PubSub) GroupSearchRequest(ctx context.Context, req *pb.SearchRequest) (*pb.SearchReply, error) {
 	fmt.Println("GroupSearchRequest: " + ps.serverAddr)
 
@@ -1343,6 +1358,8 @@ func (ps *PubSub) GroupSearchRequest(ctx context.Context, req *pb.SearchRequest)
 	return nil, errors.New("dead end search")
 }
 
+// returnGroupsOfInterest returns all the MulticastGroups of the
+// advertising board that are related to a certain predicate search
 func (ps *PubSub) returnGroupsOfInterest(p *Predicate) []*pb.MulticastGroupID {
 
 	var interestGs []*pb.MulticastGroupID
@@ -1358,7 +1375,8 @@ func (ps *PubSub) returnGroupsOfInterest(p *Predicate) []*pb.MulticastGroupID {
 	return interestGs
 }
 
-// myPremiumSubscribe
+// myPremiumSubscribe is the operation a subscriber performs in order to belong to
+// a certain MulticastGroup of a certain premium publisher and predicate
 func (ps *PubSub) myPremiumSubscribe(info string, pubAddr string, pubPredicate string, cap int) error {
 	fmt.Printf("myPremiumSubscribe: %s\n", ps.serverAddr)
 
@@ -1406,7 +1424,8 @@ func (ps *PubSub) myPremiumSubscribe(info string, pubAddr string, pubPredicate s
 	}
 }
 
-// PremiumSubscribe
+// PremiumSubscribe remote call used by the myPremiumSubscribe to delegate
+// the premium subscription to the premium publisher to process it
 func (ps *PubSub) PremiumSubscribe(ctx context.Context, sub *pb.PremiumSubscription) (*pb.Ack, error) {
 	fmt.Printf("PremiumSubscribe: %s\n", ps.serverAddr)
 
@@ -1422,7 +1441,7 @@ func (ps *PubSub) PremiumSubscribe(ctx context.Context, sub *pb.PremiumSubscript
 
 	for _, mg := range ps.managedGroups {
 		if mg.predicate.Equal(pubP) {
-			mg.addSubToGroup(sub.Addr, int(sub.Cap), sub.Region, sub.SubRegion, subP)
+			mg.AddSubToGroup(sub.Addr, int(sub.Cap), sub.Region, sub.SubRegion, subP)
 		}
 	}
 
@@ -1432,7 +1451,8 @@ func (ps *PubSub) PremiumSubscribe(ctx context.Context, sub *pb.PremiumSubscript
 	return &pb.Ack{State: true, Info: ""}, nil
 }
 
-// myPremiumUnsubscribe
+// myPremiumUnsubscribe is the operation a premium subscriber performes
+// once it wants to get out of a multicastGroup
 func (ps *PubSub) myPremiumUnsubscribe(pubPred string, pubAddr string) error {
 	fmt.Printf("MyPremiumUnsubscribe: %s\n", ps.serverAddr)
 
@@ -1481,7 +1501,8 @@ func (ps *PubSub) myPremiumUnsubscribe(pubPred string, pubAddr string) error {
 	return nil
 }
 
-// PremiumUnsubscribe
+// PremiumUnsubscribe remote call used by the subscriber to communicate is insterest
+// to unsubscribe to a multicastGroup to the premium publisher
 func (ps *PubSub) PremiumUnsubscribe(ctx context.Context, sub *pb.PremiumSubscription) (*pb.Ack, error) {
 	fmt.Printf("PremiumUnsubscribe: %s\n", ps.serverAddr)
 
@@ -1510,7 +1531,8 @@ func (ps *PubSub) PremiumUnsubscribe(ctx context.Context, sub *pb.PremiumSubscri
 	return &pb.Ack{State: true, Info: ""}, nil
 }
 
-// myPremiumPublish
+// myPremiumPublish is the operation a premium publisher runs
+// when he wants to publish in one of its MultiastGroups
 func (ps *PubSub) myPremiumPublish(grpPred string, event string, eventInfo string) error {
 	fmt.Printf("MyPremiumPublish: %s\n", ps.serverAddr)
 
@@ -1567,7 +1589,7 @@ func (ps *PubSub) myPremiumPublish(grpPred string, event string, eventInfo strin
 
 	before := len(mGrp.helpers)
 	for _, sub := range helperFailedSubs {
-		mGrp.addSubToGroup(sub.addr, sub.capacity, sub.region, sub.subRegion, sub.pred)
+		mGrp.AddSubToGroup(sub.addr, sub.capacity, sub.region, sub.subRegion, sub.pred)
 	}
 	aux := len(mGrp.helpers) - before
 
@@ -1588,7 +1610,8 @@ func (ps *PubSub) myPremiumPublish(grpPred string, event string, eventInfo strin
 	return nil
 }
 
-// PremiumPublish
+// PremiumPublish remote call used not only by the premium publisher to forward its events to
+// the helpers and interested subs but also by the helpers to forward to their delegated subs
 func (ps *PubSub) PremiumPublish(ctx context.Context, event *pb.PremiumEvent) (*pb.Ack, error) {
 	fmt.Printf("PremiumPublish: %s\n", ps.serverAddr)
 
@@ -1628,7 +1651,8 @@ func (ps *PubSub) PremiumPublish(ctx context.Context, event *pb.PremiumEvent) (*
 	return &pb.Ack{State: true, Info: ""}, nil
 }
 
-// RequestHelp
+// RequestHelp is the remote call the premium publisher of a MulticastGroup
+// uses to a sub of his to recruit him as a helper
 func (ps *PubSub) RequestHelp(ctx context.Context, req *pb.HelpRequest) (*pb.Ack, error) {
 	fmt.Printf("RequestHelp: %s\n", ps.serverAddr)
 
@@ -1654,7 +1678,8 @@ func (ps *PubSub) RequestHelp(ctx context.Context, req *pb.HelpRequest) (*pb.Ack
 	return &pb.Ack{State: true, Info: ""}, nil
 }
 
-// DelegateSubToHelper
+// DelegateSubToHelper is a remote call used by the premium publisher of
+// a multicast group to delegate a sub to a sub already helping him
 func (ps *PubSub) DelegateSubToHelper(ctx context.Context, sub *pb.DelegateSub) (*pb.Ack, error) {
 	fmt.Printf("DelegateSubToHelper: %s\n", ps.serverAddr)
 

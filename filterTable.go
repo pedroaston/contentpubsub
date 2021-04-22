@@ -148,6 +148,8 @@ func (rs *RouteStats) SimpleSubtractFilter(p *Predicate) {
 	}
 }
 
+// IsInterested checks if inside that routeState there are any filters
+// compatible to a specific predicate and returns true if there are
 func (rs *RouteStats) IsInterested(p *Predicate) bool {
 
 	rs.routeLock.RLock()

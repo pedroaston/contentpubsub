@@ -12,6 +12,9 @@ import (
 	"google.golang.org/grpc"
 )
 
+// MaxSubsPerRegion >> maximum number of subscribers the pubisher can have in a geographical region
+// PowerSubsPoolSize >> the publisher recruits the strongest sub, but does not delegate the following
+// number of most powerfull ones in order to save them for further recruitment
 const (
 	MaxSubsPerRegion  = 5
 	PowerSubsPoolSize = 2
@@ -28,7 +31,8 @@ type MulticastGroup struct {
 	lock       *sync.RWMutex
 }
 
-// NewMulticastGroup
+// NewMulticastGroup returns an instance of a multicastGroup with as
+// much rangeAttributeTrees as range attribute its predicate has
 func NewMulticastGroup(p *Predicate, addr string) *MulticastGroup {
 
 	mg := &MulticastGroup{
@@ -76,8 +80,13 @@ type HelperTracker struct {
 	remainCap     int
 }
 
-// addSubToGroup
-func (mg *MulticastGroup) addSubToGroup(addr string, cap int, region string, subRegion string, pred *Predicate) error {
+// AddSubToGroup is used to add a sub to that multicastGroup. This function analyzes the current state
+// of the Group and decides if the publisher should simply add the sub to his infrastructure, recruit
+// a sub to help him and delegate the sub and others to that new helper or simply delegate the sub
+// to a node that is already helping him and still can receive more. To utilize helpers properly the
+// subs are oredered in geografical regions to minimize latency between helper nodes and its delegated
+// nodes by only delegating to the helper nodes that are geo-close to him and so minimizing redundant hops
+func (mg *MulticastGroup) AddSubToGroup(addr string, cap int, region string, subRegion string, pred *Predicate) error {
 
 	newSub := &SubData{
 		pred:      pred,
@@ -158,7 +167,12 @@ func (mg *MulticastGroup) addSubToGroup(addr string, cap int, region string, sub
 	return nil
 }
 
-// RemoveSubFromGroup
+// RemoveSubFromGroup removes a sub from the multicastGroup wether it is delegated
+// to a helper, a helper or a node of its responsability. In the helper case the
+// subs delegated to him must be supported by the publisher, a new helper or a
+// existing one. On the case of a sub unsubscribing that was delegated to a helper
+// here the publisher removes it from its Group data and informs the helper for
+// him to also remove that sub
 func (mg *MulticastGroup) RemoveSubFromGroup(sub *pb.PremiumSubscription) error {
 
 	mg.subByPlace[sub.Region][sub.SubRegion].lock.Lock()
@@ -194,7 +208,7 @@ func (mg *MulticastGroup) RemoveSubFromGroup(sub *pb.PremiumSubscription) error 
 
 			mg.subByPlace[sub.Region][sub.SubRegion].lock.Unlock()
 			for _, sub := range helperFailedSubs {
-				mg.addSubToGroup(sub.addr, sub.capacity, sub.region, sub.subRegion, sub.pred)
+				mg.AddSubToGroup(sub.addr, sub.capacity, sub.region, sub.subRegion, sub.pred)
 			}
 			mg.subByPlace[sub.Region][sub.SubRegion].lock.Lock()
 
@@ -240,7 +254,7 @@ func (mg *MulticastGroup) RemoveSubFromGroup(sub *pb.PremiumSubscription) error 
 	return nil
 }
 
-// RecruitHelper
+// RecruitHelper requests a helper to provide support to some subs of a group
 func (mg *MulticastGroup) RecruitHelper(helper *SubData, subs []*SubData) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
@@ -289,7 +303,7 @@ func (mg *MulticastGroup) RecruitHelper(helper *SubData, subs []*SubData) error 
 	return nil
 }
 
-// AddSubToHelper
+// AddSubToHelper delegates a sub to an existing helper of the group
 func (mg *MulticastGroup) AddSubToHelper(sub *SubData, addr string) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
@@ -328,7 +342,8 @@ func (mg *MulticastGroup) AddSubToHelper(sub *SubData, addr string) error {
 	return nil
 }
 
-// AddToRangeTrees
+// AddToRangeTrees simply adds the subs to the multicast fetching-structure so that
+// when publishing a event interested nodes may be efficiently recovered
 func (mg *MulticastGroup) AddToRangeTrees(sub *SubData) {
 	for attr, tree := range mg.attrTrees {
 		if _, ok := sub.pred.attributes[attr]; !ok {
@@ -339,7 +354,7 @@ func (mg *MulticastGroup) AddToRangeTrees(sub *SubData) {
 	}
 }
 
-// RemoveFromRangeTrees
+// RemoveFromRangeTrees subs from the multicast fetching-structure
 func (mg *MulticastGroup) RemoveFromRangeTrees(sub *SubData) {
 	for attr, tree := range mg.attrTrees {
 		if _, ok := sub.pred.attributes[attr]; !ok {
@@ -350,7 +365,7 @@ func (mg *MulticastGroup) RemoveFromRangeTrees(sub *SubData) {
 	}
 }
 
-// RemoveSubFromList
+// RemoveSubFromList removes subs from the fetching list
 func (mg *MulticastGroup) RemoveSubFromList(sub *SubData) {
 
 	for i, s := range mg.simpleList {
@@ -366,7 +381,8 @@ func (mg *MulticastGroup) RemoveSubFromList(sub *SubData) {
 	}
 }
 
-// AddrsToPublishEvent
+// AddrsToPublishEvent returns all the subs within the publisher
+// responsability that are interested in a certain event
 func (mg *MulticastGroup) AddrsToPublishEvent(p *Predicate) []*SubData {
 
 	var interested []*SubData = nil
@@ -394,7 +410,7 @@ func (mg *MulticastGroup) AddrsToPublishEvent(p *Predicate) []*SubData {
 	return interested
 }
 
-// StopDelegating
+// StopDelegating erases data-structure of a unsubscribed/failed helper
 func (mg *MulticastGroup) StopDelegating(tracker *HelperTracker, add bool) {
 
 	for i := 0; i < len(mg.subByPlace[tracker.helper.region][tracker.helper.subRegion].helpers); i++ {
@@ -427,7 +443,8 @@ type SubGroupView struct {
 	simpleList []*SubData
 }
 
-// SetHasHelper
+// SetHasHelper sets a previous normal sub to a helper and
+// adds subs to its responsability
 func (sg *SubGroupView) SetHasHelper(req *pb.HelpRequest) error {
 
 	sg.helping = true
@@ -444,7 +461,7 @@ func (sg *SubGroupView) SetHasHelper(req *pb.HelpRequest) error {
 	return nil
 }
 
-// AddSub
+// AddSub adds a subs to a helper responsability
 func (sg *SubGroupView) AddSub(sub *pb.MinimalSubData) error {
 
 	p, err := NewPredicate(sub.Predicate)
@@ -466,7 +483,7 @@ func (sg *SubGroupView) AddSub(sub *pb.MinimalSubData) error {
 	return nil
 }
 
-// RemoveSub
+// RemoveSub removes a subs from the helper responsability
 func (sg *SubGroupView) RemoveSub(sub *pb.PremiumSubscription) error {
 
 	p, err := NewPredicate(sub.OwnPredicate)
@@ -488,7 +505,7 @@ func (sg *SubGroupView) RemoveSub(sub *pb.PremiumSubscription) error {
 	return nil
 }
 
-// AddToRangeTrees
+// AddToRangeTrees adds the subs to the helper fetching-structure tree
 func (sg *SubGroupView) AddToRangeTrees(sub *SubData) {
 	for attr, tree := range sg.attrTrees {
 		if _, ok := sub.pred.attributes[attr]; !ok {
@@ -499,7 +516,7 @@ func (sg *SubGroupView) AddToRangeTrees(sub *SubData) {
 	}
 }
 
-// RemoveFromRangeTrees
+// RemoveFromRangeTrees remove a sub from the helper fetching-structure tree
 func (sg *SubGroupView) RemoveFromRangeTrees(sub *SubData) {
 	for attr, tree := range sg.attrTrees {
 		if _, ok := sub.pred.attributes[attr]; !ok {
@@ -510,7 +527,7 @@ func (sg *SubGroupView) RemoveFromRangeTrees(sub *SubData) {
 	}
 }
 
-// RemoveSubFromList
+// RemoveSubFromList remove a sub from the helper fetching-structure list
 func (sg *SubGroupView) RemoveSubFromList(sub *SubData) {
 
 	for i, s := range sg.simpleList {
@@ -526,7 +543,7 @@ func (sg *SubGroupView) RemoveSubFromList(sub *SubData) {
 	}
 }
 
-// AddrsToPublishEvent
+// AddrsToPublishEvent fetches the interested subs on a event the helper has received
 func (sg *SubGroupView) AddrsToPublishEvent(p *Predicate) []*SubData {
 
 	if len(sg.attrTrees) == 0 {
