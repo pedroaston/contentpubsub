@@ -21,14 +21,15 @@ const (
 )
 
 type MulticastGroup struct {
-	selfAddr   string
-	predicate  *Predicate
-	subByPlace map[string]map[string]*SubRegionData
-	trackHelp  map[string]*HelperTracker
-	helpers    []*SubData
-	attrTrees  map[string]*RangeAttributeTree
-	simpleList []*SubData
-	lock       *sync.RWMutex
+	selfAddr       string
+	predicate      *Predicate
+	subByPlace     map[string]map[string]*SubRegionData
+	trackHelp      map[string]*HelperTracker
+	helpers        []*SubData
+	attrTrees      map[string]*RangeAttributeTree
+	simpleList     []*SubData
+	lock           *sync.RWMutex
+	failedDelivery chan []*SubData
 }
 
 // NewMulticastGroup returns an instance of a multicastGroup with as
@@ -36,12 +37,13 @@ type MulticastGroup struct {
 func NewMulticastGroup(p *Predicate, addr string) *MulticastGroup {
 
 	mg := &MulticastGroup{
-		selfAddr:   addr,
-		predicate:  p,
-		subByPlace: make(map[string]map[string]*SubRegionData),
-		trackHelp:  make(map[string]*HelperTracker),
-		attrTrees:  make(map[string]*RangeAttributeTree),
-		lock:       &sync.RWMutex{},
+		selfAddr:       addr,
+		predicate:      p,
+		subByPlace:     make(map[string]map[string]*SubRegionData),
+		trackHelp:      make(map[string]*HelperTracker),
+		attrTrees:      make(map[string]*RangeAttributeTree),
+		lock:           &sync.RWMutex{},
+		failedDelivery: make(chan []*SubData),
 	}
 
 	for _, attr := range p.attributes {

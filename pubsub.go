@@ -1571,20 +1571,15 @@ func (ps *PubSub) myPremiumPublish(grpPred string, event string, eventInfo strin
 		EventPred: eventInfo,
 	}
 
-	var helperFailedSubs []*SubData = nil
+	hTotal := len(mGrp.trackHelp)
 	for _, tracker := range mGrp.trackHelp {
-		conn, err := grpc.Dial(tracker.helper.addr, grpc.WithInsecure())
-		if err != nil {
-			log.Fatalf("fail to dial: %v", err)
-		}
-		defer conn.Close()
+		go sendEventToHelper(ctx, tracker, mGrp, premiumE)
+	}
 
-		client := pb.NewScoutHubClient(conn)
-		ack, err := client.PremiumPublish(ctx, premiumE)
-		if err != nil || !ack.State {
-			helperFailedSubs = append(helperFailedSubs, mGrp.trackHelp[tracker.helper.addr].subsDelegated...)
-			mGrp.StopDelegating(tracker, false)
-		}
+	var helperFailedSubs []*SubData = nil
+	for i := 0; i < hTotal; i++ {
+		failedOnes := <-mGrp.failedDelivery
+		helperFailedSubs = append(helperFailedSubs, failedOnes...)
 	}
 
 	before := len(mGrp.helpers)
@@ -1608,6 +1603,23 @@ func (ps *PubSub) myPremiumPublish(grpPred string, event string, eventInfo strin
 	ps.record.AddOperationStat("myPremiumPublish")
 
 	return nil
+}
+
+func sendEventToHelper(ctx context.Context, tracker *HelperTracker, mGrp *MulticastGroup, premiumE *pb.PremiumEvent) {
+	conn, err := grpc.Dial(tracker.helper.addr, grpc.WithInsecure())
+	if err != nil {
+		log.Fatalf("fail to dial: %v", err)
+	}
+	defer conn.Close()
+
+	client := pb.NewScoutHubClient(conn)
+	ack, err := client.PremiumPublish(ctx, premiumE)
+	if err != nil || !ack.State {
+		mGrp.failedDelivery <- mGrp.trackHelp[tracker.helper.addr].subsDelegated
+		mGrp.StopDelegating(tracker, false)
+	} else {
+		mGrp.failedDelivery <- nil
+	}
 }
 
 // PremiumPublish remote call used not only by the premium publisher to forward its events to
