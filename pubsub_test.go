@@ -307,6 +307,7 @@ func TestRefreshRoutine(t *testing.T) {
 	pubsubs[0].myPublish("bali has some good waves", "bali T")
 	pubsubs[0].myPublish("portugal has epic waves", "portugal T")
 	pubsubs[3].myGroupSearchRequest("portugal T")
+	pubsubs[4].gracefullyTerminate()
 }
 
 // TestAproxRealSubscriptionScenario with 100 peers randomly connected to
