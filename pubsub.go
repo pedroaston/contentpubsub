@@ -923,6 +923,15 @@ func (ps *PubSub) alternativesToRv(rvID string) []string {
 	return validAlt
 }
 
+// gracefullyTerminate unsubscribes before closing
+func (ps *PubSub) gracefullyTerminate() {
+	for _, g := range ps.subbedGroups {
+		ps.myPremiumUnsubscribe(g.predicate.ToString(), g.pubAddr)
+	}
+
+	ps.terminateService()
+}
+
 // terminateService closes the PubSub service
 func (ps *PubSub) terminateService() {
 	ps.terminate <- "end"
