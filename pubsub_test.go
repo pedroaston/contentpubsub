@@ -310,10 +310,42 @@ func TestRefreshRoutine(t *testing.T) {
 	pubsubs[4].gracefullyTerminate()
 }
 
+// TestRedirectMechanism
+func TestRedirectMechanism(t *testing.T) {
+	fmt.Printf("\n$$$ TestRedirectMechanism $$$\n")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	defer cancel()
+
+	dhts := setupDHTS(t, ctx, 4)
+	defer func() {
+		for _, dht := range dhts {
+			dht.Close()
+			defer dht.Host().Close()
+		}
+	}()
+
+	connect(t, ctx, dhts[0], dhts[1])
+	connect(t, ctx, dhts[1], dhts[2])
+	connect(t, ctx, dhts[2], dhts[3])
+
+	var pubsubs [4]*PubSub
+	for i, dht := range dhts {
+		pubsubs[i] = NewPubSub(dht, "EU", "PT")
+	}
+
+	pubsubs[0].mySubscribe("portugal T")
+
+	time.Sleep(time.Second)
+
+	pubsubs[3].myPublish("Portugal sometime can be the best!", "portugal T")
+
+}
+
 // TestAproxRealSubscriptionScenario with 100 peers randomly connected to
 // each other, where half subscribe to one topic and the rest to another
 func TestAproxRealSubscriptionScenario(t *testing.T) {
-	fmt.Printf("\n $$$ TestAproxRealSubscriptionScenario $$$\n")
+	fmt.Printf("\n$$$ TestAproxRealSubscriptionScenario $$$\n")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()
