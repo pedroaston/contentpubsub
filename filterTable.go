@@ -28,7 +28,10 @@ func NewRouteStats() *RouteStats {
 
 // FilterTable keeps filter information of all peers
 type FilterTable struct {
-	routes map[string]*RouteStats
+	routes        map[string]*RouteStats
+	redirectTable map[string]map[string]string
+	routeTracker  map[string][]string
+	redirectLock  *sync.Mutex
 }
 
 // NewFilterTable initializes a FilterTable
@@ -37,7 +40,10 @@ func NewFilterTable(dht *dht.IpfsDHT) *FilterTable {
 	peers := dht.RoutingTable().GetPeerInfos()
 
 	ft := &FilterTable{
-		routes: make(map[string]*RouteStats),
+		routes:        make(map[string]*RouteStats),
+		redirectTable: make(map[string]map[string]string),
+		routeTracker:  make(map[string][]string),
+		redirectLock:  &sync.Mutex{},
 	}
 
 	for _, peerStat := range peers {
@@ -45,6 +51,47 @@ func NewFilterTable(dht *dht.IpfsDHT) *FilterTable {
 	}
 
 	return ft
+}
+
+// addRedirect
+func (ft *FilterTable) addRedirect(route string, rvID string, addr string) {
+
+	ft.redirectLock.Lock()
+	defer ft.redirectLock.Unlock()
+
+	if ft.redirectTable[route] == nil {
+		ft.redirectTable[route] = make(map[string]string)
+	}
+
+	ft.redirectTable[route][rvID] = addr
+}
+
+// turnOffRedirect
+func (ft *FilterTable) turnOffRedirect(route string, rvID string) {
+
+	ft.redirectLock.Lock()
+	defer ft.redirectLock.Unlock()
+
+	if ft.redirectTable[route] == nil {
+		ft.redirectTable[route] = make(map[string]string)
+	}
+
+	ft.redirectTable[route][rvID] = "!"
+}
+
+// addToRouteTracker
+func (ft *FilterTable) addToRouteTracker(rvID string, peer string) {
+
+	ft.redirectLock.Lock()
+	defer ft.redirectLock.Unlock()
+
+	for _, p := range ft.routeTracker[rvID] {
+		if p == peer {
+			return
+		}
+	}
+
+	ft.routeTracker[rvID] = append(ft.routeTracker[rvID], peer)
 }
 
 func (ft *FilterTable) PrintFilterTable() {

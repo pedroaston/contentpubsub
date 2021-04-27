@@ -181,7 +181,7 @@ func TestSubscriptionForwarding(t *testing.T) {
 // working with failures in different situations and
 // maitaining its functioning
 // Test composition: 5 nodes
-// >> 1 Publisher puiblishes a kind of event
+// >> 1 Publisher publishes a kind of event
 // >> 1 Subscriber subscribing a kind of event
 // >> 3 Passive nodes that just diffuse the subscriptions
 // being one of the intermidiante nodes of the subscription
@@ -310,7 +310,11 @@ func TestRefreshRoutine(t *testing.T) {
 	pubsubs[4].gracefullyTerminate()
 }
 
-// TestRedirectMechanism
+// TestRedirectMechanism shows that a event my jump several hops on
+// the network if those intermidiate nodes don't lead to more subscribers
+// Test composition: 4 nodes
+// >> 1 Subscriber subscribes at the bottom of the dissemination chain
+// >> 1 Publisher publishing a event next to the dissemination chain
 func TestRedirectMechanism(t *testing.T) {
 	fmt.Printf("\n$$$ TestRedirectMechanism $$$\n")
 
