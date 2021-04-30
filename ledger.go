@@ -1,14 +1,21 @@
 package contentpubsub
 
+import (
+	"time"
+
+	"github.com/pedroaston/contentpubsub/pb"
+)
+
 type HistoryRecord struct {
 	receivedEvents   []*EventRecord
 	operationHistory map[string]int
 }
 
 type EventRecord struct {
-	eventSource string
-	eventData   string
-	protocol    string
+	eventSource  string
+	eventData    string
+	protocol     string
+	timeOfTravel time.Duration
 }
 
 // NewHistoryRecord
@@ -29,13 +36,19 @@ func (r *HistoryRecord) AddOperationStat(opName string) {
 }
 
 // SaveReceivedEvent
-func (r *HistoryRecord) SaveReceivedEvent(eventData string, eventSource string, protocol string) {
+func (r *HistoryRecord) SaveReceivedEvent(event *pb.Event, eventSource string, protocol string) {
 
-	event := &EventRecord{
-		eventSource: eventSource,
-		eventData:   eventData,
-		protocol:    protocol,
+	aux, err := time.Parse(time.StampMilli, event.BirthTime)
+	if err != nil {
+		return
 	}
 
-	r.receivedEvents = append(r.receivedEvents, event)
+	eventRecord := &EventRecord{
+		eventSource:  eventSource,
+		timeOfTravel: time.Since(aux),
+		eventData:    event.Event,
+		protocol:     protocol,
+	}
+
+	r.receivedEvents = append(r.receivedEvents, eventRecord)
 }

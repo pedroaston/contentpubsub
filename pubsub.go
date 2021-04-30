@@ -407,6 +407,7 @@ func (ps *PubSub) myPublish(data string, info string) error {
 			RvId:      attr.name,
 			LastHop:   peer.Encode(ps.ipfsDHT.PeerID()),
 			Backup:    "",
+			BirthTime: time.Now().Format(time.StampMilli),
 		}
 
 		ps.tablesLock.RLock()
@@ -1054,12 +1055,12 @@ func (ps *PubSub) processLoop() {
 			ps.forwardEventDown(pid.dialAddr, pid.event, pid.originalRoute, pid.redirectOption)
 		case pid := <-ps.interestingEvents:
 			// Statistical-Code
-			ps.record.SaveReceivedEvent(pid.Event, pid.EventID.PublisherID, "ScoutSubs")
+			ps.record.SaveReceivedEvent(pid, pid.EventID.PublisherID, "ScoutSubs")
 			fmt.Printf("Received Event at: %s\n", ps.serverAddr)
 			fmt.Println(">> " + pid.Event)
 		case pid := <-ps.premiumEvents:
-			// Statistical-Code
-			ps.record.SaveReceivedEvent(pid.Event, pid.GroupID.Predicate, "FastDelivery")
+			// Statistical-Code (TODO)
+			// ps.record.SaveReceivedEvent(pid, pid.GroupID.Predicate, "FastDelivery")
 			fmt.Printf("Received Event at: %s\n", ps.serverAddr)
 			fmt.Println(">> " + pid.Event)
 		case pid := <-ps.advToForward:
