@@ -105,10 +105,7 @@ func NewPubSub(dht *kaddht.IpfsDHT, region string, subRegion string) *PubSub {
 	ps.ipfsDHT = dht
 	ps.myBackups = ps.getBackups()
 
-	addr := ps.ipfsDHT.Host().Addrs()[0]
-	aux := strings.Split(addr.String(), "/")
-	dialAddr := aux[2] + ":4" + aux[4][1:]
-
+	dialAddr := addrForPubSubServer(ps.ipfsDHT.Host().Addrs()[0])
 	lis, err := net.Listen("tcp", dialAddr)
 	if err != nil {
 		return nil
@@ -142,9 +139,6 @@ type ForwardEvent struct {
 func (ps *PubSub) mySubscribe(info string) error {
 	fmt.Println("MySubscribe: " + ps.serverAddr)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
-	defer cancel()
-
 	p, err := NewPredicate(info)
 	if err != nil {
 		return err
@@ -155,9 +149,47 @@ func (ps *PubSub) mySubscribe(info string) error {
 		p = pNew
 	}
 
+	minID, minAttr, err := ps.closerAttrRvToSelf(p)
+	if err != nil {
+		return errors.New("failed to find the closest attribute Rv")
+	}
+
+	res, _ := ps.rendezvousSelfCheck(minAttr)
+	if res {
+		return nil
+	}
+
+	var dialAddr string
+	closest := ps.ipfsDHT.RoutingTable().NearestPeer(kb.ID(minID))
+	closestAddr := ps.ipfsDHT.FindLocal(closest).Addrs[0]
+	if closestAddr == nil {
+		return errors.New("no address for closest peer")
+	} else {
+		dialAddr = addrForPubSubServer(closestAddr)
+	}
+
+	sub := &pb.Subscription{
+		PeerID:    peer.Encode(ps.ipfsDHT.PeerID()),
+		Predicate: info,
+		RvId:      minAttr,
+	}
+
+	ps.subsToForward <- &ForwardSubRequest{dialAddr: dialAddr, sub: sub}
+
+	// Statistical Code
+	ps.record.AddOperationStat("mySubscribe")
+
+	return nil
+}
+
+// closerAttrRvToSelf returns the closest ID node from all the Rv nodes
+// of each of a subscription predicate attributes, so that the subscriber
+// will send the subscription on the minimal number of hops
+func (ps *PubSub) closerAttrRvToSelf(p *Predicate) (peer.ID, string, error) {
+
 	marshalSelf, err := ps.ipfsDHT.Host().ID().MarshalBinary()
 	if err != nil {
-		return err
+		return "", "", err
 	}
 
 	selfKey := key.XORKeySpace.Key(marshalSelf)
@@ -169,7 +201,7 @@ func (ps *PubSub) mySubscribe(info string) error {
 		candidateID := peer.ID(kb.ConvertKey(attr.name))
 		aux, err := candidateID.MarshalBinary()
 		if err != nil {
-			return err
+			return "", "", err
 		}
 
 		candidateDist := key.XORKeySpace.Distance(selfKey, key.XORKeySpace.Key(aux))
@@ -180,56 +212,7 @@ func (ps *PubSub) mySubscribe(info string) error {
 		}
 	}
 
-	var dialAddr string
-	closest := ps.ipfsDHT.RoutingTable().NearestPeer(kb.ID(minID))
-	closestAddr := ps.ipfsDHT.FindLocal(closest).Addrs[0]
-	if closestAddr == nil {
-		return errors.New("no address for closest peer")
-	} else {
-		aux := strings.Split(closestAddr.String(), "/")
-		dialAddr = aux[2] + ":4" + aux[4][1:]
-	}
-
-	res, _ := ps.rendezvousSelfCheck(minAttr)
-	if res {
-		return nil
-	}
-
-	conn, err := grpc.Dial(dialAddr, grpc.WithInsecure())
-	if err != nil {
-		log.Fatalf("fail to dial: %v", err)
-	}
-	defer conn.Close()
-
-	client := pb.NewScoutHubClient(conn)
-	sub := &pb.Subscription{
-		PeerID:    peer.Encode(ps.ipfsDHT.PeerID()),
-		Predicate: info,
-		RvId:      minAttr,
-	}
-
-	ack, err := client.Subscribe(ctx, sub)
-	if err != nil || !ack.State {
-		alternatives := ps.alternativesToRv(sub.RvId)
-		for _, addr := range alternatives {
-			conn, err := grpc.Dial(addr, grpc.WithInsecure())
-			if err != nil {
-				log.Fatalf("fail to dial: %v", err)
-			}
-			defer conn.Close()
-
-			client := pb.NewScoutHubClient(conn)
-			ack, err := client.Subscribe(ctx, sub)
-			if ack.State && err == nil {
-				break
-			}
-		}
-	}
-
-	// Statistical Code
-	ps.record.AddOperationStat("mySubscribe")
-
-	return nil
+	return minID, minAttr, nil
 }
 
 // Subscribe is a remote function called by a external peer to send
@@ -267,8 +250,7 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 		if closestAddr == nil {
 			return &pb.Ack{State: false, Info: "No address for next hop peer"}, nil
 		} else {
-			aux := strings.Split(closestAddr.String(), "/")
-			dialAddr = aux[2] + ":4" + aux[4][1:]
+			dialAddr = addrForPubSubServer(closestAddr)
 		}
 
 		ps.updateMyBackups(sub.PeerID, sub.Predicate)
@@ -357,9 +339,6 @@ func (ps *PubSub) myUnsubscribe(info string) error {
 func (ps *PubSub) myPublish(data string, info string) error {
 	fmt.Printf("myPublish: %s\n", ps.serverAddr)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
-	defer cancel()
-
 	p, err := NewPredicate(info)
 	if err != nil {
 		return err
@@ -396,8 +375,7 @@ func (ps *PubSub) myPublish(data string, info string) error {
 				if nextAddr == nil {
 					return errors.New("no address to send")
 				} else {
-					aux := strings.Split(nextAddr.String(), "/")
-					dialAddr = aux[2] + ":4" + aux[4][1:]
+					dialAddr = addrForPubSubServer(nextAddr)
 				}
 
 				ps.eventsToForwardDown <- &ForwardEvent{dialAddr: dialAddr, event: event}
@@ -415,35 +393,10 @@ func (ps *PubSub) myPublish(data string, info string) error {
 		if attrAddr == nil {
 			return errors.New("no address for closest peer")
 		} else {
-			aux := strings.Split(attrAddr.String(), "/")
-			dialAddr = aux[2] + ":4" + aux[4][1:]
+			dialAddr = addrForPubSubServer(attrAddr)
 		}
 
-		conn, err := grpc.Dial(dialAddr, grpc.WithInsecure())
-		if err != nil {
-			log.Fatalf("fail to dial: %v", err)
-		}
-		defer conn.Close()
-
-		client := pb.NewScoutHubClient(conn)
-
-		ack, err := client.Publish(ctx, event)
-		if err != nil || !ack.State {
-			alternatives := ps.alternativesToRv(event.RvId)
-			for _, addr := range alternatives {
-				conn, err := grpc.Dial(addr, grpc.WithInsecure())
-				if err != nil {
-					log.Fatalf("fail to dial: %v", err)
-				}
-				defer conn.Close()
-
-				client := pb.NewScoutHubClient(conn)
-				ack, err := client.Publish(ctx, event)
-				if ack.State && err == nil {
-					break
-				}
-			}
-		}
+		ps.eventsToForwardUp <- &ForwardEvent{dialAddr: dialAddr, event: event}
 	}
 
 	// Statistical Code
@@ -472,8 +425,7 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 		if nextAddr == nil {
 			return &pb.Ack{State: false, Info: "No address for next hop peer"}, nil
 		} else {
-			aux := strings.Split(nextAddr.String(), "/")
-			dialAddr = aux[2] + ":4" + aux[4][1:]
+			dialAddr = addrForPubSubServer(nextAddr)
 		}
 
 		ps.eventsToForwardUp <- &ForwardEvent{dialAddr: dialAddr, event: event}
@@ -501,8 +453,7 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 				ps.tablesLock.RUnlock()
 				return &pb.Ack{State: false, Info: "No address for next hop peer"}, nil
 			} else {
-				aux := strings.Split(nextAddr.String(), "/")
-				dialAddr = aux[2] + ":4" + aux[4][1:]
+				dialAddr = addrForPubSubServer(nextAddr)
 			}
 
 			ps.eventsToForwardDown <- &ForwardEvent{dialAddr: dialAddr, event: event, originalRoute: next}
@@ -580,8 +531,7 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 					ps.tablesLock.RUnlock()
 					return &pb.Ack{State: false, Info: "No address for next hop peer"}, nil
 				} else {
-					aux := strings.Split(nextAddr.String(), "/")
-					dialAddr = aux[2] + ":4" + aux[4][1:]
+					dialAddr = addrForPubSubServer(nextAddr)
 				}
 
 				ps.eventsToForwardDown <- &ForwardEvent{dialAddr: dialAddr, event: event, originalRoute: next}
@@ -724,8 +674,8 @@ func (ps *PubSub) getBackups() []string {
 		if backupAddr == nil {
 			continue
 		}
-		aux := strings.Split(backupAddr.String(), "/")
-		dialAddr = aux[2] + ":4" + aux[4][1:]
+
+		dialAddr = addrForPubSubServer(backupAddr)
 		backups = append(backups, dialAddr)
 	}
 
@@ -1040,8 +990,7 @@ func (ps *PubSub) myAdvertiseGroup(pred *Predicate) error {
 		if attrAddr == nil {
 			return errors.New("no address for closest peer")
 		} else {
-			aux := strings.Split(attrAddr.String(), "/")
-			dialAddr = aux[2] + ":4" + aux[4][1:]
+			dialAddr = addrForPubSubServer(attrAddr)
 		}
 
 		conn, err := grpc.Dial(dialAddr, grpc.WithInsecure())
@@ -1094,8 +1043,7 @@ func (ps *PubSub) AdvertiseGroup(ctx context.Context, adv *pb.AdvertRequest) (*p
 	if attrAddr == nil {
 		return nil, errors.New("no address for closest peer")
 	} else {
-		aux := strings.Split(attrAddr.String(), "/")
-		dialAddr = aux[2] + ":4" + aux[4][1:]
+		dialAddr = addrForPubSubServer(attrAddr)
 	}
 
 	ps.advToForward <- &ForwardAdvert{
@@ -1190,29 +1138,9 @@ func (ps *PubSub) myGroupSearchRequest(pred string) error {
 		return err
 	}
 
-	marshalSelf, err := ps.ipfsDHT.Host().ID().MarshalBinary()
+	minID, minAttr, err := ps.closerAttrRvToSelf(p)
 	if err != nil {
-		return err
-	}
-
-	selfKey := key.XORKeySpace.Key(marshalSelf)
-	var minAttr string
-	var minID peer.ID
-	var minDist *big.Int = nil
-
-	for _, attr := range p.attributes {
-		candidateID := peer.ID(kb.ConvertKey(attr.name))
-		aux, err := candidateID.MarshalBinary()
-		if err != nil {
-			return err
-		}
-
-		candidateDist := key.XORKeySpace.Distance(selfKey, key.XORKeySpace.Key(aux))
-		if minDist == nil || candidateDist.Cmp(minDist) == -1 {
-			minAttr = attr.name
-			minID = candidateID
-			minDist = candidateDist
-		}
+		return errors.New("failed to find the closest attribute Rv")
 	}
 
 	res, _ := ps.rendezvousSelfCheck(minAttr)
@@ -1229,8 +1157,7 @@ func (ps *PubSub) myGroupSearchRequest(pred string) error {
 	if closestAddr == nil {
 		return errors.New("no address for closest peer")
 	} else {
-		aux := strings.Split(closestAddr.String(), "/")
-		dialAddr = aux[2] + ":4" + aux[4][1:]
+		dialAddr = addrForPubSubServer(closestAddr)
 	}
 
 	conn, err := grpc.Dial(dialAddr, grpc.WithInsecure())
@@ -1327,8 +1254,7 @@ func (ps *PubSub) GroupSearchRequest(ctx context.Context, req *pb.SearchRequest)
 	if closestAddr == nil {
 		return nil, errors.New("no address for closest peer")
 	} else {
-		aux := strings.Split(closestAddr.String(), "/")
-		dialAddr = aux[2] + ":4" + aux[4][1:]
+		dialAddr = addrForPubSubServer(closestAddr)
 	}
 
 	conn, err := grpc.Dial(dialAddr, grpc.WithInsecure())
