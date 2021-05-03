@@ -24,12 +24,14 @@ import (
 )
 
 // FaultToleranceFactor >> number of backups
+// ConcurrentProcessingFactor >> how many parallel operations of each type can be supported
 // MaxAttributesPerSub >> maximum allowed number of attributes per predicate
 // SubRefreshRateMin >> frequency in which a subscriber needs to resub in minutes
 const (
-	FaultToleranceFactor      = 3
-	MaxAttributesPerPredicate = 5
-	SubRefreshRateMin         = 15
+	FaultToleranceFactor       = 3
+	ConcurrentProcessingFactor = 3
+	MaxAttributesPerPredicate  = 5
+	SubRefreshRateMin          = 15
 )
 
 type PubSub struct {
@@ -85,11 +87,11 @@ func NewPubSub(dht *kaddht.IpfsDHT, region string, subRegion string) *PubSub {
 		myFilters:           mySubs,
 		myBackupsFilters:    make(map[string]*FilterTable),
 		mapBackupAddr:       make(map[string]string),
-		interestingEvents:   make(chan *pb.Event),
-		premiumEvents:       make(chan *pb.PremiumEvent),
-		subsToForward:       make(chan *ForwardSubRequest, 2*len(filterTable.routes)),
-		eventsToForwardUp:   make(chan *ForwardEvent, 2*len(filterTable.routes)),
-		eventsToForwardDown: make(chan *ForwardEvent, 2*len(filterTable.routes)),
+		interestingEvents:   make(chan *pb.Event, ConcurrentProcessingFactor),
+		premiumEvents:       make(chan *pb.PremiumEvent, ConcurrentProcessingFactor),
+		subsToForward:       make(chan *ForwardSubRequest, ConcurrentProcessingFactor),
+		eventsToForwardUp:   make(chan *ForwardEvent, ConcurrentProcessingFactor),
+		eventsToForwardDown: make(chan *ForwardEvent, ConcurrentProcessingFactor),
 		terminate:           make(chan string),
 		advToForward:        make(chan *ForwardAdvert),
 		heartbeatTicker:     time.NewTicker(SubRefreshRateMin * time.Minute),
