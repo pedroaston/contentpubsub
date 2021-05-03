@@ -1,7 +1,6 @@
 package contentpubsub
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/pedroaston/contentpubsub/pb"
@@ -73,7 +72,7 @@ func (r *HistoryRecord) SaveReceivedPremiumEvent(event *pb.PremiumEvent) {
 }
 
 // CompileLatencyResults
-func (r *HistoryRecord) CompileLatencyResults() string {
+func (r *HistoryRecord) CompileLatencyResults() (int, int, int, int) {
 
 	var scoutLatencySum int = 0
 	var scoutEvents int = 0
@@ -92,8 +91,5 @@ func (r *HistoryRecord) CompileLatencyResults() string {
 	avgScoutLatency := scoutLatencySum / len(r.receivedEvents)
 	avgFastLatency := fastLatencySum / len(r.receivedEvents)
 
-	scoutMetrics := fmt.Sprintf("Received %d ScoutSubs events with an avg latency of %d ms\n", scoutEvents, avgScoutLatency)
-	fastMetrics := fmt.Sprintf("Received %d FastDelivery events with an avg latency of %d ms\n", fastEvents, avgFastLatency)
-
-	return scoutMetrics + fastMetrics
+	return scoutEvents, fastEvents, avgScoutLatency, avgFastLatency
 }
