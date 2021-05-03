@@ -348,6 +348,7 @@ func TestRedirectMechanism(t *testing.T) {
 
 // TestAproxRealSubscriptionScenario with 100 peers randomly connected to
 // each other, where half subscribe to one topic and the rest to another
+// MUST BE TESTED IN SEPERATE
 func TestAproxRealSubscriptionScenario(t *testing.T) {
 	fmt.Printf("\n$$$ TestAproxRealSubscriptionScenario $$$\n")
 

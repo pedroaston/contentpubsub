@@ -1054,13 +1054,11 @@ func (ps *PubSub) processLoop() {
 		case pid := <-ps.eventsToForwardDown:
 			ps.forwardEventDown(pid.dialAddr, pid.event, pid.originalRoute, pid.redirectOption)
 		case pid := <-ps.interestingEvents:
-			// Statistical-Code
-			ps.record.SaveReceivedEvent(pid, pid.EventID.PublisherID, "ScoutSubs")
+			ps.record.SaveReceivedEvent(pid)
 			fmt.Printf("Received Event at: %s\n", ps.serverAddr)
 			fmt.Println(">> " + pid.Event)
 		case pid := <-ps.premiumEvents:
-			// Statistical-Code (TODO)
-			// ps.record.SaveReceivedEvent(pid, pid.GroupID.Predicate, "FastDelivery")
+			ps.record.SaveReceivedPremiumEvent(pid)
 			fmt.Printf("Received Event at: %s\n", ps.serverAddr)
 			fmt.Println(">> " + pid.Event)
 		case pid := <-ps.advToForward:
@@ -1657,6 +1655,7 @@ func (ps *PubSub) myPremiumPublish(grpPred string, event string, eventInfo strin
 		GroupID:   gID,
 		Event:     event,
 		EventPred: eventInfo,
+		BirthTime: time.Now().Format(time.StampMilli),
 	}
 
 	hTotal := len(mGrp.trackHelp)
