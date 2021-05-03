@@ -88,8 +88,19 @@ func (r *HistoryRecord) CompileLatencyResults() (int, int, int, int) {
 		}
 	}
 
-	avgScoutLatency := scoutLatencySum / len(r.receivedEvents)
-	avgFastLatency := fastLatencySum / len(r.receivedEvents)
+	var avgScoutLatency int
+	if scoutEvents == 0 {
+		avgScoutLatency = 0
+	} else {
+		avgScoutLatency = scoutLatencySum / len(r.receivedEvents)
+	}
+
+	var avgFastLatency int
+	if fastEvents == 0 {
+		avgFastLatency = 0
+	} else {
+		avgFastLatency = fastLatencySum / len(r.receivedEvents)
+	}
 
 	return scoutEvents, fastEvents, avgScoutLatency, avgFastLatency
 }
