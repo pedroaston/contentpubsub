@@ -134,10 +134,10 @@ type ForwardEvent struct {
 	event          *pb.Event
 }
 
-// mySubscribe subscribes to certain event(s) and saves
+// MySubscribe subscribes to certain event(s) and saves
 // it in myFilters for further resubing operations and
 // assess if node is interested in the events it receives
-func (ps *PubSub) mySubscribe(info string) error {
+func (ps *PubSub) MySubscribe(info string) error {
 	fmt.Println("MySubscribe: " + ps.serverAddr)
 
 	p, err := NewPredicate(info)
@@ -360,10 +360,10 @@ func (ps *PubSub) forwardSub(dialAddr string, sub *pb.Subscription) {
 	}
 }
 
-// myUnsubscribe deletes a specific predicate out of mySubs
+// MyUnsubscribe deletes a specific predicate out of mySubs
 // list which will stop the refreshing of thatsub and stop
 // delivering to the user those contained events
-func (ps *PubSub) myUnsubscribe(info string) error {
+func (ps *PubSub) MyUnsubscribe(info string) error {
 	fmt.Printf("myUnsubscribe: %s\n", ps.serverAddr)
 
 	p, err := NewPredicate(info)
@@ -379,11 +379,11 @@ func (ps *PubSub) myUnsubscribe(info string) error {
 	return nil
 }
 
-// myPublish function is used when we want to publish an event on the overlay.
+// MyPublish function is used when we want to publish an event on the overlay.
 // Data is the message we want to publish and info is the representative
 // predicate of that event data. The publish operation is made towards all
 // attributes rendezvous in order find the way to all subscribers
-func (ps *PubSub) myPublish(data string, info string) error {
+func (ps *PubSub) MyPublish(data string, info string) error {
 	fmt.Printf("myPublish: %s\n", ps.serverAddr)
 
 	p, err := NewPredicate(info)
@@ -1029,7 +1029,7 @@ func (ps *PubSub) alternativesToRv(rvID string) []string {
 // gracefullyTerminate unsubscribes before closing
 func (ps *PubSub) gracefullyTerminate() {
 	for _, g := range ps.subbedGroups {
-		ps.myPremiumUnsubscribe(g.predicate.ToString(), g.pubAddr)
+		ps.MyPremiumUnsubscribe(g.predicate.ToString(), g.pubAddr)
 	}
 
 	ps.terminateService()
@@ -1066,7 +1066,7 @@ func (ps *PubSub) processLoop() {
 		case <-ps.heartbeatTicker.C:
 			for _, filters := range ps.myFilters.filters {
 				for _, filter := range filters {
-					ps.mySubscribe(filter.ToString())
+					ps.MySubscribe(filter.ToString())
 				}
 			}
 			for _, g := range ps.managedGroups {
@@ -1276,9 +1276,9 @@ func (ps *PubSub) addAdvertToBoards(adv *pb.AdvertRequest) error {
 	return nil
 }
 
-// myGroupSearchRequest requests to the closest rendezvous of his whished
+// MyGroupSearchRequest requests to the closest rendezvous of his whished
 // Group predicate for MulticastGroups of his interest
-func (ps *PubSub) myGroupSearchRequest(pred string) error {
+func (ps *PubSub) MyGroupSearchRequest(pred string) error {
 	fmt.Println("myGroupSearchRequest: " + ps.serverAddr)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
@@ -1461,9 +1461,9 @@ func (ps *PubSub) returnGroupsOfInterest(p *Predicate) []*pb.MulticastGroupID {
 	return interestGs
 }
 
-// myPremiumSubscribe is the operation a subscriber performs in order to belong to
+// MyPremiumSubscribe is the operation a subscriber performs in order to belong to
 // a certain MulticastGroup of a certain premium publisher and predicate
-func (ps *PubSub) myPremiumSubscribe(info string, pubAddr string, pubPredicate string, cap int) error {
+func (ps *PubSub) MyPremiumSubscribe(info string, pubAddr string, pubPredicate string, cap int) error {
 	fmt.Printf("myPremiumSubscribe: %s\n", ps.serverAddr)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
@@ -1539,7 +1539,7 @@ func (ps *PubSub) PremiumSubscribe(ctx context.Context, sub *pb.PremiumSubscript
 
 // myPremiumUnsubscribe is the operation a premium subscriber performes
 // once it wants to get out of a multicastGroup
-func (ps *PubSub) myPremiumUnsubscribe(pubPred string, pubAddr string) error {
+func (ps *PubSub) MyPremiumUnsubscribe(pubPred string, pubAddr string) error {
 	fmt.Printf("MyPremiumUnsubscribe: %s\n", ps.serverAddr)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
@@ -1617,9 +1617,9 @@ func (ps *PubSub) PremiumUnsubscribe(ctx context.Context, sub *pb.PremiumSubscri
 	return &pb.Ack{State: true, Info: ""}, nil
 }
 
-// myPremiumPublish is the operation a premium publisher runs
+// MyPremiumPublish is the operation a premium publisher runs
 // when he wants to publish in one of its MultiastGroups
-func (ps *PubSub) myPremiumPublish(grpPred string, event string, eventInfo string) error {
+func (ps *PubSub) MyPremiumPublish(grpPred string, event string, eventInfo string) error {
 	fmt.Printf("MyPremiumPublish: %s\n", ps.serverAddr)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)

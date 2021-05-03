@@ -34,7 +34,7 @@ func TestPubSubServerComms(t *testing.T) {
 		pubsubs[i] = NewPubSub(dht, "EU", "PT")
 	}
 
-	err := pubsubs[0].mySubscribe("tenis T")
+	err := pubsubs[0].MySubscribe("tenis T")
 
 	time.Sleep(time.Second)
 
@@ -51,7 +51,7 @@ func TestPubSubServerComms(t *testing.T) {
 // >> 1 Subscriber that subscribes and unsubscribes
 // to a kind of event
 func TestSimpleUnsubscribing(t *testing.T) {
-	fmt.Printf("\n $$$ TestSimpleUnsubscribing $$$\n")
+	fmt.Printf("\n$$$ TestSimpleUnsubscribing $$$\n")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()
@@ -71,14 +71,14 @@ func TestSimpleUnsubscribing(t *testing.T) {
 		pubsubs[i] = NewPubSub(dht, "EU", "PT")
 	}
 
-	err := pubsubs[0].mySubscribe("portugal T")
+	err := pubsubs[0].MySubscribe("portugal T")
 	if err != nil {
 		t.Fatal(err)
 	} else if len(pubsubs[0].myFilters.filters[1]) != 1 {
 		t.Fatal("Error Subscribing!")
 	}
 
-	pubsubs[0].myUnsubscribe("portugal T")
+	pubsubs[0].MyUnsubscribe("portugal T")
 	if len(pubsubs[0].myFilters.filters[1]) != 0 {
 		t.Fatal("Failed Unsubscribing!")
 	}
@@ -89,7 +89,7 @@ func TestSimpleUnsubscribing(t *testing.T) {
 // >> 1 Publisher that publishes a event
 // >> 1 Subscriber that subscribe to a event
 func TestSimplePublish(t *testing.T) {
-	fmt.Printf("\n $$$ TestSimplePublish $$$\n")
+	fmt.Printf("\n$$$ TestSimplePublish $$$\n")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()
@@ -110,12 +110,12 @@ func TestSimplePublish(t *testing.T) {
 		pubsubs[i] = NewPubSub(dht, "EU", "PT")
 	}
 
-	pubsubs[0].mySubscribe("portugal T")
-	pubsubs[1].mySubscribe("portugal T")
+	pubsubs[0].MySubscribe("portugal T")
+	pubsubs[1].MySubscribe("portugal T")
 
 	time.Sleep(time.Second)
 
-	err := pubsubs[2].myPublish("Portugal is beautifull!", "portugal T")
+	err := pubsubs[2].MyPublish("Portugal is beautifull!", "portugal T")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func TestSimplePublish(t *testing.T) {
 // >> 4 Subscribers subscribing to different kinds of events
 // >> 3 Passive nodes that just diffuse the subscriptions
 func TestSubscriptionForwarding(t *testing.T) {
-	fmt.Printf("\n $$$ TestSubscriptionForwarding $$$\n")
+	fmt.Printf("\n$$$ TestSubscriptionForwarding $$$\n")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()
@@ -154,22 +154,22 @@ func TestSubscriptionForwarding(t *testing.T) {
 		pubsubs[i] = NewPubSub(dht, "EU", "PT")
 	}
 
-	err1 := pubsubs[0].mySubscribe("chocolate T")
+	err1 := pubsubs[0].MySubscribe("chocolate T")
 	if err1 != nil {
 		t.Fatal("Failed 1st Subscription")
 	}
 
-	err2 := pubsubs[0].mySubscribe("soccer T/goals R 2 5")
+	err2 := pubsubs[0].MySubscribe("soccer T/goals R 2 5")
 	if err2 != nil {
 		t.Fatal("Failed 2nd Subscription")
 	}
 
-	err3 := pubsubs[0].mySubscribe("portugal T")
+	err3 := pubsubs[0].MySubscribe("portugal T")
 	if err3 != nil {
 		t.Fatal("Failed 3rd Subscription")
 	}
 
-	err4 := pubsubs[4].mySubscribe("portugal T")
+	err4 := pubsubs[4].MySubscribe("portugal T")
 	if err4 != nil {
 		t.Fatal("Failed 4th Subscription")
 	}
@@ -210,13 +210,13 @@ func TestSimpleFaultTolerance(t *testing.T) {
 		pubsubs[i] = NewPubSub(dht, "EU", "PT")
 	}
 
-	pubsubs[0].mySubscribe("portugal T")
+	pubsubs[0].MySubscribe("portugal T")
 	time.Sleep(time.Second)
 
 	pubsubs[1].terminateService()
 	time.Sleep(time.Second)
 
-	pubsubs[4].myPublish("valmitão tem as melhores marolas do mundo!", "portugal T")
+	pubsubs[4].MyPublish("valmitão tem as melhores marolas do mundo!", "portugal T")
 	time.Sleep(time.Second)
 
 }
@@ -255,7 +255,7 @@ func TestBackupReplacement(t *testing.T) {
 
 	time.Sleep(time.Second)
 	pubsubs[3].terminateService()
-	pubsubs[5].mySubscribe("soccer T")
+	pubsubs[5].MySubscribe("soccer T")
 	time.Sleep(time.Second)
 }
 
@@ -295,18 +295,18 @@ func TestRefreshRoutine(t *testing.T) {
 	}
 
 	pubsubs[4].CreateMulticastGroup("portugal T")
-	pubsubs[1].mySubscribe("portugal T")
-	pubsubs[2].mySubscribe("portugal T")
+	pubsubs[1].MySubscribe("portugal T")
+	pubsubs[2].MySubscribe("portugal T")
 	pubsubs[2].CreateMulticastGroup("portugal T")
-	pubsubs[1].myUnsubscribe("portugal T")
-	pubsubs[3].mySubscribe("bali T")
+	pubsubs[1].MyUnsubscribe("portugal T")
+	pubsubs[3].MySubscribe("bali T")
 	pubsubs[2].terminateService()
 
 	time.Sleep(5 * time.Second)
 
-	pubsubs[0].myPublish("bali has some good waves", "bali T")
-	pubsubs[0].myPublish("portugal has epic waves", "portugal T")
-	pubsubs[3].myGroupSearchRequest("portugal T")
+	pubsubs[0].MyPublish("bali has some good waves", "bali T")
+	pubsubs[0].MyPublish("portugal has epic waves", "portugal T")
+	pubsubs[3].MyGroupSearchRequest("portugal T")
 	pubsubs[4].gracefullyTerminate()
 }
 
@@ -338,11 +338,11 @@ func TestRedirectMechanism(t *testing.T) {
 		pubsubs[i] = NewPubSub(dht, "EU", "PT")
 	}
 
-	pubsubs[0].mySubscribe("portugal T")
+	pubsubs[0].MySubscribe("portugal T")
 
 	time.Sleep(time.Second)
 
-	pubsubs[3].myPublish("Portugal sometime can be the best!", "portugal T")
+	pubsubs[3].MyPublish("Portugal sometime can be the best!", "portugal T")
 
 }
 
@@ -373,9 +373,9 @@ func TestAproxRealSubscriptionScenario(t *testing.T) {
 	var err1, err2 error
 	for i, ps := range pubsubs {
 		if i%2 == 0 {
-			err1 = ps.mySubscribe("portugal T/soccer T")
+			err1 = ps.MySubscribe("portugal T/soccer T")
 		} else {
-			err2 = ps.mySubscribe("tesla T/stock T/value R 500 800")
+			err2 = ps.MySubscribe("tesla T/stock T/value R 500 800")
 		}
 		if err1 != nil || err2 != nil {
 			t.Fatal("Error Subscribing in mass")
