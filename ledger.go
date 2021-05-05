@@ -38,14 +38,19 @@ func (r *HistoryRecord) AddOperationStat(opName string) {
 // SaveReceivedEvent
 func (r *HistoryRecord) SaveReceivedEvent(event *pb.Event) {
 
-	aux, err := time.Parse(time.StampMilli, event.BirthTime)
-	if err != nil {
+	past, err1 := time.Parse(time.StampMilli, event.BirthTime)
+	if err1 != nil {
+		return
+	}
+
+	present, err2 := time.Parse(time.StampMilli, time.Now().Format(time.StampMilli))
+	if err2 != nil {
 		return
 	}
 
 	eventRecord := &EventRecord{
 		eventSource:  event.EventID.PublisherID,
-		timeOfTravel: time.Since(aux),
+		timeOfTravel: present.Sub(past),
 		eventData:    event.Event,
 		protocol:     "ScoutSubs",
 	}
@@ -56,14 +61,19 @@ func (r *HistoryRecord) SaveReceivedEvent(event *pb.Event) {
 // SaveReceivedEvent
 func (r *HistoryRecord) SaveReceivedPremiumEvent(event *pb.PremiumEvent) {
 
-	aux, err := time.Parse(time.StampMilli, event.BirthTime)
-	if err != nil {
+	past, err1 := time.Parse(time.StampMilli, event.BirthTime)
+	if err1 != nil {
+		return
+	}
+
+	present, err2 := time.Parse(time.StampMilli, time.Now().Format(time.StampMilli))
+	if err2 != nil {
 		return
 	}
 
 	eventRecord := &EventRecord{
 		eventSource:  event.GroupID.OwnerAddr,
-		timeOfTravel: time.Since(aux),
+		timeOfTravel: present.Sub(past),
 		eventData:    event.Event,
 		protocol:     "FastDelivery",
 	}

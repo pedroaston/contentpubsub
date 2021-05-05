@@ -332,7 +332,7 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 // still needs to be forward towards the rendevous
 func (ps *PubSub) forwardSub(dialAddr string, sub *pb.Subscription) {
 
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	conn, err := grpc.Dial(dialAddr, grpc.WithInsecure())
@@ -572,7 +572,7 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 // towards a rendezvous by calling another publish operation towards it
 func (ps *PubSub) forwardEventUp(dialAddr string, event *pb.Event) {
 
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	conn, err := grpc.Dial(dialAddr, grpc.WithInsecure())
@@ -692,7 +692,7 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 // until it finds all subscribers by calling a notify operation towards them
 func (ps *PubSub) forwardEventDown(dialAddr string, event *pb.Event, originalRoute string, redirect string) {
 
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	if dialAddr == ps.serverAddr {
@@ -777,7 +777,7 @@ func (ps *PubSub) UpdateBackup(ctx context.Context, update *pb.Update) (*pb.Ack,
 // to update their versions of his filter table
 func (ps *PubSub) updateMyBackups(route string, info string) error {
 
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
 	for _, addrB := range ps.myBackups {
@@ -963,7 +963,7 @@ func (ps *PubSub) filtersForBackupRefresh() ([]*pb.Update, error) {
 // refreshOneBackup refreshes one of the nodes backup
 func (ps *PubSub) refreshOneBackup(backup string, updates []*pb.Update) error {
 
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	conn, err := grpc.Dial(backup, grpc.WithInsecure())
@@ -1026,15 +1026,6 @@ func (ps *PubSub) alternativesToRv(rvID string) []string {
 	}
 
 	return validAlt
-}
-
-// gracefullyTerminate unsubscribes before closing
-func (ps *PubSub) gracefullyTerminate() {
-	for _, g := range ps.subbedGroups {
-		ps.MyPremiumUnsubscribe(g.predicate.ToString(), g.pubAddr)
-	}
-
-	ps.terminateService()
 }
 
 // terminateService closes the PubSub service
@@ -1116,7 +1107,7 @@ func (ps *PubSub) CreateMulticastGroup(pred string) error {
 func (ps *PubSub) myAdvertiseGroup(pred *Predicate) error {
 	fmt.Printf("myAdvertiseGroup: %s\n", ps.serverAddr)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	var dialAddr string
@@ -1213,7 +1204,7 @@ func (ps *PubSub) AdvertiseGroup(ctx context.Context, adv *pb.AdvertRequest) (*p
 // forwardAdvertising forwards the advertisement asynchronously to the rendezvous
 func (ps *PubSub) forwardAdvertising(dialAddr string, adv *pb.AdvertRequest) {
 
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	conn, err := grpc.Dial(dialAddr, grpc.WithInsecure())
@@ -1283,7 +1274,7 @@ func (ps *PubSub) addAdvertToBoards(adv *pb.AdvertRequest) error {
 func (ps *PubSub) MyGroupSearchRequest(pred string) error {
 	fmt.Println("myGroupSearchRequest: " + ps.serverAddr)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
 	p, err := NewPredicate(pred)
@@ -1468,7 +1459,7 @@ func (ps *PubSub) returnGroupsOfInterest(p *Predicate) []*pb.MulticastGroupID {
 func (ps *PubSub) MyPremiumSubscribe(info string, pubAddr string, pubPredicate string, cap int) error {
 	fmt.Printf("myPremiumSubscribe: %s\n", ps.serverAddr)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	pubP, err := NewPredicate(pubPredicate)
@@ -1544,7 +1535,7 @@ func (ps *PubSub) PremiumSubscribe(ctx context.Context, sub *pb.PremiumSubscript
 func (ps *PubSub) MyPremiumUnsubscribe(pubPred string, pubAddr string) error {
 	fmt.Printf("MyPremiumUnsubscribe: %s\n", ps.serverAddr)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	pubP, err := NewPredicate(pubPred)
@@ -1624,7 +1615,7 @@ func (ps *PubSub) PremiumUnsubscribe(ctx context.Context, sub *pb.PremiumSubscri
 func (ps *PubSub) MyPremiumPublish(grpPred string, event string, eventInfo string) error {
 	fmt.Printf("MyPremiumPublish: %s\n", ps.serverAddr)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	gP, err1 := NewPredicate(grpPred)

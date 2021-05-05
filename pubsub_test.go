@@ -5,45 +5,10 @@ import (
 	"fmt"
 	"testing"
 	"time"
-
-	"github.com/libp2p/go-libp2p-core/peer"
 )
 
-// TestPubSubServerComms only wants to assure that pubsub servers can communicate
-// by initializing both and subscribing to events about portugal
-// Test composition: 2 nodes
-// >> 1 Subscriber that subscribes to that event
-func TestPubSubServerComms(t *testing.T) {
-	fmt.Printf("\n$$$ TestPubSubServerComms $$$\n")
-
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
-	defer cancel()
-
-	dhts := setupDHTS(t, ctx, 2)
-	defer func() {
-		for _, dht := range dhts {
-			dht.Close()
-			defer dht.Host().Close()
-		}
-	}()
-
-	connect(t, ctx, dhts[0], dhts[1])
-
-	var pubsubs [2]*PubSub
-	for i, dht := range dhts {
-		pubsubs[i] = NewPubSub(dht, "EU", "PT")
-	}
-
-	err := pubsubs[0].MySubscribe("tenis T")
-
-	time.Sleep(time.Second)
-
-	if err != nil {
-		t.Fatal(err)
-	} else if pubsubs[1].currentFilterTable.routes[peer.Encode(pubsubs[0].ipfsDHT.PeerID())].filters[1][0].String() != "<tenis> " {
-		t.Fatal("Failed Subscription")
-	}
-}
+// ++++++++++++++ READ THIS ++++++++++++++
+// These tests should be run individually
 
 // TestSimpleUnsubscribing just subscribes to certain
 // events and then unsubscribes to them
@@ -228,6 +193,10 @@ func TestSimpleFaultTolerance(t *testing.T) {
 // >> 5 Passive nodes that just diffuse the subscriptions
 // being one the backups of the subscriber replaced once
 // one of its backups fails
+// OBSERVATIONS:
+// >> backup failed may only be detected after timeout
+// and stop the entire subscription process, and for that
+// I reduced the updateMyBackups to 2 seconds
 func TestBackupReplacement(t *testing.T) {
 	fmt.Printf("\n$$$ TestBackupReplacement $$$\n")
 
@@ -253,10 +222,12 @@ func TestBackupReplacement(t *testing.T) {
 		pubsubs[i] = NewPubSub(dht, "EU", "PT")
 	}
 
+	pubsubs[3].MySubscribe("benfica T")
 	time.Sleep(time.Second)
-	pubsubs[3].terminateService()
-	pubsubs[5].MySubscribe("soccer T")
+	pubsubs[2].terminateService()
 	time.Sleep(time.Second)
+	pubsubs[1].MySubscribe("benfica T")
+	time.Sleep(3 * time.Second)
 }
 
 // TestRefreshRoutine is used to show how the filter tables
@@ -306,16 +277,16 @@ func TestRefreshRoutine(t *testing.T) {
 
 	pubsubs[0].MyPublish("bali has some good waves", "bali T")
 	pubsubs[0].MyPublish("portugal has epic waves", "portugal T")
-	pubsubs[3].MyGroupSearchRequest("portugal T")
-	pubsubs[4].gracefullyTerminate()
+	time.Sleep(time.Second)
 }
 
-// TestRedirectMechanism shows that a event my jump several hops on
-// the network if those intermidiate nodes don't lead to more subscribers
+// TestRedirectMechanismAndLatencyMetric shows that a event my jump several hops on
+// the network if those intermidiate nodes don't lead to more subscribers and
+// finishes the test by printing the latency on the event delivery
 // Test composition: 4 nodes
 // >> 1 Subscriber subscribes at the bottom of the dissemination chain
 // >> 1 Publisher publishing a event next to the dissemination chain
-func TestRedirectMechanism(t *testing.T) {
+func TestRedirectMechanismAndLatencyMetric(t *testing.T) {
 	fmt.Printf("\n$$$ TestRedirectMechanism $$$\n")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
@@ -344,43 +315,8 @@ func TestRedirectMechanism(t *testing.T) {
 
 	pubsubs[3].MyPublish("Portugal sometime can be the best!", "portugal T")
 
-}
+	time.Sleep(time.Second)
 
-// TestAproxRealSubscriptionScenario with 100 peers randomly connected to
-// each other, where half subscribe to one topic and the rest to another
-// MUST BE TESTED IN SEPERATE
-func TestAproxRealSubscriptionScenario(t *testing.T) {
-	fmt.Printf("\n$$$ TestAproxRealSubscriptionScenario $$$\n")
-
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
-	defer cancel()
-
-	dhts := setupDHTS(t, ctx, 100)
-	defer func() {
-		for _, dht := range dhts {
-			dht.Close()
-			defer dht.Host().Close()
-		}
-	}()
-
-	bootstrapDhts(t, ctx, dhts)
-
-	var pubsubs [100]*PubSub
-	for i, dht := range dhts {
-		pubsubs[i] = NewPubSub(dht, "EU", "PT")
-	}
-
-	var err1, err2 error
-	for i, ps := range pubsubs {
-		if i%2 == 0 {
-			err1 = ps.MySubscribe("portugal T/soccer T")
-		} else {
-			err2 = ps.MySubscribe("tesla T/stock T/value R 500 800")
-		}
-		if err1 != nil || err2 != nil {
-			t.Fatal("Error Subscribing in mass")
-		}
-	}
-
-	time.Sleep(2 * time.Second)
+	_, _, lat, _ := pubsubs[0].ReturnReceivedEventsStats()
+	fmt.Printf("Average latency was %d ms\n", lat)
 }
