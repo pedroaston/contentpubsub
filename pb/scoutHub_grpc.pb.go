@@ -24,6 +24,9 @@ type ScoutHubClient interface {
 	Notify(ctx context.Context, in *Event, opts ...grpc.CallOption) (*Ack, error)
 	UpdateBackup(ctx context.Context, in *Update, opts ...grpc.CallOption) (*Ack, error)
 	BackupRefresh(ctx context.Context, opts ...grpc.CallOption) (ScoutHub_BackupRefreshClient, error)
+	RecruitHasTracker(ctx context.Context, in *RecruitTrackerMessage, opts ...grpc.CallOption) (*Ack, error)
+	LogToTracker(ctx context.Context, in *EventLog, opts ...grpc.CallOption) (*Ack, error)
+	AckToTracker(ctx context.Context, in *EventAck, opts ...grpc.CallOption) (*Ack, error)
 	// FastDelivery
 	AdvertiseGroup(ctx context.Context, in *AdvertRequest, opts ...grpc.CallOption) (*Ack, error)
 	GroupSearchRequest(ctx context.Context, in *SearchRequest, opts ...grpc.CallOption) (*SearchReply, error)
@@ -32,6 +35,8 @@ type ScoutHubClient interface {
 	PremiumPublish(ctx context.Context, in *PremiumEvent, opts ...grpc.CallOption) (*Ack, error)
 	RequestHelp(ctx context.Context, in *HelpRequest, opts ...grpc.CallOption) (*Ack, error)
 	DelegateSubToHelper(ctx context.Context, in *DelegateSub, opts ...grpc.CallOption) (*Ack, error)
+	// Utils
+	StatusCheck(ctx context.Context, in *Form, opts ...grpc.CallOption) (*Form, error)
 }
 
 type scoutHubClient struct {
@@ -112,6 +117,33 @@ func (x *scoutHubBackupRefreshClient) CloseAndRecv() (*Ack, error) {
 	return m, nil
 }
 
+func (c *scoutHubClient) RecruitHasTracker(ctx context.Context, in *RecruitTrackerMessage, opts ...grpc.CallOption) (*Ack, error) {
+	out := new(Ack)
+	err := c.cc.Invoke(ctx, "/contentpubsub.pb.ScoutHub/RecruitHasTracker", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *scoutHubClient) LogToTracker(ctx context.Context, in *EventLog, opts ...grpc.CallOption) (*Ack, error) {
+	out := new(Ack)
+	err := c.cc.Invoke(ctx, "/contentpubsub.pb.ScoutHub/LogToTracker", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *scoutHubClient) AckToTracker(ctx context.Context, in *EventAck, opts ...grpc.CallOption) (*Ack, error) {
+	out := new(Ack)
+	err := c.cc.Invoke(ctx, "/contentpubsub.pb.ScoutHub/AckToTracker", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *scoutHubClient) AdvertiseGroup(ctx context.Context, in *AdvertRequest, opts ...grpc.CallOption) (*Ack, error) {
 	out := new(Ack)
 	err := c.cc.Invoke(ctx, "/contentpubsub.pb.ScoutHub/AdvertiseGroup", in, out, opts...)
@@ -175,6 +207,15 @@ func (c *scoutHubClient) DelegateSubToHelper(ctx context.Context, in *DelegateSu
 	return out, nil
 }
 
+func (c *scoutHubClient) StatusCheck(ctx context.Context, in *Form, opts ...grpc.CallOption) (*Form, error) {
+	out := new(Form)
+	err := c.cc.Invoke(ctx, "/contentpubsub.pb.ScoutHub/StatusCheck", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ScoutHubServer is the server API for ScoutHub service.
 // All implementations must embed UnimplementedScoutHubServer
 // for forward compatibility
@@ -185,6 +226,9 @@ type ScoutHubServer interface {
 	Notify(context.Context, *Event) (*Ack, error)
 	UpdateBackup(context.Context, *Update) (*Ack, error)
 	BackupRefresh(ScoutHub_BackupRefreshServer) error
+	RecruitHasTracker(context.Context, *RecruitTrackerMessage) (*Ack, error)
+	LogToTracker(context.Context, *EventLog) (*Ack, error)
+	AckToTracker(context.Context, *EventAck) (*Ack, error)
 	// FastDelivery
 	AdvertiseGroup(context.Context, *AdvertRequest) (*Ack, error)
 	GroupSearchRequest(context.Context, *SearchRequest) (*SearchReply, error)
@@ -193,6 +237,8 @@ type ScoutHubServer interface {
 	PremiumPublish(context.Context, *PremiumEvent) (*Ack, error)
 	RequestHelp(context.Context, *HelpRequest) (*Ack, error)
 	DelegateSubToHelper(context.Context, *DelegateSub) (*Ack, error)
+	// Utils
+	StatusCheck(context.Context, *Form) (*Form, error)
 	mustEmbedUnimplementedScoutHubServer()
 }
 
@@ -215,6 +261,15 @@ func (UnimplementedScoutHubServer) UpdateBackup(context.Context, *Update) (*Ack,
 func (UnimplementedScoutHubServer) BackupRefresh(ScoutHub_BackupRefreshServer) error {
 	return status.Errorf(codes.Unimplemented, "method BackupRefresh not implemented")
 }
+func (UnimplementedScoutHubServer) RecruitHasTracker(context.Context, *RecruitTrackerMessage) (*Ack, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RecruitHasTracker not implemented")
+}
+func (UnimplementedScoutHubServer) LogToTracker(context.Context, *EventLog) (*Ack, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method LogToTracker not implemented")
+}
+func (UnimplementedScoutHubServer) AckToTracker(context.Context, *EventAck) (*Ack, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AckToTracker not implemented")
+}
 func (UnimplementedScoutHubServer) AdvertiseGroup(context.Context, *AdvertRequest) (*Ack, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AdvertiseGroup not implemented")
 }
@@ -235,6 +290,9 @@ func (UnimplementedScoutHubServer) RequestHelp(context.Context, *HelpRequest) (*
 }
 func (UnimplementedScoutHubServer) DelegateSubToHelper(context.Context, *DelegateSub) (*Ack, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DelegateSubToHelper not implemented")
+}
+func (UnimplementedScoutHubServer) StatusCheck(context.Context, *Form) (*Form, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StatusCheck not implemented")
 }
 func (UnimplementedScoutHubServer) mustEmbedUnimplementedScoutHubServer() {}
 
@@ -345,6 +403,60 @@ func (x *scoutHubBackupRefreshServer) Recv() (*Update, error) {
 		return nil, err
 	}
 	return m, nil
+}
+
+func _ScoutHub_RecruitHasTracker_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RecruitTrackerMessage)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ScoutHubServer).RecruitHasTracker(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/contentpubsub.pb.ScoutHub/RecruitHasTracker",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ScoutHubServer).RecruitHasTracker(ctx, req.(*RecruitTrackerMessage))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ScoutHub_LogToTracker_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(EventLog)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ScoutHubServer).LogToTracker(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/contentpubsub.pb.ScoutHub/LogToTracker",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ScoutHubServer).LogToTracker(ctx, req.(*EventLog))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ScoutHub_AckToTracker_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(EventAck)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ScoutHubServer).AckToTracker(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/contentpubsub.pb.ScoutHub/AckToTracker",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ScoutHubServer).AckToTracker(ctx, req.(*EventAck))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _ScoutHub_AdvertiseGroup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -473,6 +585,24 @@ func _ScoutHub_DelegateSubToHelper_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ScoutHub_StatusCheck_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(Form)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ScoutHubServer).StatusCheck(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/contentpubsub.pb.ScoutHub/StatusCheck",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ScoutHubServer).StatusCheck(ctx, req.(*Form))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ScoutHub_ServiceDesc is the grpc.ServiceDesc for ScoutHub service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -495,6 +625,18 @@ var ScoutHub_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpdateBackup",
 			Handler:    _ScoutHub_UpdateBackup_Handler,
+		},
+		{
+			MethodName: "RecruitHasTracker",
+			Handler:    _ScoutHub_RecruitHasTracker_Handler,
+		},
+		{
+			MethodName: "LogToTracker",
+			Handler:    _ScoutHub_LogToTracker_Handler,
+		},
+		{
+			MethodName: "AckToTracker",
+			Handler:    _ScoutHub_AckToTracker_Handler,
 		},
 		{
 			MethodName: "AdvertiseGroup",
@@ -523,6 +665,10 @@ var ScoutHub_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DelegateSubToHelper",
 			Handler:    _ScoutHub_DelegateSubToHelper_Handler,
+		},
+		{
+			MethodName: "StatusCheck",
+			Handler:    _ScoutHub_StatusCheck_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

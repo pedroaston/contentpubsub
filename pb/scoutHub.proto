@@ -12,6 +12,9 @@ service ScoutHub {
     rpc Notify(Event) returns (Ack) {}
     rpc UpdateBackup(Update) returns (Ack) {}
     rpc BackupRefresh(stream Update) returns (Ack) {}
+    rpc RecruitHasTracker(RecruitTrackerMessage) returns (Ack) {}
+    rpc LogToTracker(EventLog) returns (Ack) {}
+    rpc AckToTracker(EventAck) returns (Ack) {}
 
     // FastDelivery
     rpc AdvertiseGroup(AdvertRequest) returns (Ack) {}
@@ -21,11 +24,19 @@ service ScoutHub {
     rpc PremiumPublish(PremiumEvent) returns (Ack) {}
     rpc RequestHelp(HelpRequest) returns (Ack) {}
     rpc DelegateSubToHelper(DelegateSub) returns (Ack) {}
+
+    // Utils
+    rpc StatusCheck(Form) returns (Form) {}
 }
 
 message Ack {
     bool state = 1;
     string info = 2;
+}
+
+message Form {
+    string query = 1;
+    string response = 2;
 }
 
 // ++++++++++++++ ScoutSubs message types ++++++++++++++
@@ -59,6 +70,23 @@ message Update {
     string route = 2;
     string routeAddr = 3;
     string predicate = 4;
+}
+
+message RecruitTrackerMessage {
+    bool leader = 1;
+    string rvID = 2;
+}
+
+message EventLog {
+    string rvID = 1;
+    EventID eventID = 2;    
+    map <string, bool> log = 3;
+}
+
+message EventAck {
+    string rvID = 1;
+    EventID eventID = 2;
+    string peerID = 3;
 }
 
 // +++++++++++++++++++ FastDelivery message types +++++++++++++++++++

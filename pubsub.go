@@ -49,7 +49,8 @@ type PubSub struct {
 	myBackupsFilters map[string]*FilterTable
 	mapBackupAddr    map[string]string
 
-	myTrackers map[string]*Tracker
+	myTrackers   map[string]*Tracker
+	myRvTrackers map[string][]string
 
 	interestingEvents   chan *pb.Event
 	subsToForward       chan *ForwardSubRequest
@@ -90,6 +91,7 @@ func NewPubSub(dht *kaddht.IpfsDHT, region string, subRegion string) *PubSub {
 		myBackupsFilters:    make(map[string]*FilterTable),
 		mapBackupAddr:       make(map[string]string),
 		myTrackers:          make(map[string]*Tracker),
+		myRvTrackers:        make(map[string][]string),
 		interestingEvents:   make(chan *pb.Event, ConcurrentProcessingFactor),
 		premiumEvents:       make(chan *pb.PremiumEvent, ConcurrentProcessingFactor),
 		subsToForward:       make(chan *ForwardSubRequest, ConcurrentProcessingFactor),
@@ -268,6 +270,8 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 		sub.Predicate = pNew.ToString()
 	}
 
+	ps.updateMyBackups(sub.PeerID, sub.Predicate)
+
 	isRv, nextHop := ps.rendezvousSelfCheck(sub.RvId)
 	if !isRv && nextHop != "" {
 		var dialAddr string
@@ -277,8 +281,6 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 		} else {
 			dialAddr = addrForPubSubServer(closestAddr)
 		}
-
-		ps.updateMyBackups(sub.PeerID, sub.Predicate)
 
 		var backups map[int32]string = make(map[int32]string)
 		for i, backup := range ps.myBackups {
@@ -415,6 +417,9 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 			BirthTime: time.Now().Format(time.StampMilli),
 		}
 
+		res, _ := ps.rendezvousSelfCheck(attr.name)
+		eLog := make(map[string]bool)
+
 		ps.tablesLock.RLock()
 		for next, route := range ps.currentFilterTable.routes {
 			if route.IsInterested(p) {
@@ -422,6 +427,10 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 				nextID, err := peer.Decode(next)
 				if err != nil {
 					return err
+				}
+
+				if res {
+					eLog[next] = false
 				}
 
 				nextAddr := ps.ipfsDHT.FindLocal(nextID).Addrs[0]
@@ -455,10 +464,12 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 		}
 		ps.tablesLock.RUnlock()
 
-		res, _ := ps.rendezvousSelfCheck(attr.name)
 		if res {
+			ps.sendLogToTracker(attr.name, eventID, eLog)
 			continue
 		}
+
+		// TODO >> Structure that somehow waits for a ack from the RV of that attribute
 
 		attrID := ps.ipfsDHT.RoutingTable().NearestPeer(kb.ID(attr.name))
 		attrAddr := ps.ipfsDHT.FindLocal(attrID).Addrs[0]
@@ -504,6 +515,8 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 
 	} else if !isRv {
 		return &pb.Ack{State: false, Info: "rendezvous check failed"}, nil
+	} else {
+		// TODO >> acks to pub
 	}
 
 	ps.tablesLock.RLock()
@@ -567,6 +580,96 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 
 	// Statistical Code
 	ps.record.AddOperationStat("Publish")
+
+	return &pb.Ack{State: true, Info: ""}, nil
+}
+
+// sendLogToTracker
+func (ps *PubSub) sendLogToTracker(attr string, eID *pb.EventID, eLog map[string]bool) {
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	ps.checkAndRecruitTracker(ctx, attr)
+
+	for _, t := range ps.myRvTrackers[attr] {
+		conn, err := grpc.Dial(t, grpc.WithInsecure())
+		if err != nil {
+			log.Fatalf("fail to dial: %v", err)
+		}
+		defer conn.Close()
+
+		eL := &pb.EventLog{
+			RvID:    attr,
+			EventID: eID,
+			Log:     eLog,
+		}
+
+		client := pb.NewScoutHubClient(conn)
+		client.LogToTracker(ctx, eL)
+	}
+}
+
+// sendAckToTracker
+// INCOMPLETE
+func (ps *PubSub) sendAckToTracker(attr string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	ps.checkAndRecruitTracker(ctx, attr)
+
+	// TODO >> Send Ack
+}
+
+// checkAndRecruitTracker
+func (ps *PubSub) checkAndRecruitTracker(ctx context.Context, attr string) {
+
+	if ps.myRvTrackers[attr] == nil || len(ps.myRvTrackers[attr]) < FaultToleranceFactor {
+		needLeader := true
+		for _, addr := range ps.alternativesToRv(attr) {
+			conn, err := grpc.Dial(addr, grpc.WithInsecure())
+			if err != nil {
+				log.Fatalf("fail to dial: %v", err)
+			}
+			defer conn.Close()
+
+			client := pb.NewScoutHubClient(conn)
+			ack, err := client.RecruitHasTracker(ctx, &pb.RecruitTrackerMessage{Leader: needLeader, RvID: attr})
+			if ack.State && err == nil {
+				ps.myRvTrackers[attr] = append(ps.myRvTrackers[attr], addr)
+				needLeader = false
+			}
+		}
+	}
+}
+
+// RecruitHasTracker
+func (ps *PubSub) RecruitHasTracker(ctx context.Context, rm *pb.RecruitTrackerMessage) (*pb.Ack, error) {
+	fmt.Printf("RecruitHasTracker: %s\n", ps.serverAddr)
+
+	if ps.myTrackers[rm.RvID] != nil {
+		ps.myTrackers[rm.RvID].leader = rm.Leader
+		return &pb.Ack{State: true, Info: ""}, nil
+	}
+
+	ps.myTrackers[rm.RvID] = NewTracker(rm.Leader)
+
+	return &pb.Ack{State: true, Info: ""}, nil
+}
+
+// LogToTracker
+func (ps *PubSub) LogToTracker(ctx context.Context, log *pb.EventLog) (*pb.Ack, error) {
+	fmt.Printf("LogTracker: %s\n", ps.serverAddr)
+
+	eID := fmt.Sprintf("%s%d%d", log.EventID.PublisherID, log.EventID.SessionNumber, log.EventID.SeqID)
+	ps.myTrackers[log.RvID].newEventToCheck(NewEventLedger(eID, log.Log))
+
+	return &pb.Ack{State: true, Info: ""}, nil
+}
+
+// AckToTracker
+// INCOMPLETE
+func (ps *PubSub) AckToTracker(ctx context.Context, ack *pb.EventAck) (*pb.Ack, error) {
 
 	return &pb.Ack{State: true, Info: ""}, nil
 }

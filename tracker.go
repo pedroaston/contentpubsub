@@ -12,10 +12,12 @@ type EventAck struct {
 }
 
 type Tracker struct {
+	leader      bool
 	fresh       bool
 	timeOfBirth string
 	eventStats  map[string]*EventLedger
 	addEventAck chan *EventAck
+	addEventLog chan *EventLedger
 	checkEvents *time.Ticker
 }
 
@@ -23,16 +25,16 @@ type Tracker struct {
 func NewTracker(leader bool) *Tracker {
 
 	t := &Tracker{
+		leader:      leader,
 		fresh:       true,
 		timeOfBirth: time.Now().Format(time.StampMilli),
 		eventStats:  make(map[string]*EventLedger),
-		addEventAck: make(chan *EventAck, 100),
+		addEventAck: make(chan *EventAck, 8),
+		addEventLog: make(chan *EventLedger, 8),
 		checkEvents: time.NewTicker(secondsToCheckEventDelivery * time.Second),
 	}
 
-	if leader {
-		go t.trackerLoop()
-	}
+	go t.trackerLoop()
 
 	return t
 }
@@ -42,18 +44,22 @@ func (t *Tracker) trackerLoop() {
 
 	for {
 		select {
+		case pid := <-t.addEventLog:
+			t.newEventToCheck(pid)
 		case pid := <-t.addEventAck:
 			t.addAckToLedger(pid)
 		case <-t.checkEvents.C:
-			t.returnUnAckedEvents()
+			if t.leader {
+				t.returnUnAckedEvents()
+			}
 		}
 	}
 }
 
 // newEventToCheck
-func (t *Tracker) newEventToCheck(eventID string, log map[string]bool) {
+func (t *Tracker) newEventToCheck(eL *EventLedger) {
 
-	t.eventStats[eventID] = NewEventLedger(log)
+	t.eventStats[eL.eventID] = eL
 }
 
 // addAckToLedger
@@ -87,6 +93,7 @@ func (t *Tracker) returnUnAckedEvents() {
 }
 
 type EventLedger struct {
+	eventID      string
 	eventLog     map[string]bool
 	expectedAcks int
 	receivedAcks int
@@ -94,9 +101,10 @@ type EventLedger struct {
 }
 
 // NewEventLedger
-func NewEventLedger(log map[string]bool) *EventLedger {
+func NewEventLedger(eID string, log map[string]bool) *EventLedger {
 
 	el := &EventLedger{
+		eventID:      eID,
 		eventLog:     log,
 		expectedAcks: len(log),
 		receivedAcks: 0,
