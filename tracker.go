@@ -1,22 +1,20 @@
 package contentpubsub
 
 import (
+	"fmt"
 	"time"
+
+	"github.com/pedroaston/contentpubsub/pb"
 )
 
 const secondsToCheckEventDelivery = 30
-
-type EventAck struct {
-	eventID string
-	peerID  string
-}
 
 type Tracker struct {
 	leader      bool
 	fresh       bool
 	timeOfBirth string
 	eventStats  map[string]*EventLedger
-	addEventAck chan *EventAck
+	addEventAck chan *pb.EventAck
 	addEventLog chan *EventLedger
 	checkEvents *time.Ticker
 }
@@ -29,7 +27,7 @@ func NewTracker(leader bool) *Tracker {
 		fresh:       true,
 		timeOfBirth: time.Now().Format(time.StampMilli),
 		eventStats:  make(map[string]*EventLedger),
-		addEventAck: make(chan *EventAck, 8),
+		addEventAck: make(chan *pb.EventAck, 8),
 		addEventLog: make(chan *EventLedger, 8),
 		checkEvents: time.NewTicker(secondsToCheckEventDelivery * time.Second),
 	}
@@ -63,13 +61,14 @@ func (t *Tracker) newEventToCheck(eL *EventLedger) {
 }
 
 // addAckToLedger
-func (t *Tracker) addAckToLedger(ack *EventAck) {
+func (t *Tracker) addAckToLedger(ack *pb.EventAck) {
 
-	t.eventStats[ack.eventID].eventLog[ack.peerID] = true
-	t.eventStats[ack.eventID].receivedAcks++
+	eID := fmt.Sprintf("%s%d%d", ack.EventID.PublisherID, ack.EventID.SessionNumber, ack.EventID.SeqID)
+	t.eventStats[eID].eventLog[ack.PeerID] = true
+	t.eventStats[eID].receivedAcks++
 
-	if t.eventStats[ack.eventID].receivedAcks == t.eventStats[ack.eventID].expectedAcks {
-		delete(t.eventStats, ack.eventID)
+	if t.eventStats[eID].receivedAcks == t.eventStats[eID].expectedAcks {
+		delete(t.eventStats, eID)
 	}
 
 }
@@ -98,10 +97,11 @@ type EventLedger struct {
 	expectedAcks int
 	receivedAcks int
 	old          bool
+	addrToAck    string
 }
 
 // NewEventLedger
-func NewEventLedger(eID string, log map[string]bool) *EventLedger {
+func NewEventLedger(eID string, log map[string]bool, addr string) *EventLedger {
 
 	el := &EventLedger{
 		eventID:      eID,
@@ -109,6 +109,7 @@ func NewEventLedger(eID string, log map[string]bool) *EventLedger {
 		expectedAcks: len(log),
 		receivedAcks: 0,
 		old:          false,
+		addrToAck:    addr,
 	}
 
 	return el

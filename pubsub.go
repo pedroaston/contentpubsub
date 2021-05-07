@@ -51,11 +51,13 @@ type PubSub struct {
 
 	myTrackers   map[string]*Tracker
 	myRvTrackers map[string][]string
+	myETrackers  map[string]*EventLedger
 
 	interestingEvents   chan *pb.Event
 	subsToForward       chan *ForwardSubRequest
 	eventsToForwardUp   chan *ForwardEvent
 	eventsToForwardDown chan *ForwardEvent
+	ackToSendUp         chan *AckUp
 	heartbeatTicker     *time.Ticker
 	refreshTicker       *time.Ticker
 	terminate           chan string
@@ -92,6 +94,7 @@ func NewPubSub(dht *kaddht.IpfsDHT, region string, subRegion string) *PubSub {
 		mapBackupAddr:       make(map[string]string),
 		myTrackers:          make(map[string]*Tracker),
 		myRvTrackers:        make(map[string][]string),
+		myETrackers:         make(map[string]*EventLedger),
 		interestingEvents:   make(chan *pb.Event, ConcurrentProcessingFactor),
 		premiumEvents:       make(chan *pb.PremiumEvent, ConcurrentProcessingFactor),
 		subsToForward:       make(chan *ForwardSubRequest, ConcurrentProcessingFactor),
@@ -99,6 +102,7 @@ func NewPubSub(dht *kaddht.IpfsDHT, region string, subRegion string) *PubSub {
 		eventsToForwardDown: make(chan *ForwardEvent, ConcurrentProcessingFactor),
 		terminate:           make(chan string),
 		advToForward:        make(chan *ForwardAdvert),
+		ackToSendUp:         make(chan *AckUp),
 		heartbeatTicker:     time.NewTicker(SubRefreshRateMin * time.Minute),
 		refreshTicker:       time.NewTicker(2 * SubRefreshRateMin * time.Minute),
 		tablesLock:          &sync.RWMutex{},
@@ -139,6 +143,13 @@ type ForwardEvent struct {
 	originalRoute  string
 	dialAddr       string
 	event          *pb.Event
+}
+
+type AckUp struct {
+	dialAddr string
+	eventID  *pb.EventID
+	peerID   string
+	rvID     string
 }
 
 // MySubscribe subscribes to certain event(s) and saves
@@ -467,6 +478,18 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 		if res {
 			ps.sendLogToTracker(attr.name, eventID, eLog)
 			continue
+		} else if len(eLog) > 0 {
+			eID := fmt.Sprintf("%s%d%d%s", eventID.PublisherID, ps.session, ps.eventSeq, attr.name)
+			ackPeer, err := peer.Decode(event.LastHop)
+			if err != nil {
+				return nil
+			}
+
+			aux := ps.ipfsDHT.FindLocal(ackPeer).Addrs[0]
+			ackAddr := addrForPubSubServer(aux)
+			ps.myETrackers[eID] = NewEventLedger(eID, eLog, ackAddr)
+		} else {
+			// TODO >> Same as in publish
 		}
 
 		// TODO >> Structure that somehow waits for a ack from the RV of that attribute
@@ -519,6 +542,7 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 		// TODO >> acks to pub
 	}
 
+	eL := make(map[string]bool)
 	ps.tablesLock.RLock()
 	for next, route := range ps.currentFilterTable.routes {
 		if next == event.LastHop {
@@ -574,14 +598,60 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 
 			ps.currentFilterTable.redirectLock.Unlock()
 			ps.nextFilterTable.redirectLock.Unlock()
+
+			if isRv {
+				eL[next] = false
+			}
+
 		}
 	}
 	ps.tablesLock.RUnlock()
+
+	if isRv {
+		ps.sendLogToTracker(event.RvId, event.EventID, eL)
+	} else if len(eL) > 0 {
+		eID := fmt.Sprintf("%s%d%d%s", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID, event.RvId)
+		ackPeer, err := peer.Decode(event.LastHop)
+		if err != nil {
+			return &pb.Ack{State: false, Info: ""}, nil
+		}
+
+		aux := ps.ipfsDHT.FindLocal(ackPeer).Addrs[0]
+		ackAddr := addrForPubSubServer(aux)
+		ps.myETrackers[eID] = NewEventLedger(eID, eL, ackAddr)
+	} else {
+		// TODO >> send ack up or not
+		// TODO >> publish should not send acks imidiatly
+		// because upper layer may not be ready to receive
+		// perhaps a flag in next layer publish might solve
+	}
 
 	// Statistical Code
 	ps.record.AddOperationStat("Publish")
 
 	return &pb.Ack{State: true, Info: ""}, nil
+}
+
+// sendAckUp
+func (ps *PubSub) sendAckUp(ack *AckUp) {
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	conn, err := grpc.Dial(ack.dialAddr, grpc.WithInsecure())
+	if err != nil {
+		log.Fatalf("fail to dial: %v", err)
+	}
+	defer conn.Close()
+
+	eAck := &pb.EventAck{
+		EventID: ack.eventID,
+		PeerID:  ack.peerID,
+		RvID:    ack.rvID,
+	}
+
+	client := pb.NewScoutHubClient(conn)
+	client.AckUp(ctx, eAck)
 }
 
 // sendLogToTracker
@@ -611,14 +681,22 @@ func (ps *PubSub) sendLogToTracker(attr string, eID *pb.EventID, eLog map[string
 }
 
 // sendAckToTracker
-// INCOMPLETE
-func (ps *PubSub) sendAckToTracker(attr string) {
+func (ps *PubSub) sendAckToTrackers(ack *pb.EventAck) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	ps.checkAndRecruitTracker(ctx, attr)
+	ps.checkAndRecruitTracker(ctx, ack.RvID)
 
-	// TODO >> Send Ack
+	for _, tAddr := range ps.myRvTrackers[ack.RvID] {
+		conn, err := grpc.Dial(tAddr, grpc.WithInsecure())
+		if err != nil {
+			log.Fatalf("fail to dial: %v", err)
+		}
+		defer conn.Close()
+
+		client := pb.NewScoutHubClient(conn)
+		client.AckToTracker(ctx, ack)
+	}
 }
 
 // checkAndRecruitTracker
@@ -643,6 +721,27 @@ func (ps *PubSub) checkAndRecruitTracker(ctx context.Context, attr string) {
 	}
 }
 
+// AckUp
+func (ps *PubSub) AckUp(ctx context.Context, ack *pb.EventAck) (*pb.Ack, error) {
+
+	res, _ := ps.rendezvousSelfCheck(ack.RvID)
+	if res {
+		ps.sendAckToTrackers(ack)
+	} else {
+		eID := fmt.Sprintf("%s%d%d%s", ack.EventID.PublisherID, ack.EventID.SessionNumber, ack.EventID.SeqID, ack.RvID)
+		ps.myETrackers[eID].eventLog[ack.PeerID] = true
+		ps.myETrackers[eID].receivedAcks++
+
+		if ps.myETrackers[eID].receivedAcks == ps.myETrackers[eID].expectedAcks {
+			ps.ackToSendUp <- &AckUp{dialAddr: ps.myETrackers[eID].addrToAck, eventID: ack.EventID,
+				peerID: peer.Encode(ps.ipfsDHT.PeerID()), rvID: ack.RvID}
+			delete(ps.myETrackers, eID)
+		}
+	}
+
+	return &pb.Ack{State: true, Info: ""}, nil
+}
+
 // RecruitHasTracker
 func (ps *PubSub) RecruitHasTracker(ctx context.Context, rm *pb.RecruitTrackerMessage) (*pb.Ack, error) {
 	fmt.Printf("RecruitHasTracker: %s\n", ps.serverAddr)
@@ -662,14 +761,17 @@ func (ps *PubSub) LogToTracker(ctx context.Context, log *pb.EventLog) (*pb.Ack, 
 	fmt.Printf("LogTracker: %s\n", ps.serverAddr)
 
 	eID := fmt.Sprintf("%s%d%d", log.EventID.PublisherID, log.EventID.SessionNumber, log.EventID.SeqID)
-	ps.myTrackers[log.RvID].newEventToCheck(NewEventLedger(eID, log.Log))
+	ps.myTrackers[log.RvID].newEventToCheck(NewEventLedger(eID, log.Log, ""))
 
 	return &pb.Ack{State: true, Info: ""}, nil
 }
 
 // AckToTracker
-// INCOMPLETE
 func (ps *PubSub) AckToTracker(ctx context.Context, ack *pb.EventAck) (*pb.Ack, error) {
+
+	if ps.myTrackers[ack.RvID] != nil {
+		ps.myTrackers[ack.RvID].addEventAck <- ack
+	}
 
 	return &pb.Ack{State: true, Info: ""}, nil
 }
@@ -722,6 +824,7 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 		ps.interestingEvents <- event
 	}
 
+	eL := make(map[string]bool)
 	ps.tablesLock.RLock()
 	if event.Backup == "" {
 		for next, route := range ps.currentFilterTable.routes {
@@ -787,6 +890,22 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 		}
 	}
 	ps.tablesLock.RUnlock()
+
+	ackPeer, err := peer.Decode(event.LastHop)
+	if err != nil {
+		return &pb.Ack{State: false, Info: ""}, nil
+	}
+
+	// TODO >> not fetching addr even with correct peerID (why?)
+	aux := ps.ipfsDHT.FindLocal(ackPeer).Addrs[0]
+	ackAddr := addrForPubSubServer(aux)
+
+	if len(eL) > 0 {
+		eID := fmt.Sprintf("%s%d%d%s", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID, event.RvId)
+		ps.myETrackers[eID] = NewEventLedger(eID, eL, ackAddr)
+	} else {
+		ps.ackToSendUp <- &AckUp{dialAddr: ackAddr, eventID: event.EventID, peerID: peer.Encode(ps.ipfsDHT.PeerID()), rvID: event.RvId}
+	}
 
 	// Statistical Code
 	ps.record.AddOperationStat("Notify")
@@ -1160,6 +1279,8 @@ func (ps *PubSub) processLoop() {
 			ps.record.SaveReceivedPremiumEvent(pid)
 			fmt.Printf("Received Event at: %s\n", ps.serverAddr)
 			fmt.Println(">> " + pid.Event)
+		case pid := <-ps.ackToSendUp:
+			ps.sendAckUp(pid)
 		case pid := <-ps.advToForward:
 			ps.forwardAdvertising(pid.dialAddr, pid.adv)
 		case <-ps.heartbeatTicker.C:

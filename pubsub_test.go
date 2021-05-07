@@ -18,7 +18,7 @@ import (
 func TestSimpleUnsubscribing(t *testing.T) {
 	fmt.Printf("\n$$$ TestSimpleUnsubscribing $$$\n")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	dhts := setupDHTS(t, ctx, 2)
@@ -85,7 +85,7 @@ func TestSimplePublish(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	time.Sleep(time.Second)
+	time.Sleep(5 * time.Second)
 }
 
 // TestSubscriptionForwarding attemps to see if the subscription

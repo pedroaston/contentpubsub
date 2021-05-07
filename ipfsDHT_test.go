@@ -124,3 +124,22 @@ func TestDHTRefreshing(t *testing.T) {
 
 	dhts[0].RefreshRoutingTable()
 }
+
+func TestPeerStuff(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	defer cancel()
+
+	dhts := setupDHTS(t, ctx, 2)
+
+	connect(t, ctx, dhts[0], dhts[1])
+
+	a := peer.Encode(dhts[1].PeerID())
+
+	b, _ := peer.Decode(a)
+
+	addr := dhts[0].FindLocal(b).Addrs[0]
+
+	if addr == nil {
+		t.Fatal("bolas")
+	}
+}
