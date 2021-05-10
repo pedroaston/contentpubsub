@@ -49,8 +49,9 @@ message Event {
     string rvId = 3;
     string event = 4;
     string lastHop = 5;
-    string backup = 6;
-    string birthTime = 7;
+    string ackAddr = 6;
+    string backup = 7;
+    string birthTime = 8;
 }
 
 message EventID {

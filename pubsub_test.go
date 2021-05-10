@@ -85,7 +85,7 @@ func TestSimplePublish(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	time.Sleep(5 * time.Second)
+	time.Sleep(time.Second)
 }
 
 // TestSubscriptionForwarding attemps to see if the subscription

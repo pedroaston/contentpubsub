@@ -310,7 +310,7 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 		ps.currentFilterTable.redirectLock.Lock()
 		defer ps.currentFilterTable.redirectLock.Unlock()
 
-		if len(ps.currentFilterTable.routeTracker[sub.RvId]) == 2 {
+		if len(ps.currentFilterTable.routeTracker[sub.RvId]) >= 2 {
 			subForward.Shortcut = "!"
 			ps.subsToForward <- &ForwardSubRequest{dialAddr: dialAddr, sub: subForward}
 		} else if sub.Shortcut != "!" {
@@ -424,6 +424,7 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 			Predicate: info,
 			RvId:      attr.name,
 			LastHop:   peer.Encode(ps.ipfsDHT.PeerID()),
+			AckAddr:   ps.serverAddr,
 			Backup:    "",
 			BirthTime: time.Now().Format(time.StampMilli),
 		}
@@ -440,9 +441,7 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 					return err
 				}
 
-				if res {
-					eLog[next] = false
-				}
+				eLog[next] = false
 
 				nextAddr := ps.ipfsDHT.FindLocal(nextID).Addrs[0]
 				if nextAddr == nil {
@@ -475,34 +474,29 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 		}
 		ps.tablesLock.RUnlock()
 
+		if !res {
+			attrID := ps.ipfsDHT.RoutingTable().NearestPeer(kb.ID(attr.name))
+			attrAddr := ps.ipfsDHT.FindLocal(attrID).Addrs[0]
+			if attrAddr == nil {
+				return errors.New("no address for closest peer")
+			} else {
+				dialAddr = addrForPubSubServer(attrAddr)
+			}
+
+			ps.eventsToForwardUp <- &ForwardEvent{dialAddr: dialAddr, event: event}
+		}
+
 		if res {
 			ps.sendLogToTracker(attr.name, eventID, eLog)
 			continue
 		} else if len(eLog) > 0 {
 			eID := fmt.Sprintf("%s%d%d%s", eventID.PublisherID, ps.session, ps.eventSeq, attr.name)
-			ackPeer, err := peer.Decode(event.LastHop)
-			if err != nil {
-				return nil
-			}
-
-			aux := ps.ipfsDHT.FindLocal(ackPeer).Addrs[0]
-			ackAddr := addrForPubSubServer(aux)
-			ps.myETrackers[eID] = NewEventLedger(eID, eLog, ackAddr)
+			ps.myETrackers[eID] = NewEventLedger(eID, eLog, dialAddr)
 		} else {
 			// TODO >> Same as in publish
 		}
 
 		// TODO >> Structure that somehow waits for a ack from the RV of that attribute
-
-		attrID := ps.ipfsDHT.RoutingTable().NearestPeer(kb.ID(attr.name))
-		attrAddr := ps.ipfsDHT.FindLocal(attrID).Addrs[0]
-		if attrAddr == nil {
-			return errors.New("no address for closest peer")
-		} else {
-			dialAddr = addrForPubSubServer(attrAddr)
-		}
-
-		ps.eventsToForwardUp <- &ForwardEvent{dialAddr: dialAddr, event: event}
 	}
 
 	// Statistical Code
@@ -525,6 +519,7 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 	}
 
 	isRv, nextHop := ps.rendezvousSelfCheck(event.RvId)
+	var upPeer string
 	if !isRv && nextHop != "" {
 		var dialAddr string
 		nextAddr := ps.ipfsDHT.FindLocal(nextHop).Addrs[0]
@@ -532,6 +527,7 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 			return &pb.Ack{State: false, Info: "No address for next hop peer"}, nil
 		} else {
 			dialAddr = addrForPubSubServer(nextAddr)
+			upPeer = dialAddr
 		}
 
 		ps.eventsToForwardUp <- &ForwardEvent{dialAddr: dialAddr, event: event}
@@ -543,13 +539,17 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 	}
 
 	eL := make(map[string]bool)
+	event.AckAddr = ps.serverAddr
+
 	ps.tablesLock.RLock()
 	for next, route := range ps.currentFilterTable.routes {
-		if next == event.LastHop {
-			continue
-		}
-
 		if route.IsInterested(p) {
+
+			eL[next] = false
+			if next == event.LastHop {
+				continue
+			}
+
 			var dialAddr string
 			nextID, err := peer.Decode(next)
 			if err != nil {
@@ -598,11 +598,6 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 
 			ps.currentFilterTable.redirectLock.Unlock()
 			ps.nextFilterTable.redirectLock.Unlock()
-
-			if isRv {
-				eL[next] = false
-			}
-
 		}
 	}
 	ps.tablesLock.RUnlock()
@@ -611,14 +606,7 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 		ps.sendLogToTracker(event.RvId, event.EventID, eL)
 	} else if len(eL) > 0 {
 		eID := fmt.Sprintf("%s%d%d%s", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID, event.RvId)
-		ackPeer, err := peer.Decode(event.LastHop)
-		if err != nil {
-			return &pb.Ack{State: false, Info: ""}, nil
-		}
-
-		aux := ps.ipfsDHT.FindLocal(ackPeer).Addrs[0]
-		ackAddr := addrForPubSubServer(aux)
-		ps.myETrackers[eID] = NewEventLedger(eID, eL, ackAddr)
+		ps.myETrackers[eID] = NewEventLedger(eID, eL, upPeer)
 	} else {
 		// TODO >> send ack up or not
 		// TODO >> publish should not send acks imidiatly
@@ -713,7 +701,9 @@ func (ps *PubSub) checkAndRecruitTracker(ctx context.Context, attr string) {
 
 			client := pb.NewScoutHubClient(conn)
 			ack, err := client.RecruitHasTracker(ctx, &pb.RecruitTrackerMessage{Leader: needLeader, RvID: attr})
-			if ack.State && err == nil {
+			if err == nil && ack.Info == "Already Tracking" {
+				needLeader = false
+			} else if ack.State && err == nil {
 				ps.myRvTrackers[attr] = append(ps.myRvTrackers[attr], addr)
 				needLeader = false
 			}
@@ -723,6 +713,7 @@ func (ps *PubSub) checkAndRecruitTracker(ctx context.Context, attr string) {
 
 // AckUp
 func (ps *PubSub) AckUp(ctx context.Context, ack *pb.EventAck) (*pb.Ack, error) {
+	fmt.Println("AckUp: " + ps.serverAddr)
 
 	res, _ := ps.rendezvousSelfCheck(ack.RvID)
 	if res {
@@ -744,11 +735,11 @@ func (ps *PubSub) AckUp(ctx context.Context, ack *pb.EventAck) (*pb.Ack, error) 
 
 // RecruitHasTracker
 func (ps *PubSub) RecruitHasTracker(ctx context.Context, rm *pb.RecruitTrackerMessage) (*pb.Ack, error) {
-	fmt.Printf("RecruitHasTracker: %s\n", ps.serverAddr)
+	fmt.Println("RecruitHasTracker: " + ps.serverAddr)
 
 	if ps.myTrackers[rm.RvID] != nil {
 		ps.myTrackers[rm.RvID].leader = rm.Leader
-		return &pb.Ack{State: true, Info: ""}, nil
+		return &pb.Ack{State: true, Info: "Already Tracking"}, nil
 	}
 
 	ps.myTrackers[rm.RvID] = NewTracker(rm.Leader)
@@ -758,7 +749,7 @@ func (ps *PubSub) RecruitHasTracker(ctx context.Context, rm *pb.RecruitTrackerMe
 
 // LogToTracker
 func (ps *PubSub) LogToTracker(ctx context.Context, log *pb.EventLog) (*pb.Ack, error) {
-	fmt.Printf("LogTracker: %s\n", ps.serverAddr)
+	fmt.Println("LogTracker: " + ps.serverAddr)
 
 	eID := fmt.Sprintf("%s%d%d", log.EventID.PublisherID, log.EventID.SessionNumber, log.EventID.SeqID)
 	ps.myTrackers[log.RvID].newEventToCheck(NewEventLedger(eID, log.Log, ""))
@@ -768,6 +759,7 @@ func (ps *PubSub) LogToTracker(ctx context.Context, log *pb.EventLog) (*pb.Ack, 
 
 // AckToTracker
 func (ps *PubSub) AckToTracker(ctx context.Context, ack *pb.EventAck) (*pb.Ack, error) {
+	fmt.Println("AckToTracker: " + ps.serverAddr)
 
 	if ps.myTrackers[ack.RvID] != nil {
 		ps.myTrackers[ack.RvID].addEventAck <- ack
@@ -824,7 +816,10 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 		ps.interestingEvents <- event
 	}
 
+	ackAddr := event.AckAddr
+	event.AckAddr = ps.serverAddr
 	eL := make(map[string]bool)
+
 	ps.tablesLock.RLock()
 	if event.Backup == "" {
 		for next, route := range ps.currentFilterTable.routes {
@@ -843,6 +838,8 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 				} else {
 					dialAddr = addrForPubSubServer(nextAddr)
 				}
+
+				eL[next] = false
 
 				ps.currentFilterTable.redirectLock.Lock()
 				ps.nextFilterTable.redirectLock.Lock()
@@ -882,7 +879,9 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 	} else {
 		for next, route := range ps.myBackupsFilters[event.Backup].routes {
 			if route.IsInterested(p) {
+				// TODO >> Analyze how to keep reliability with backups
 				event.Backup = ""
+				eL[next] = false
 
 				nextAddr := ps.mapBackupAddr[next]
 				ps.eventsToForwardDown <- &ForwardEvent{dialAddr: nextAddr, event: event}
@@ -890,15 +889,6 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 		}
 	}
 	ps.tablesLock.RUnlock()
-
-	ackPeer, err := peer.Decode(event.LastHop)
-	if err != nil {
-		return &pb.Ack{State: false, Info: ""}, nil
-	}
-
-	// TODO >> not fetching addr even with correct peerID (why?)
-	aux := ps.ipfsDHT.FindLocal(ackPeer).Addrs[0]
-	ackAddr := addrForPubSubServer(aux)
 
 	if len(eL) > 0 {
 		eID := fmt.Sprintf("%s%d%d%s", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID, event.RvId)

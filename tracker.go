@@ -64,6 +64,15 @@ func (t *Tracker) newEventToCheck(eL *EventLedger) {
 func (t *Tracker) addAckToLedger(ack *pb.EventAck) {
 
 	eID := fmt.Sprintf("%s%d%d", ack.EventID.PublisherID, ack.EventID.SessionNumber, ack.EventID.SeqID)
+
+	if _, ok := t.eventStats[eID]; !ok {
+		fmt.Println("Already acked")
+		return
+	} else if _, ok := t.eventStats[eID].eventLog[ack.PeerID]; !ok {
+		fmt.Println("Not possible to ack")
+		return
+	}
+
 	t.eventStats[eID].eventLog[ack.PeerID] = true
 	t.eventStats[eID].receivedAcks++
 
