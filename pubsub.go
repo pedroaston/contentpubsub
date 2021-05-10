@@ -776,7 +776,6 @@ func (ps *PubSub) AckToTracker(ctx context.Context, ack *pb.EventAck) (*pb.Ack, 
 }
 
 // ResendEvent
-// INCOMPLETE
 func (ps *PubSub) ResendEvent(stream pb.ScoutHub_ResendEventServer) error {
 	fmt.Println("ResendEvent >> " + ps.serverAddr)
 
@@ -807,12 +806,27 @@ func (ps *PubSub) ResendEvent(stream pb.ScoutHub_ResendEventServer) error {
 				dialAddr = addrForPubSubServer(peerAddr)
 			}
 
-			ps.eventsToForwardDown <- &ForwardEvent{
-				dialAddr:       dialAddr,
-				event:          eLog.Event,
-				redirectOption: "",
-				originalRoute:  p,
+			ps.currentFilterTable.redirectLock.Lock()
+			ps.nextFilterTable.redirectLock.Lock()
+
+			if ps.currentFilterTable.redirectTable[p][eLog.Event.RvId] != "" {
+				ps.eventsToForwardDown <- &ForwardEvent{
+					dialAddr:       dialAddr,
+					event:          eLog.Event,
+					redirectOption: ps.currentFilterTable.redirectTable[p][eLog.Event.RvId],
+					originalRoute:  p,
+				}
+			} else {
+				ps.eventsToForwardDown <- &ForwardEvent{
+					dialAddr:       dialAddr,
+					event:          eLog.Event,
+					redirectOption: "",
+					originalRoute:  p,
+				}
 			}
+
+			ps.currentFilterTable.redirectLock.Unlock()
+			ps.nextFilterTable.redirectLock.Unlock()
 		}
 	}
 }
@@ -879,12 +893,27 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 					dialAddr = addrForPubSubServer(peerAddr)
 				}
 
-				ps.eventsToForwardDown <- &ForwardEvent{
-					dialAddr:       dialAddr,
-					event:          event,
-					redirectOption: "",
-					originalRoute:  node,
+				ps.currentFilterTable.redirectLock.Lock()
+				ps.nextFilterTable.redirectLock.Lock()
+
+				if ps.currentFilterTable.redirectTable[node][event.RvId] != "" {
+					ps.eventsToForwardDown <- &ForwardEvent{
+						dialAddr:       dialAddr,
+						event:          event,
+						redirectOption: ps.currentFilterTable.redirectTable[node][event.RvId],
+						originalRoute:  node,
+					}
+				} else {
+					ps.eventsToForwardDown <- &ForwardEvent{
+						dialAddr:       dialAddr,
+						event:          event,
+						redirectOption: "",
+						originalRoute:  node,
+					}
 				}
+
+				ps.currentFilterTable.redirectLock.Unlock()
+				ps.nextFilterTable.redirectLock.Unlock()
 			}
 		}
 
