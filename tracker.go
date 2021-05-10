@@ -12,6 +12,8 @@ const secondsToCheckEventDelivery = 30
 type Tracker struct {
 	leader      bool
 	fresh       bool
+	attr        string
+	rvAddr      string
 	timeOfBirth string
 	eventStats  map[string]*EventLedger
 	addEventAck chan *pb.EventAck
@@ -20,11 +22,13 @@ type Tracker struct {
 }
 
 // NewTracker
-func NewTracker(leader bool) *Tracker {
+func NewTracker(leader bool, attr string, rvAddr string) *Tracker {
 
 	t := &Tracker{
 		leader:      leader,
 		fresh:       true,
+		attr:        attr,
+		rvAddr:      rvAddr,
 		timeOfBirth: time.Now().Format(time.StampMilli),
 		eventStats:  make(map[string]*EventLedger),
 		addEventAck: make(chan *pb.EventAck, 8),

@@ -700,7 +700,7 @@ func (ps *PubSub) checkAndRecruitTracker(ctx context.Context, attr string) {
 			defer conn.Close()
 
 			client := pb.NewScoutHubClient(conn)
-			ack, err := client.RecruitHasTracker(ctx, &pb.RecruitTrackerMessage{Leader: needLeader, RvID: attr})
+			ack, err := client.RecruitHasTracker(ctx, &pb.RecruitTrackerMessage{Leader: needLeader, RvID: attr, RvAddr: ps.serverAddr})
 			if err == nil && ack.Info == "Already Tracking" {
 				needLeader = false
 			} else if ack.State && err == nil {
@@ -739,10 +739,16 @@ func (ps *PubSub) RecruitHasTracker(ctx context.Context, rm *pb.RecruitTrackerMe
 
 	if ps.myTrackers[rm.RvID] != nil {
 		ps.myTrackers[rm.RvID].leader = rm.Leader
-		return &pb.Ack{State: true, Info: "Already Tracking"}, nil
+
+		if ps.myTrackers[rm.RvID].rvAddr == rm.RvAddr {
+			return &pb.Ack{State: true, Info: "Already Tracking"}, nil
+		}
+
+		ps.myTrackers[rm.RvID].rvAddr = rm.RvAddr
+		return &pb.Ack{State: true, Info: ""}, nil
 	}
 
-	ps.myTrackers[rm.RvID] = NewTracker(rm.Leader)
+	ps.myTrackers[rm.RvID] = NewTracker(rm.Leader, rm.RvID, rm.RvAddr)
 
 	return &pb.Ack{State: true, Info: ""}, nil
 }
