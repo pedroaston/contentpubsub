@@ -1,10 +1,13 @@
 package contentpubsub
 
 import (
+	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/pedroaston/contentpubsub/pb"
+	"google.golang.org/grpc"
 )
 
 const secondsToCheckEventDelivery = 30
@@ -87,25 +90,54 @@ func (t *Tracker) addAckToLedger(ack *pb.EventAck) {
 }
 
 // returnUnAckedEvents
-// INCOMPLETE >> Need to send back to Rv
 func (t *Tracker) returnUnAckedEvents() {
-	stillMissAck := make(map[string][]string)
 
-	for e, l := range t.eventStats {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	conn, err := grpc.Dial(t.rvAddr, grpc.WithInsecure())
+	if err != nil {
+		log.Fatalf("fail to dial: %v", err)
+	}
+	defer conn.Close()
+
+	client := pb.NewScoutHubClient(conn)
+	stream, err := client.ResendEvent(ctx)
+	if err != nil {
+		return
+	}
+
+	for _, l := range t.eventStats {
 		if !l.old {
 			l.old = true
 		} else {
+			stillMissAck := make(map[string]bool)
 			for peer, ack := range l.eventLog {
 				if !ack {
-					stillMissAck[e] = append(stillMissAck[e], peer)
+					stillMissAck[peer] = false
 				}
 			}
+
+			eL := &pb.EventLog{
+				RvID:  t.attr,
+				Log:   stillMissAck,
+				Event: l.event,
+			}
+
+			stream.Send(eL)
 		}
 	}
+
+	ack, err := stream.CloseAndRecv()
+	if err != nil || !ack.State {
+		return
+	}
+
 }
 
 type EventLedger struct {
 	eventID      string
+	event        *pb.Event
 	eventLog     map[string]bool
 	expectedAcks int
 	receivedAcks int
@@ -114,10 +146,11 @@ type EventLedger struct {
 }
 
 // NewEventLedger
-func NewEventLedger(eID string, log map[string]bool, addr string) *EventLedger {
+func NewEventLedger(eID string, log map[string]bool, addr string, e *pb.Event) *EventLedger {
 
-	el := &EventLedger{
+	eL := &EventLedger{
 		eventID:      eID,
+		event:        e,
 		eventLog:     log,
 		expectedAcks: len(log),
 		receivedAcks: 0,
@@ -125,5 +158,5 @@ func NewEventLedger(eID string, log map[string]bool, addr string) *EventLedger {
 		addrToAck:    addr,
 	}
 
-	return el
+	return eL
 }

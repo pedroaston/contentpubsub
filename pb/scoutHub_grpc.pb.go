@@ -28,6 +28,7 @@ type ScoutHubClient interface {
 	LogToTracker(ctx context.Context, in *EventLog, opts ...grpc.CallOption) (*Ack, error)
 	AckToTracker(ctx context.Context, in *EventAck, opts ...grpc.CallOption) (*Ack, error)
 	AckUp(ctx context.Context, in *EventAck, opts ...grpc.CallOption) (*Ack, error)
+	ResendEvent(ctx context.Context, opts ...grpc.CallOption) (ScoutHub_ResendEventClient, error)
 	// FastDelivery
 	AdvertiseGroup(ctx context.Context, in *AdvertRequest, opts ...grpc.CallOption) (*Ack, error)
 	GroupSearchRequest(ctx context.Context, in *SearchRequest, opts ...grpc.CallOption) (*SearchReply, error)
@@ -152,6 +153,40 @@ func (c *scoutHubClient) AckUp(ctx context.Context, in *EventAck, opts ...grpc.C
 	return out, nil
 }
 
+func (c *scoutHubClient) ResendEvent(ctx context.Context, opts ...grpc.CallOption) (ScoutHub_ResendEventClient, error) {
+	stream, err := c.cc.NewStream(ctx, &ScoutHub_ServiceDesc.Streams[1], "/contentpubsub.pb.ScoutHub/ResendEvent", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &scoutHubResendEventClient{stream}
+	return x, nil
+}
+
+type ScoutHub_ResendEventClient interface {
+	Send(*EventLog) error
+	CloseAndRecv() (*Ack, error)
+	grpc.ClientStream
+}
+
+type scoutHubResendEventClient struct {
+	grpc.ClientStream
+}
+
+func (x *scoutHubResendEventClient) Send(m *EventLog) error {
+	return x.ClientStream.SendMsg(m)
+}
+
+func (x *scoutHubResendEventClient) CloseAndRecv() (*Ack, error) {
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	m := new(Ack)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 func (c *scoutHubClient) AdvertiseGroup(ctx context.Context, in *AdvertRequest, opts ...grpc.CallOption) (*Ack, error) {
 	out := new(Ack)
 	err := c.cc.Invoke(ctx, "/contentpubsub.pb.ScoutHub/AdvertiseGroup", in, out, opts...)
@@ -229,6 +264,7 @@ type ScoutHubServer interface {
 	LogToTracker(context.Context, *EventLog) (*Ack, error)
 	AckToTracker(context.Context, *EventAck) (*Ack, error)
 	AckUp(context.Context, *EventAck) (*Ack, error)
+	ResendEvent(ScoutHub_ResendEventServer) error
 	// FastDelivery
 	AdvertiseGroup(context.Context, *AdvertRequest) (*Ack, error)
 	GroupSearchRequest(context.Context, *SearchRequest) (*SearchReply, error)
@@ -270,6 +306,9 @@ func (UnimplementedScoutHubServer) AckToTracker(context.Context, *EventAck) (*Ac
 }
 func (UnimplementedScoutHubServer) AckUp(context.Context, *EventAck) (*Ack, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AckUp not implemented")
+}
+func (UnimplementedScoutHubServer) ResendEvent(ScoutHub_ResendEventServer) error {
+	return status.Errorf(codes.Unimplemented, "method ResendEvent not implemented")
 }
 func (UnimplementedScoutHubServer) AdvertiseGroup(context.Context, *AdvertRequest) (*Ack, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AdvertiseGroup not implemented")
@@ -475,6 +514,32 @@ func _ScoutHub_AckUp_Handler(srv interface{}, ctx context.Context, dec func(inte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ScoutHub_ResendEvent_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(ScoutHubServer).ResendEvent(&scoutHubResendEventServer{stream})
+}
+
+type ScoutHub_ResendEventServer interface {
+	SendAndClose(*Ack) error
+	Recv() (*EventLog, error)
+	grpc.ServerStream
+}
+
+type scoutHubResendEventServer struct {
+	grpc.ServerStream
+}
+
+func (x *scoutHubResendEventServer) SendAndClose(m *Ack) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func (x *scoutHubResendEventServer) Recv() (*EventLog, error) {
+	m := new(EventLog)
+	if err := x.ServerStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 func _ScoutHub_AdvertiseGroup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(AdvertRequest)
 	if err := dec(in); err != nil {
@@ -673,6 +738,11 @@ var ScoutHub_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "BackupRefresh",
 			Handler:       _ScoutHub_BackupRefresh_Handler,
+			ClientStreams: true,
+		},
+		{
+			StreamName:    "ResendEvent",
+			Handler:       _ScoutHub_ResendEvent_Handler,
 			ClientStreams: true,
 		},
 	},

@@ -487,11 +487,11 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 		}
 
 		if res {
-			ps.sendLogToTracker(attr.name, eventID, eLog)
+			ps.sendLogToTracker(attr.name, eventID, eLog, event)
 			continue
 		} else if len(eLog) > 0 {
 			eID := fmt.Sprintf("%s%d%d%s", eventID.PublisherID, ps.session, ps.eventSeq, attr.name)
-			ps.myETrackers[eID] = NewEventLedger(eID, eLog, dialAddr)
+			ps.myETrackers[eID] = NewEventLedger(eID, eLog, dialAddr, event)
 		} else {
 			// TODO >> Same as in publish
 		}
@@ -603,10 +603,10 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 	ps.tablesLock.RUnlock()
 
 	if isRv {
-		ps.sendLogToTracker(event.RvId, event.EventID, eL)
+		ps.sendLogToTracker(event.RvId, event.EventID, eL, event)
 	} else if len(eL) > 0 {
 		eID := fmt.Sprintf("%s%d%d%s", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID, event.RvId)
-		ps.myETrackers[eID] = NewEventLedger(eID, eL, upPeer)
+		ps.myETrackers[eID] = NewEventLedger(eID, eL, upPeer, event)
 	} else {
 		// TODO >> send ack up or not
 		// TODO >> publish should not send acks imidiatly
@@ -643,7 +643,7 @@ func (ps *PubSub) sendAckUp(ack *AckUp) {
 }
 
 // sendLogToTracker
-func (ps *PubSub) sendLogToTracker(attr string, eID *pb.EventID, eLog map[string]bool) {
+func (ps *PubSub) sendLogToTracker(attr string, eID *pb.EventID, eLog map[string]bool, e *pb.Event) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -660,6 +660,7 @@ func (ps *PubSub) sendLogToTracker(attr string, eID *pb.EventID, eLog map[string
 		eL := &pb.EventLog{
 			RvID:    attr,
 			EventID: eID,
+			Event:   e,
 			Log:     eLog,
 		}
 
@@ -758,7 +759,7 @@ func (ps *PubSub) LogToTracker(ctx context.Context, log *pb.EventLog) (*pb.Ack, 
 	fmt.Println("LogTracker: " + ps.serverAddr)
 
 	eID := fmt.Sprintf("%s%d%d", log.EventID.PublisherID, log.EventID.SessionNumber, log.EventID.SeqID)
-	ps.myTrackers[log.RvID].newEventToCheck(NewEventLedger(eID, log.Log, ""))
+	ps.myTrackers[log.RvID].newEventToCheck(NewEventLedger(eID, log.Log, "", log.Event))
 
 	return &pb.Ack{State: true, Info: ""}, nil
 }
@@ -772,6 +773,48 @@ func (ps *PubSub) AckToTracker(ctx context.Context, ack *pb.EventAck) (*pb.Ack, 
 	}
 
 	return &pb.Ack{State: true, Info: ""}, nil
+}
+
+// ResendEvent
+// INCOMPLETE
+func (ps *PubSub) ResendEvent(stream pb.ScoutHub_ResendEventServer) error {
+	fmt.Println("ResendEvent >> " + ps.serverAddr)
+
+	for {
+		eLog, err := stream.Recv()
+		if err == io.EOF {
+			// Statistical Code
+			ps.record.AddOperationStat("ResendEvent")
+
+			return stream.SendAndClose(&pb.Ack{State: true, Info: ""})
+		} else if err != nil {
+			return err
+		}
+
+		for p, _ := range eLog.Log {
+			peerID, err := peer.Decode(p)
+			if err != nil {
+				ps.tablesLock.RUnlock()
+				return err
+			}
+
+			peerAddr := ps.ipfsDHT.FindLocal(peerID).Addrs[0]
+			var dialAddr string
+			if peerAddr == nil {
+				ps.tablesLock.RUnlock()
+				return nil
+			} else {
+				dialAddr = addrForPubSubServer(peerAddr)
+			}
+
+			ps.eventsToForwardDown <- &ForwardEvent{
+				dialAddr:       dialAddr,
+				event:          eLog.Event,
+				redirectOption: "",
+				originalRoute:  p,
+			}
+		}
+	}
 }
 
 // forwardEventUp is called upon receiving the request to keep forward a event
@@ -816,6 +859,36 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 	p, err := NewPredicate(event.Predicate)
 	if err != nil {
 		return &pb.Ack{State: false, Info: err.Error()}, err
+	}
+
+	eID := fmt.Sprintf("%s%d%d%s", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID, event.RvId)
+	if ps.myETrackers[eID] != nil {
+
+		for node, received := range ps.myETrackers[eID].eventLog {
+			if !received {
+				peerID, err := peer.Decode(node)
+				if err != nil {
+					return &pb.Ack{State: false, Info: ""}, err
+				}
+
+				peerAddr := ps.ipfsDHT.FindLocal(peerID).Addrs[0]
+				var dialAddr string
+				if peerAddr == nil {
+					return &pb.Ack{State: false, Info: ""}, nil
+				} else {
+					dialAddr = addrForPubSubServer(peerAddr)
+				}
+
+				ps.eventsToForwardDown <- &ForwardEvent{
+					dialAddr:       dialAddr,
+					event:          event,
+					redirectOption: "",
+					originalRoute:  node,
+				}
+			}
+		}
+
+		return &pb.Ack{State: true, Info: ""}, nil
 	}
 
 	if ps.myFilters.IsInterested(p) {
@@ -897,8 +970,7 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 	ps.tablesLock.RUnlock()
 
 	if len(eL) > 0 {
-		eID := fmt.Sprintf("%s%d%d%s", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID, event.RvId)
-		ps.myETrackers[eID] = NewEventLedger(eID, eL, ackAddr)
+		ps.myETrackers[eID] = NewEventLedger(eID, eL, ackAddr, event)
 	} else {
 		ps.ackToSendUp <- &AckUp{dialAddr: ackAddr, eventID: event.EventID, peerID: peer.Encode(ps.ipfsDHT.PeerID()), rvID: event.RvId}
 	}

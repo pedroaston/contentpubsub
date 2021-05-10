@@ -16,6 +16,7 @@ service ScoutHub {
     rpc LogToTracker(EventLog) returns (Ack) {}
     rpc AckToTracker(EventAck) returns (Ack) {}
     rpc AckUp(EventAck) returns (Ack) {}
+    rpc ResendEvent(stream EventLog) returns (Ack) {}
 
     // FastDelivery
     rpc AdvertiseGroup(AdvertRequest) returns (Ack) {}
@@ -75,8 +76,9 @@ message RecruitTrackerMessage {
 
 message EventLog {
     string rvID = 1;
-    EventID eventID = 2;    
-    map <string, bool> log = 3;
+    EventID eventID = 2;
+    Event event = 3; 
+    map <string, bool> log = 4;
 }
 
 message EventAck {
