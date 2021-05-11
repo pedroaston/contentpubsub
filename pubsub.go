@@ -29,7 +29,7 @@ import (
 // MaxAttributesPerSub >> maximum allowed number of attributes per predicate
 // SubRefreshRateMin >> frequency in which a subscriber needs to resub in minutes
 const (
-	EventResendRate            = 10
+	OpResendRate               = 10
 	FaultToleranceFactor       = 3
 	ConcurrentProcessingFactor = 3
 	MaxAttributesPerPredicate  = 5
@@ -63,9 +63,12 @@ type PubSub struct {
 	heartbeatTicker     *time.Ticker
 	refreshTicker       *time.Ticker
 	eventTicker         *time.Ticker
+	subTicker           *time.Ticker
 	eventTickerState    bool
+	subTickerState      bool
 	terminate           chan string
-	unconfirmedEvent    map[string]*PubEventState
+	unconfirmedEvents   map[string]*PubEventState
+	unconfirmedSubs     map[string]*SubState
 
 	tablesLock *sync.RWMutex
 
@@ -100,7 +103,8 @@ func NewPubSub(dht *kaddht.IpfsDHT, region string, subRegion string) *PubSub {
 		myTrackers:          make(map[string]*Tracker),
 		myRvTrackers:        make(map[string][]string),
 		myETrackers:         make(map[string]*EventLedger),
-		unconfirmedEvent:    make(map[string]*PubEventState),
+		unconfirmedEvents:   make(map[string]*PubEventState),
+		unconfirmedSubs:     make(map[string]*SubState),
 		interestingEvents:   make(chan *pb.Event, ConcurrentProcessingFactor),
 		premiumEvents:       make(chan *pb.PremiumEvent, ConcurrentProcessingFactor),
 		subsToForward:       make(chan *ForwardSubRequest, ConcurrentProcessingFactor),
@@ -111,7 +115,8 @@ func NewPubSub(dht *kaddht.IpfsDHT, region string, subRegion string) *PubSub {
 		ackToSendUp:         make(chan *AckUp),
 		heartbeatTicker:     time.NewTicker(SubRefreshRateMin * time.Minute),
 		refreshTicker:       time.NewTicker(2 * SubRefreshRateMin * time.Minute),
-		eventTicker:         time.NewTicker(EventResendRate * time.Second),
+		eventTicker:         time.NewTicker(OpResendRate * time.Second),
+		subTicker:           time.NewTicker(OpResendRate * time.Second),
 		tablesLock:          &sync.RWMutex{},
 		region:              region,
 		subRegion:           subRegion,
@@ -124,6 +129,8 @@ func NewPubSub(dht *kaddht.IpfsDHT, region string, subRegion string) *PubSub {
 	ps.myBackups = ps.getBackups()
 	ps.eventTicker.Stop()
 	ps.eventTickerState = false
+	ps.subTicker.Stop()
+	ps.subTickerState = false
 
 	dialAddr := addrForPubSubServer(ps.ipfsDHT.Host().Addrs()[0])
 	lis, err := net.Listen("tcp", dialAddr)
@@ -144,6 +151,12 @@ func NewPubSub(dht *kaddht.IpfsDHT, region string, subRegion string) *PubSub {
 
 type PubEventState struct {
 	event    *pb.Event
+	aged     bool
+	dialAddr string
+}
+
+type SubState struct {
+	sub      *pb.Subscription
 	aged     bool
 	dialAddr string
 }
@@ -214,6 +227,14 @@ func (ps *PubSub) MySubscribe(info string) error {
 		Predicate: info,
 		RvId:      minAttr,
 		Shortcut:  "!",
+		SubAddr:   ps.serverAddr,
+	}
+
+	ps.unconfirmedSubs[sub.Predicate] = &SubState{sub: sub, aged: false, dialAddr: dialAddr}
+	if !ps.eventTickerState {
+		ps.subTicker.Reset(OpResendRate * time.Second)
+		ps.subTickerState = true
+		ps.unconfirmedSubs[sub.Predicate].aged = true
 	}
 
 	ps.subsToForward <- &ForwardSubRequest{dialAddr: dialAddr, sub: sub}
@@ -291,6 +312,7 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 	ps.tablesLock.RUnlock()
 
 	if alreadyDone {
+		ps.sendAckOp(sub.SubAddr, "Subscribe", sub.Predicate)
 		return &pb.Ack{State: true, Info: ""}, nil
 	} else if pNew != nil {
 		sub.Predicate = pNew.ToString()
@@ -318,6 +340,7 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 			Predicate: sub.Predicate,
 			RvId:      sub.RvId,
 			Backups:   backups,
+			SubAddr:   sub.SubAddr,
 		}
 
 		ps.tablesLock.RLock()
@@ -351,6 +374,8 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 		}
 	} else if !isRv {
 		return &pb.Ack{State: false, Info: "rendezvous check failed"}, nil
+	} else {
+		ps.sendAckOp(sub.SubAddr, "Subscribe", sub.Predicate)
 	}
 
 	// Statistical Code
@@ -501,11 +526,11 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 				dialAddr = addrForPubSubServer(attrAddr)
 			}
 
-			ps.unconfirmedEvent[eID] = &PubEventState{event: event, aged: false, dialAddr: dialAddr}
+			ps.unconfirmedEvents[eID] = &PubEventState{event: event, aged: false, dialAddr: dialAddr}
 			if !ps.eventTickerState {
-				ps.eventTicker.Reset(EventResendRate * time.Second)
+				ps.eventTicker.Reset(OpResendRate * time.Second)
 				ps.eventTickerState = true
-				ps.unconfirmedEvent[eID].aged = true
+				ps.unconfirmedEvents[eID].aged = true
 			}
 
 			ps.eventsToForwardUp <- &ForwardEvent{dialAddr: dialAddr, event: event}
@@ -779,14 +804,25 @@ func (ps *PubSub) AckUp(ctx context.Context, ack *pb.EventAck) (*pb.Ack, error) 
 
 // AckOp
 func (ps *PubSub) AckOp(ctx context.Context, ack *pb.Ack) (*pb.Ack, error) {
+	fmt.Println("AckOp >> " + ps.serverAddr)
 
 	if ack.Op == "Publish" {
-		if ps.unconfirmedEvent[ack.Info] != nil {
-			delete(ps.unconfirmedEvent, ack.Info)
+		if ps.unconfirmedEvents[ack.Info] != nil {
+			delete(ps.unconfirmedEvents, ack.Info)
 		}
 
-		if len(ps.unconfirmedEvent) == 0 {
+		if len(ps.unconfirmedEvents) == 0 {
 			ps.eventTicker.Stop()
+			ps.eventTickerState = false
+		}
+	} else if ack.Op == "Subscribe" {
+		if ps.unconfirmedSubs[ack.Info] != nil {
+			delete(ps.unconfirmedEvents, ack.Info)
+		}
+
+		if len(ps.unconfirmedSubs) == 0 {
+			ps.subTicker.Stop()
+			ps.subTickerState = false
 		}
 	}
 
@@ -795,7 +831,7 @@ func (ps *PubSub) AckOp(ctx context.Context, ack *pb.Ack) (*pb.Ack, error) {
 
 // RecruitHasTracker
 func (ps *PubSub) RecruitHasTracker(ctx context.Context, rm *pb.RecruitTrackerMessage) (*pb.Ack, error) {
-	fmt.Println("RecruitHasTracker: " + ps.serverAddr)
+	fmt.Println("RecruitHasTracker >> " + ps.serverAddr)
 
 	if ps.myTrackers[rm.RvID] != nil {
 		ps.myTrackers[rm.RvID].leader = rm.Leader
@@ -1440,11 +1476,19 @@ func (ps *PubSub) processLoop() {
 		case pid := <-ps.advToForward:
 			ps.forwardAdvertising(pid.dialAddr, pid.adv)
 		case <-ps.eventTicker.C:
-			for _, e := range ps.unconfirmedEvent {
+			for _, e := range ps.unconfirmedEvents {
 				if e.aged {
 					ps.forwardEventUp(e.dialAddr, e.event)
 				} else {
 					e.aged = true
+				}
+			}
+		case <-ps.subTicker.C:
+			for _, sub := range ps.unconfirmedSubs {
+				if sub.aged {
+					ps.forwardSub(sub.dialAddr, sub.sub)
+				} else {
+					sub.aged = true
 				}
 			}
 		case <-ps.heartbeatTicker.C:
