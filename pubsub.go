@@ -113,8 +113,8 @@ func NewPubSub(dht *kaddht.IpfsDHT, region string, subRegion string) *PubSub {
 		terminate:           make(chan string),
 		advToForward:        make(chan *ForwardAdvert),
 		ackToSendUp:         make(chan *AckUp),
-		heartbeatTicker:     time.NewTicker(SubRefreshRateMin * time.Minute),
-		refreshTicker:       time.NewTicker(2 * SubRefreshRateMin * time.Minute),
+		heartbeatTicker:     time.NewTicker(2 * time.Second),
+		refreshTicker:       time.NewTicker(4 * time.Second),
 		eventTicker:         time.NewTicker(OpResendRate * time.Second),
 		subTicker:           time.NewTicker(OpResendRate * time.Second),
 		tablesLock:          &sync.RWMutex{},
@@ -667,7 +667,7 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 	return &pb.Ack{State: true, Info: ""}, nil
 }
 
-// sendAckOp
+// sendAckOp just sends an ack to the operation iniator to confirm completion
 func (ps *PubSub) sendAckOp(dialAddr string, Op string, info string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -688,7 +688,7 @@ func (ps *PubSub) sendAckOp(dialAddr string, Op string, info string) {
 	client.AckOp(ctx, ack)
 }
 
-// sendAckUp
+// sendAckUp sends an ack upstream to confirm event delivery
 func (ps *PubSub) sendAckUp(ack *AckUp) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -710,7 +710,8 @@ func (ps *PubSub) sendAckUp(ack *AckUp) {
 	client.AckUp(ctx, eAck)
 }
 
-// sendLogToTracker
+// sendLogToTracker sends the log to the tracker for it to know then which interested
+// pathways have confirmed to have received the event
 func (ps *PubSub) sendLogToTracker(attr string, eID *pb.EventID, eLog map[string]bool, e *pb.Event) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -737,7 +738,7 @@ func (ps *PubSub) sendLogToTracker(attr string, eID *pb.EventID, eLog map[string
 	}
 }
 
-// sendAckToTracker
+// sendAckToTracker sends an acknowledge from event delerery at the Rv to the tracker
 func (ps *PubSub) sendAckToTrackers(ack *pb.EventAck) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -772,7 +773,7 @@ func (ps *PubSub) checkAndRecruitTracker(ctx context.Context, attr string) {
 			ack, err := client.RecruitHasTracker(ctx, &pb.RecruitTrackerMessage{Leader: needLeader, RvID: attr, RvAddr: ps.serverAddr})
 			if err == nil && ack.Info == "Already Tracking" {
 				needLeader = false
-			} else if ack.State && err == nil {
+			} else if err == nil && ack.State {
 				ps.myRvTrackers[attr] = append(ps.myRvTrackers[attr], addr)
 				needLeader = false
 			}
@@ -780,7 +781,8 @@ func (ps *PubSub) checkAndRecruitTracker(ctx context.Context, attr string) {
 	}
 }
 
-// AckUp
+// AckUp processes an event ackknowledge and if it was the last
+// missing ack returns its own acknowledge upstream
 func (ps *PubSub) AckUp(ctx context.Context, ack *pb.EventAck) (*pb.Ack, error) {
 	fmt.Println("AckUp: " + ps.serverAddr)
 
@@ -789,6 +791,10 @@ func (ps *PubSub) AckUp(ctx context.Context, ack *pb.EventAck) (*pb.Ack, error) 
 		ps.sendAckToTrackers(ack)
 	} else {
 		eID := fmt.Sprintf("%s%d%d%s", ack.EventID.PublisherID, ack.EventID.SessionNumber, ack.EventID.SeqID, ack.RvID)
+		if ps.myETrackers[eID] == nil {
+			return &pb.Ack{State: true, Info: "Event Tracker already closed"}, nil
+		}
+
 		ps.myETrackers[eID].eventLog[ack.PeerID] = true
 		ps.myETrackers[eID].receivedAcks++
 
@@ -802,7 +808,7 @@ func (ps *PubSub) AckUp(ctx context.Context, ack *pb.EventAck) (*pb.Ack, error) 
 	return &pb.Ack{State: true, Info: ""}, nil
 }
 
-// AckOp
+// AckOp receives confirmation of a Operation and stops its resending from happening
 func (ps *PubSub) AckOp(ctx context.Context, ack *pb.Ack) (*pb.Ack, error) {
 	fmt.Println("AckOp >> " + ps.serverAddr)
 
@@ -849,7 +855,8 @@ func (ps *PubSub) RecruitHasTracker(ctx context.Context, rm *pb.RecruitTrackerMe
 	return &pb.Ack{State: true, Info: ""}, nil
 }
 
-// LogToTracker
+// LogToTracker is the remote call a tracker receives from the
+// Rv node with a event log for him to start tracking
 func (ps *PubSub) LogToTracker(ctx context.Context, log *pb.EventLog) (*pb.Ack, error) {
 	fmt.Println("LogTracker: " + ps.serverAddr)
 
@@ -859,7 +866,8 @@ func (ps *PubSub) LogToTracker(ctx context.Context, log *pb.EventLog) (*pb.Ack, 
 	return &pb.Ack{State: true, Info: ""}, nil
 }
 
-// AckToTracker
+// AckToTracker is the remote call the Rv node uses to communicate
+// received event acknowledges to the tracker
 func (ps *PubSub) AckToTracker(ctx context.Context, ack *pb.EventAck) (*pb.Ack, error) {
 	fmt.Println("AckToTracker: " + ps.serverAddr)
 
@@ -870,7 +878,9 @@ func (ps *PubSub) AckToTracker(ctx context.Context, ack *pb.EventAck) (*pb.Ack, 
 	return &pb.Ack{State: true, Info: ""}, nil
 }
 
-// ResendEvent
+// ResendEvent is a remote call used by the tracker to communicate to the Rv node which
+// are the event pathways that are still missing so that still in this call the Rv
+// node initiates a retransmission process for every unacknowledge event pathway
 func (ps *PubSub) ResendEvent(stream pb.ScoutHub_ResendEventServer) error {
 	fmt.Println("ResendEvent >> " + ps.serverAddr)
 

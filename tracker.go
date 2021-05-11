@@ -24,7 +24,7 @@ type Tracker struct {
 	checkEvents *time.Ticker
 }
 
-// NewTracker
+// NewTracker initiates a new tracker struct
 func NewTracker(leader bool, attr string, rvAddr string) *Tracker {
 
 	t := &Tracker{
@@ -44,7 +44,8 @@ func NewTracker(leader bool, attr string, rvAddr string) *Tracker {
 	return t
 }
 
-// trackerloop
+// trackerloop processes incoming messages from the
+// Rv and warns him about unacknowledged events
 func (t *Tracker) trackerLoop() {
 
 	for {
@@ -61,13 +62,13 @@ func (t *Tracker) trackerLoop() {
 	}
 }
 
-// newEventToCheck
+// newEventToCheck places a event on tracker checking list
 func (t *Tracker) newEventToCheck(eL *EventLedger) {
 
 	t.eventStats[eL.eventID] = eL
 }
 
-// addAckToLedger
+// addAckToLedger records an acknowledge in the respective event ledger
 func (t *Tracker) addAckToLedger(ack *pb.EventAck) {
 
 	eID := fmt.Sprintf("%s%d%d", ack.EventID.PublisherID, ack.EventID.SessionNumber, ack.EventID.SeqID)
@@ -89,7 +90,8 @@ func (t *Tracker) addAckToLedger(ack *pb.EventAck) {
 
 }
 
-// returnUnAckedEvents
+// returnUnAckedEvents returns which event pathways haven't confirmed event
+// delivery and warns the Rv of which are they and for which events
 func (t *Tracker) returnUnAckedEvents() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
