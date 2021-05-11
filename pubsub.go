@@ -511,13 +511,13 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 			ps.eventsToForwardUp <- &ForwardEvent{dialAddr: dialAddr, event: event}
 		}
 
-		if res {
+		if res && len(eLog) > 0 {
 			ps.sendLogToTracker(attr.name, eventID, eLog, event)
-			continue
 		} else if len(eLog) > 0 {
 			ps.myETrackers[eID] = NewEventLedger(eID, eLog, dialAddr, event)
 		} else {
-			// TODO >> Same as in publish
+			time.Sleep(500 * time.Millisecond)
+			ps.ackToSendUp <- &AckUp{dialAddr: dialAddr, eventID: event.EventID, peerID: peer.Encode(ps.ipfsDHT.PeerID()), rvID: event.RvId}
 		}
 	}
 
@@ -624,16 +624,16 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 
 	eID := fmt.Sprintf("%s%d%d%s", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID, event.RvId)
 
-	if isRv {
+	if isRv && len(eL) > 0 {
 		ps.sendLogToTracker(event.RvId, event.EventID, eL, event)
+		ps.sendAckOp(event.PubAddr, "Publish", eID)
+	} else if isRv {
 		ps.sendAckOp(event.PubAddr, "Publish", eID)
 	} else if len(eL) > 0 {
 		ps.myETrackers[eID] = NewEventLedger(eID, eL, upPeer, event)
 	} else {
-		// TODO >> send ack up or not
-		// TODO >> publish should not send acks imidiatly
-		// because upper layer may not be ready to receive
-		// perhaps a flag in next layer publish might solve
+		time.Sleep(500 * time.Millisecond)
+		ps.ackToSendUp <- &AckUp{dialAddr: upPeer, eventID: event.EventID, peerID: peer.Encode(ps.ipfsDHT.PeerID()), rvID: event.RvId}
 	}
 
 	// Statistical Code
@@ -849,7 +849,7 @@ func (ps *PubSub) ResendEvent(stream pb.ScoutHub_ResendEventServer) error {
 			return err
 		}
 
-		for p, _ := range eLog.Log {
+		for p := range eLog.Log {
 			peerID, err := peer.Decode(p)
 			if err != nil {
 				ps.tablesLock.RUnlock()
