@@ -29,6 +29,7 @@ type ScoutHubClient interface {
 	AckToTracker(ctx context.Context, in *EventAck, opts ...grpc.CallOption) (*Ack, error)
 	AckUp(ctx context.Context, in *EventAck, opts ...grpc.CallOption) (*Ack, error)
 	ResendEvent(ctx context.Context, opts ...grpc.CallOption) (ScoutHub_ResendEventClient, error)
+	AckOp(ctx context.Context, in *Ack, opts ...grpc.CallOption) (*Ack, error)
 	// FastDelivery
 	AdvertiseGroup(ctx context.Context, in *AdvertRequest, opts ...grpc.CallOption) (*Ack, error)
 	GroupSearchRequest(ctx context.Context, in *SearchRequest, opts ...grpc.CallOption) (*SearchReply, error)
@@ -187,6 +188,15 @@ func (x *scoutHubResendEventClient) CloseAndRecv() (*Ack, error) {
 	return m, nil
 }
 
+func (c *scoutHubClient) AckOp(ctx context.Context, in *Ack, opts ...grpc.CallOption) (*Ack, error) {
+	out := new(Ack)
+	err := c.cc.Invoke(ctx, "/contentpubsub.pb.ScoutHub/AckOp", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *scoutHubClient) AdvertiseGroup(ctx context.Context, in *AdvertRequest, opts ...grpc.CallOption) (*Ack, error) {
 	out := new(Ack)
 	err := c.cc.Invoke(ctx, "/contentpubsub.pb.ScoutHub/AdvertiseGroup", in, out, opts...)
@@ -265,6 +275,7 @@ type ScoutHubServer interface {
 	AckToTracker(context.Context, *EventAck) (*Ack, error)
 	AckUp(context.Context, *EventAck) (*Ack, error)
 	ResendEvent(ScoutHub_ResendEventServer) error
+	AckOp(context.Context, *Ack) (*Ack, error)
 	// FastDelivery
 	AdvertiseGroup(context.Context, *AdvertRequest) (*Ack, error)
 	GroupSearchRequest(context.Context, *SearchRequest) (*SearchReply, error)
@@ -309,6 +320,9 @@ func (UnimplementedScoutHubServer) AckUp(context.Context, *EventAck) (*Ack, erro
 }
 func (UnimplementedScoutHubServer) ResendEvent(ScoutHub_ResendEventServer) error {
 	return status.Errorf(codes.Unimplemented, "method ResendEvent not implemented")
+}
+func (UnimplementedScoutHubServer) AckOp(context.Context, *Ack) (*Ack, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AckOp not implemented")
 }
 func (UnimplementedScoutHubServer) AdvertiseGroup(context.Context, *AdvertRequest) (*Ack, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AdvertiseGroup not implemented")
@@ -540,6 +554,24 @@ func (x *scoutHubResendEventServer) Recv() (*EventLog, error) {
 	return m, nil
 }
 
+func _ScoutHub_AckOp_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(Ack)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ScoutHubServer).AckOp(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/contentpubsub.pb.ScoutHub/AckOp",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ScoutHubServer).AckOp(ctx, req.(*Ack))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ScoutHub_AdvertiseGroup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(AdvertRequest)
 	if err := dec(in); err != nil {
@@ -704,6 +736,10 @@ var ScoutHub_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "AckUp",
 			Handler:    _ScoutHub_AckUp_Handler,
+		},
+		{
+			MethodName: "AckOp",
+			Handler:    _ScoutHub_AckOp_Handler,
 		},
 		{
 			MethodName: "AdvertiseGroup",

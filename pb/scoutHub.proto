@@ -17,6 +17,7 @@ service ScoutHub {
     rpc AckToTracker(EventAck) returns (Ack) {}
     rpc AckUp(EventAck) returns (Ack) {}
     rpc ResendEvent(stream EventLog) returns (Ack) {}
+    rpc AckOp(Ack) returns (Ack) {}
 
     // FastDelivery
     rpc AdvertiseGroup(AdvertRequest) returns (Ack) {}
@@ -32,6 +33,7 @@ service ScoutHub {
 message Ack {
     bool state = 1;
     string info = 2;
+    string op = 3;
 }
 
 // ++++++++++++++ ScoutSubs message types ++++++++++++++
@@ -53,6 +55,7 @@ message Event {
     string ackAddr = 6;
     string backup = 7;
     string birthTime = 8;
+    string pubAddr = 9;
 }
 
 message EventID {

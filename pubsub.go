@@ -23,11 +23,13 @@ import (
 	"google.golang.org/grpc"
 )
 
+// EventResendRate >> seconds that the publisher waits for rv ack until it resends event
 // FaultToleranceFactor >> number of backups
 // ConcurrentProcessingFactor >> how many parallel operations of each type can be supported
 // MaxAttributesPerSub >> maximum allowed number of attributes per predicate
 // SubRefreshRateMin >> frequency in which a subscriber needs to resub in minutes
 const (
+	EventResendRate            = 10
 	FaultToleranceFactor       = 3
 	ConcurrentProcessingFactor = 3
 	MaxAttributesPerPredicate  = 5
@@ -60,7 +62,10 @@ type PubSub struct {
 	ackToSendUp         chan *AckUp
 	heartbeatTicker     *time.Ticker
 	refreshTicker       *time.Ticker
+	eventTicker         *time.Ticker
+	eventTickerState    bool
 	terminate           chan string
+	unconfirmedEvent    map[string]*PubEventState
 
 	tablesLock *sync.RWMutex
 
@@ -95,6 +100,7 @@ func NewPubSub(dht *kaddht.IpfsDHT, region string, subRegion string) *PubSub {
 		myTrackers:          make(map[string]*Tracker),
 		myRvTrackers:        make(map[string][]string),
 		myETrackers:         make(map[string]*EventLedger),
+		unconfirmedEvent:    make(map[string]*PubEventState),
 		interestingEvents:   make(chan *pb.Event, ConcurrentProcessingFactor),
 		premiumEvents:       make(chan *pb.PremiumEvent, ConcurrentProcessingFactor),
 		subsToForward:       make(chan *ForwardSubRequest, ConcurrentProcessingFactor),
@@ -105,6 +111,7 @@ func NewPubSub(dht *kaddht.IpfsDHT, region string, subRegion string) *PubSub {
 		ackToSendUp:         make(chan *AckUp),
 		heartbeatTicker:     time.NewTicker(SubRefreshRateMin * time.Minute),
 		refreshTicker:       time.NewTicker(2 * SubRefreshRateMin * time.Minute),
+		eventTicker:         time.NewTicker(EventResendRate * time.Second),
 		tablesLock:          &sync.RWMutex{},
 		region:              region,
 		subRegion:           subRegion,
@@ -115,6 +122,8 @@ func NewPubSub(dht *kaddht.IpfsDHT, region string, subRegion string) *PubSub {
 
 	ps.ipfsDHT = dht
 	ps.myBackups = ps.getBackups()
+	ps.eventTicker.Stop()
+	ps.eventTickerState = false
 
 	dialAddr := addrForPubSubServer(ps.ipfsDHT.Host().Addrs()[0])
 	lis, err := net.Listen("tcp", dialAddr)
@@ -132,6 +141,12 @@ func NewPubSub(dht *kaddht.IpfsDHT, region string, subRegion string) *PubSub {
 }
 
 // +++++++++++++++++++++++++++++++ ScoutSubs ++++++++++++++++++++++++++++++++
+
+type PubEventState struct {
+	event    *pb.Event
+	aged     bool
+	dialAddr string
+}
 
 type ForwardSubRequest struct {
 	dialAddr string
@@ -427,6 +442,7 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 			AckAddr:   ps.serverAddr,
 			Backup:    "",
 			BirthTime: time.Now().Format(time.StampMilli),
+			PubAddr:   ps.serverAddr,
 		}
 
 		res, _ := ps.rendezvousSelfCheck(attr.name)
@@ -474,6 +490,8 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 		}
 		ps.tablesLock.RUnlock()
 
+		eID := fmt.Sprintf("%s%d%d%s", eventID.PublisherID, ps.session, ps.eventSeq, attr.name)
+
 		if !res {
 			attrID := ps.ipfsDHT.RoutingTable().NearestPeer(kb.ID(attr.name))
 			attrAddr := ps.ipfsDHT.FindLocal(attrID).Addrs[0]
@@ -483,6 +501,13 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 				dialAddr = addrForPubSubServer(attrAddr)
 			}
 
+			ps.unconfirmedEvent[eID] = &PubEventState{event: event, aged: false, dialAddr: dialAddr}
+			if !ps.eventTickerState {
+				ps.eventTicker.Reset(EventResendRate * time.Second)
+				ps.eventTickerState = true
+				ps.unconfirmedEvent[eID].aged = true
+			}
+
 			ps.eventsToForwardUp <- &ForwardEvent{dialAddr: dialAddr, event: event}
 		}
 
@@ -490,13 +515,10 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 			ps.sendLogToTracker(attr.name, eventID, eLog, event)
 			continue
 		} else if len(eLog) > 0 {
-			eID := fmt.Sprintf("%s%d%d%s", eventID.PublisherID, ps.session, ps.eventSeq, attr.name)
 			ps.myETrackers[eID] = NewEventLedger(eID, eLog, dialAddr, event)
 		} else {
 			// TODO >> Same as in publish
 		}
-
-		// TODO >> Structure that somehow waits for a ack from the RV of that attribute
 	}
 
 	// Statistical Code
@@ -534,8 +556,6 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 
 	} else if !isRv {
 		return &pb.Ack{State: false, Info: "rendezvous check failed"}, nil
-	} else {
-		// TODO >> acks to pub
 	}
 
 	eL := make(map[string]bool)
@@ -602,10 +622,12 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 	}
 	ps.tablesLock.RUnlock()
 
+	eID := fmt.Sprintf("%s%d%d%s", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID, event.RvId)
+
 	if isRv {
 		ps.sendLogToTracker(event.RvId, event.EventID, eL, event)
+		ps.sendAckOp(event.PubAddr, "Publish", eID)
 	} else if len(eL) > 0 {
-		eID := fmt.Sprintf("%s%d%d%s", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID, event.RvId)
 		ps.myETrackers[eID] = NewEventLedger(eID, eL, upPeer, event)
 	} else {
 		// TODO >> send ack up or not
@@ -618,6 +640,27 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 	ps.record.AddOperationStat("Publish")
 
 	return &pb.Ack{State: true, Info: ""}, nil
+}
+
+// sendAckOp
+func (ps *PubSub) sendAckOp(dialAddr string, Op string, info string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	conn, err := grpc.Dial(dialAddr, grpc.WithInsecure())
+	if err != nil {
+		log.Fatalf("fail to dial: %v", err)
+	}
+	defer conn.Close()
+
+	ack := &pb.Ack{
+		State: true,
+		Op:    Op,
+		Info:  info,
+	}
+
+	client := pb.NewScoutHubClient(conn)
+	client.AckOp(ctx, ack)
 }
 
 // sendAckUp
@@ -728,6 +771,22 @@ func (ps *PubSub) AckUp(ctx context.Context, ack *pb.EventAck) (*pb.Ack, error) 
 			ps.ackToSendUp <- &AckUp{dialAddr: ps.myETrackers[eID].addrToAck, eventID: ack.EventID,
 				peerID: peer.Encode(ps.ipfsDHT.PeerID()), rvID: ack.RvID}
 			delete(ps.myETrackers, eID)
+		}
+	}
+
+	return &pb.Ack{State: true, Info: ""}, nil
+}
+
+// AckOp
+func (ps *PubSub) AckOp(ctx context.Context, ack *pb.Ack) (*pb.Ack, error) {
+
+	if ack.Op == "Publish" {
+		if ps.unconfirmedEvent[ack.Info] != nil {
+			delete(ps.unconfirmedEvent, ack.Info)
+		}
+
+		if len(ps.unconfirmedEvent) == 0 {
+			ps.eventTicker.Stop()
 		}
 	}
 
@@ -1380,6 +1439,14 @@ func (ps *PubSub) processLoop() {
 			ps.sendAckUp(pid)
 		case pid := <-ps.advToForward:
 			ps.forwardAdvertising(pid.dialAddr, pid.adv)
+		case <-ps.eventTicker.C:
+			for _, e := range ps.unconfirmedEvent {
+				if e.aged {
+					ps.forwardEventUp(e.dialAddr, e.event)
+				} else {
+					e.aged = true
+				}
+			}
 		case <-ps.heartbeatTicker.C:
 			for _, filters := range ps.myFilters.filters {
 				for _, filter := range filters {
