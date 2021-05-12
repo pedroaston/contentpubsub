@@ -5,45 +5,7 @@ import (
 	"fmt"
 	"testing"
 	"time"
-
-	"github.com/libp2p/go-libp2p-core/peer"
 )
-
-// TestPubSubServerComms only wants to assure that pubsub servers can communicate
-// by initializing both and subscribing to events about portugal
-// Test composition: 2 nodes
-// >> 1 Subscriber that subscribes to that event
-func TestPubSubServerComms(t *testing.T) {
-	fmt.Printf("\n$$$ TestPubSubServerComms $$$\n")
-
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
-	defer cancel()
-
-	dhts := setupDHTS(t, ctx, 2)
-	defer func() {
-		for _, dht := range dhts {
-			dht.Close()
-			defer dht.Host().Close()
-		}
-	}()
-
-	connect(t, ctx, dhts[0], dhts[1])
-
-	var pubsubs [2]*PubSub
-	for i, dht := range dhts {
-		pubsubs[i] = NewPubSub(dht, "EU", "PT")
-	}
-
-	err := pubsubs[0].MySubscribe("tenis T")
-
-	time.Sleep(time.Second)
-
-	if err != nil {
-		t.Fatal(err)
-	} else if pubsubs[1].currentFilterTable.routes[peer.Encode(pubsubs[0].ipfsDHT.PeerID())].filters[1][0].String() != "<tenis> " {
-		t.Fatal("Failed Subscription")
-	}
-}
 
 // TestSimpleUnsubscribing just subscribes to certain
 // events and then unsubscribes to them
@@ -113,14 +75,14 @@ func TestSimplePublish(t *testing.T) {
 	pubsubs[0].MySubscribe("portugal T")
 	pubsubs[1].MySubscribe("portugal T")
 
-	time.Sleep(time.Second)
+	time.Sleep(100 * time.Millisecond)
 
 	err := pubsubs[2].MyPublish("Portugal is beautifull!", "portugal T")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	time.Sleep(time.Second)
+	time.Sleep(100 * time.Millisecond)
 }
 
 // TestSubscriptionForwarding attemps to see if the subscription
@@ -308,79 +270,4 @@ func TestRefreshRoutine(t *testing.T) {
 	pubsubs[0].MyPublish("portugal has epic waves", "portugal T")
 	pubsubs[3].MyGroupSearchRequest("portugal T")
 	pubsubs[4].gracefullyTerminate()
-}
-
-// TestRedirectMechanism shows that a event my jump several hops on
-// the network if those intermidiate nodes don't lead to more subscribers
-// Test composition: 4 nodes
-// >> 1 Subscriber subscribes at the bottom of the dissemination chain
-// >> 1 Publisher publishing a event next to the dissemination chain
-func TestRedirectMechanism(t *testing.T) {
-	fmt.Printf("\n$$$ TestRedirectMechanism $$$\n")
-
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
-	defer cancel()
-
-	dhts := setupDHTS(t, ctx, 4)
-	defer func() {
-		for _, dht := range dhts {
-			dht.Close()
-			defer dht.Host().Close()
-		}
-	}()
-
-	connect(t, ctx, dhts[0], dhts[1])
-	connect(t, ctx, dhts[1], dhts[2])
-	connect(t, ctx, dhts[2], dhts[3])
-
-	var pubsubs [4]*PubSub
-	for i, dht := range dhts {
-		pubsubs[i] = NewPubSub(dht, "EU", "PT")
-	}
-
-	pubsubs[0].MySubscribe("portugal T")
-
-	time.Sleep(time.Second)
-
-	pubsubs[3].MyPublish("Portugal sometime can be the best!", "portugal T")
-
-}
-
-// TestAproxRealSubscriptionScenario with 100 peers randomly connected to
-// each other, where half subscribe to one topic and the rest to another
-// MUST BE TESTED IN SEPERATE
-func TestAproxRealSubscriptionScenario(t *testing.T) {
-	fmt.Printf("\n$$$ TestAproxRealSubscriptionScenario $$$\n")
-
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
-	defer cancel()
-
-	dhts := setupDHTS(t, ctx, 100)
-	defer func() {
-		for _, dht := range dhts {
-			dht.Close()
-			defer dht.Host().Close()
-		}
-	}()
-
-	bootstrapDhts(t, ctx, dhts)
-
-	var pubsubs [100]*PubSub
-	for i, dht := range dhts {
-		pubsubs[i] = NewPubSub(dht, "EU", "PT")
-	}
-
-	var err1, err2 error
-	for i, ps := range pubsubs {
-		if i%2 == 0 {
-			err1 = ps.MySubscribe("portugal T/soccer T")
-		} else {
-			err2 = ps.MySubscribe("tesla T/stock T/value R 500 800")
-		}
-		if err1 != nil || err2 != nil {
-			t.Fatal("Error Subscribing in mass")
-		}
-	}
-
-	time.Sleep(2 * time.Second)
 }

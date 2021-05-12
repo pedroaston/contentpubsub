@@ -2,7 +2,6 @@ package contentpubsub
 
 import (
 	"context"
-	"math/rand"
 	"testing"
 	"time"
 
@@ -114,6 +113,7 @@ func connect(t *testing.T, ctx context.Context, a, b *dht.IpfsDHT) {
 	wait(t, ctx, b, a)
 }
 
+/*
 func bootstrapDhts(t *testing.T, ctx context.Context, dhts []*dht.IpfsDHT) {
 	connectionMap := make(map[int][]int)
 	totalDHT := len(dhts) - 1
@@ -140,3 +140,4 @@ func bootstrapDhts(t *testing.T, ctx context.Context, dhts []*dht.IpfsDHT) {
 		}
 	}
 }
+*/
