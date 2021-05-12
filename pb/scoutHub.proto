@@ -42,7 +42,6 @@ message Subscription {
     string peerID = 1;
     string predicate = 2;
     string rvId = 3;
-    string shortcut = 4;
     map<int32, string> backups = 5;
     string subAddr = 6;
 }

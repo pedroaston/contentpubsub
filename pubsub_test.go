@@ -280,47 +280,6 @@ func TestRefreshRoutine(t *testing.T) {
 	time.Sleep(time.Second)
 }
 
-// TestRedirectMechanismAndLatencyMetric shows that a event my jump several hops on
-// the network if those intermidiate nodes don't lead to more subscribers and
-// finishes the test by printing the latency on the event delivery
-// Test composition: 4 nodes
-// >> 1 Subscriber subscribes at the bottom of the dissemination chain
-// >> 1 Publisher publishing a event next to the dissemination chain
-func TestRedirectMechanismAndLatencyMetric(t *testing.T) {
-	fmt.Printf("\n$$$ TestRedirectMechanism $$$\n")
-
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
-	defer cancel()
-
-	dhts := setupDHTS(t, ctx, 4)
-	defer func() {
-		for _, dht := range dhts {
-			dht.Close()
-			defer dht.Host().Close()
-		}
-	}()
-
-	connect(t, ctx, dhts[0], dhts[1])
-	connect(t, ctx, dhts[1], dhts[2])
-	connect(t, ctx, dhts[2], dhts[3])
-
-	var pubsubs [4]*PubSub
-	for i, dht := range dhts {
-		pubsubs[i] = NewPubSub(dht, "EU", "PT")
-	}
-
-	pubsubs[0].MySubscribe("portugal T")
-
-	time.Sleep(time.Second)
-
-	pubsubs[3].MyPublish("Portugal sometime can be the best!", "portugal T")
-
-	time.Sleep(time.Second)
-
-	_, _, lat, _ := pubsubs[0].ReturnReceivedEventsStats()
-	fmt.Printf("Average latency was %d ms\n", lat)
-}
-
 // TestReliableEventDelivery proves that the rv tracker leader
 // warns the rv node to retransmit a certain event to certain
 // pathways were the event still has been confirmed
