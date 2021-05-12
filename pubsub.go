@@ -1411,8 +1411,8 @@ func (ps *PubSub) MyPremiumUnsubscribe(pubPred string, pubAddr string) error {
 		return err
 	}
 
-	for i, sG := range ps.subbedGroups {
-		if sG.predicate.Equal(pubP) && sG.pubAddr == pubAddr {
+	for i := 0; i < len(ps.subbedGroups); i++ {
+		if ps.subbedGroups[i].predicate.Equal(pubP) && ps.subbedGroups[i].pubAddr == pubAddr {
 			conn, err := grpc.Dial(pubAddr, grpc.WithInsecure())
 			if err != nil {
 				log.Fatalf("fail to dial: %v", err)
@@ -1432,12 +1432,14 @@ func (ps *PubSub) MyPremiumUnsubscribe(pubPred string, pubAddr string) error {
 				return errors.New("failed unsubscribing")
 			}
 
-			if i == 0 {
+			if i == 0 && len(ps.subbedGroups) == 1 {
+				ps.subbedGroups = nil
+			} else if i == 0 {
 				ps.subbedGroups = ps.subbedGroups[1:]
 			} else if len(ps.subbedGroups) == i+1 {
-				ps.subbedGroups = ps.subbedGroups[:i-1]
+				ps.subbedGroups = ps.subbedGroups[:i]
 			} else {
-				ps.subbedGroups = append(ps.subbedGroups[:i-1], ps.subbedGroups[i+1:]...)
+				ps.subbedGroups = append(ps.subbedGroups[:i], ps.subbedGroups[i+1:]...)
 			}
 		}
 	}
