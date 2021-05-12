@@ -2,6 +2,7 @@ package contentpubsub
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -125,21 +126,26 @@ func TestDHTRefreshing(t *testing.T) {
 	dhts[0].RefreshRoutingTable()
 }
 
-func TestPeerStuff(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
-	defer cancel()
+func TestProperArrayDelete(t *testing.T) {
 
-	dhts := setupDHTS(t, ctx, 2)
+	var lista []int
+	lista = append(lista, 2, 3, 5, 7, 4)
 
-	connect(t, ctx, dhts[0], dhts[1])
-
-	a := peer.Encode(dhts[1].PeerID())
-
-	b, _ := peer.Decode(a)
-
-	addr := dhts[0].FindLocal(b).Addrs[0]
-
-	if addr == nil {
-		t.Fatal("bolas")
+	for i := 0; i < len(lista); i++ {
+		if lista[i] == 2 || lista[i] == 3 {
+			if i == 0 && len(lista) == 1 {
+				lista = nil
+			} else if i == 0 {
+				lista = lista[1:]
+				i--
+			} else if len(lista) == i+1 {
+				lista = lista[:i]
+			} else {
+				lista = append(lista[:i], lista[i+1:]...)
+				i--
+			}
+		}
 	}
+
+	fmt.Println(lista)
 }

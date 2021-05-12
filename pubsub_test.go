@@ -149,7 +149,7 @@ func TestSubscriptionForwarding(t *testing.T) {
 // >> 1 Publisher publishes a kind of event
 // >> 1 Subscriber subscribing a kind of event
 // >> 3 Passive nodes that just diffuse the subscriptions
-// being one of the intermidiante nodes of the subscription
+// being one of the intermediate nodes of the subscription
 // chain terminated
 func TestSimpleFaultTolerance(t *testing.T) {
 	fmt.Printf("\n$$$ TestSimpleFaultTolerance $$$\n")

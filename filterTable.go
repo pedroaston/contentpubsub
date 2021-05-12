@@ -126,39 +126,48 @@ func (rs *RouteStats) SimpleAddSummarizedFilter(p *Predicate) (bool, *Predicate)
 			}
 		} else if len(p.attributes) == i {
 			for j := 0; j < len(filters); j++ {
-				if filters[j].SimplePredicateMatch(p) {
-					return true, filters[j]
-				} else if p.SimplePredicateMatch(filters[j]) {
-					if j == 0 {
+				if rs.filters[i][j].SimplePredicateMatch(p) {
+					return true, rs.filters[i][j]
+				} else if p.SimplePredicateMatch(rs.filters[i][j]) {
+					if j == 0 && len(rs.filters[i]) == 1 {
 						rs.filters[i] = nil
-					} else if len(filters) == j+1 {
-						rs.filters[i] = filters[:j-1]
+					} else if j == 0 {
+						rs.filters[i] = rs.filters[i][1:]
+						j--
+					} else if len(rs.filters[i]) == j+1 {
+						rs.filters[i] = rs.filters[i][:j]
 					} else {
-						rs.filters[i] = append(filters[:j-1], filters[j+1:]...)
+						rs.filters[i] = append(rs.filters[i][:j], rs.filters[i][j+1:]...)
 						j--
 					}
-				} else if ok, pNew := filters[j].TryMergePredicates(p); ok {
+				} else if ok, pNew := rs.filters[i][j].TryMergePredicates(p); ok {
 					p = pNew
 					merge = true
-					if j == 0 {
+					if j == 0 && len(rs.filters[i]) == 1 {
 						rs.filters[i] = nil
-					} else if len(filters) == j+1 {
-						rs.filters[i] = filters[:j-1]
+					} else if j == 0 {
+						rs.filters[i] = rs.filters[i][1:]
+						j--
+					} else if len(rs.filters[i]) == j+1 {
+						rs.filters[i] = rs.filters[i][:j]
 					} else {
-						rs.filters[i] = append(filters[:j-1], filters[j+1:]...)
+						rs.filters[i] = append(rs.filters[i][:j], rs.filters[i][j+1:]...)
 						j--
 					}
 				}
 			}
 		} else {
-			for j := 0; j < len(filters); j++ {
-				if p.SimplePredicateMatch(filters[j]) {
-					if j == 0 {
+			for j := 0; j < len(rs.filters[i]); j++ {
+				if p.SimplePredicateMatch(rs.filters[i][j]) {
+					if j == 0 && len(rs.filters[i]) == 1 {
 						rs.filters[i] = nil
-					} else if len(filters) == j+1 {
-						rs.filters[i] = filters[:j-1]
+					} else if j == 0 {
+						rs.filters[i] = rs.filters[i][1:]
+						j--
+					} else if len(rs.filters[i]) == j+1 {
+						rs.filters[i] = rs.filters[i][:j]
 					} else {
-						rs.filters[i] = append(filters[:j-1], filters[j+1:]...)
+						rs.filters[i] = append(rs.filters[i][:j], rs.filters[i][j+1:]...)
 						j--
 					}
 				}
@@ -177,16 +186,19 @@ func (rs *RouteStats) SimpleAddSummarizedFilter(p *Predicate) (bool, *Predicate)
 // SimpleSubtractFilter removes all the emcompassed filters by the
 // info string predicate ignoring partial encompassing for now
 func (rs *RouteStats) SimpleSubtractFilter(p *Predicate) {
-	for i, filters := range rs.filters {
+	for i := range rs.filters {
 		if len(p.attributes) <= i {
-			for j := 0; j < len(filters); j++ {
-				if p.SimplePredicateMatch(filters[j]) {
-					if j == 0 {
+			for j := 0; j < len(rs.filters[i]); j++ {
+				if p.SimplePredicateMatch(rs.filters[i][j]) {
+					if j == 0 && len(rs.filters[i]) == 1 {
 						rs.filters[i] = nil
-					} else if len(filters) == j+1 {
-						rs.filters[i] = filters[:j-1]
+					} else if j == 0 {
+						rs.filters[i] = rs.filters[i][1:]
+						j--
+					} else if len(rs.filters[i]) == j+1 {
+						rs.filters[i] = rs.filters[i][:j]
 					} else {
-						rs.filters[i] = append(filters[:j-1], filters[j+1:]...)
+						rs.filters[i] = append(rs.filters[i][:j], rs.filters[i][j+1:]...)
 						j--
 					}
 				}

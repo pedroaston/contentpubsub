@@ -719,8 +719,8 @@ func (ps *PubSub) sendLogToTracker(attr string, eID *pb.EventID, eLog map[string
 
 	ps.checkAndRecruitTracker(ctx, attr)
 
-	for _, t := range ps.myRvTrackers[attr] {
-		conn, err := grpc.Dial(t, grpc.WithInsecure())
+	for i := 0; i < len(ps.myRvTrackers[attr]); i++ {
+		conn, err := grpc.Dial(ps.myRvTrackers[attr][i], grpc.WithInsecure())
 		if err != nil {
 			log.Fatalf("fail to dial: %v", err)
 		}
@@ -734,7 +734,20 @@ func (ps *PubSub) sendLogToTracker(attr string, eID *pb.EventID, eLog map[string
 		}
 
 		client := pb.NewScoutHubClient(conn)
-		client.LogToTracker(ctx, eL)
+		resp, err := client.LogToTracker(ctx, eL)
+		if err != nil || !resp.State {
+			if i == 0 && len(ps.myRvTrackers[attr]) == 1 {
+				ps.myRvTrackers[attr] = nil
+			} else if i == 0 {
+				ps.myRvTrackers[attr] = ps.myRvTrackers[attr][i:]
+				i--
+			} else if len(ps.myRvTrackers[attr]) == i+1 {
+				ps.myRvTrackers[attr] = ps.myRvTrackers[attr][:i]
+			} else {
+				ps.myRvTrackers[attr] = append(ps.myRvTrackers[attr][:i], ps.myRvTrackers[attr][i+1:]...)
+				i--
+			}
+		}
 	}
 }
 
@@ -745,15 +758,28 @@ func (ps *PubSub) sendAckToTrackers(ack *pb.EventAck) {
 
 	ps.checkAndRecruitTracker(ctx, ack.RvID)
 
-	for _, tAddr := range ps.myRvTrackers[ack.RvID] {
-		conn, err := grpc.Dial(tAddr, grpc.WithInsecure())
+	for i := 0; i < len(ps.myRvTrackers[ack.RvID]); i++ {
+		conn, err := grpc.Dial(ps.myRvTrackers[ack.RvID][i], grpc.WithInsecure())
 		if err != nil {
 			log.Fatalf("fail to dial: %v", err)
 		}
 		defer conn.Close()
 
 		client := pb.NewScoutHubClient(conn)
-		client.AckToTracker(ctx, ack)
+		resp, err := client.AckToTracker(ctx, ack)
+		if err != nil || !resp.State {
+			if i == 0 && len(ps.myRvTrackers[ack.RvID]) == 1 {
+				ps.myRvTrackers[ack.RvID] = nil
+			} else if i == 0 {
+				ps.myRvTrackers[ack.RvID] = ps.myRvTrackers[ack.RvID][1:]
+				i--
+			} else if len(ps.myRvTrackers[ack.RvID]) == i+1 {
+				ps.myRvTrackers[ack.RvID] = ps.myRvTrackers[ack.RvID][:i]
+			} else {
+				ps.myRvTrackers[ack.RvID] = append(ps.myRvTrackers[ack.RvID][:i], ps.myRvTrackers[ack.RvID][i+1:]...)
+				i--
+			}
+		}
 	}
 }
 

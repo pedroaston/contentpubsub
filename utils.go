@@ -8,7 +8,7 @@ import (
 	"github.com/multiformats/go-multiaddr"
 )
 
-const InstrumentedVersion = true
+const InstrumentedVersion = false
 
 func addrForPubSubServer(addr multiaddr.Multiaddr) string {
 
