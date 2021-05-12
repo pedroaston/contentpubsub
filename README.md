@@ -9,4 +9,5 @@
 ## Latest versions of each variant prepared for testground
 - v0.0.0: Base-Unreliable
 - v0.1.6: Redirect-Unreliable
-- v0.2.0: Redirect-Reliable
+- v0.2.2: Redirect-Reliable
+- v0.3.0: Base-Reliable
