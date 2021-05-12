@@ -183,12 +183,14 @@ func (mg *MulticastGroup) RemoveSubFromGroup(sub *pb.PremiumSubscription) error 
 	for i, s := range mg.subByPlace[sub.Region][sub.SubRegion].subs {
 		if s.addr == sub.Addr {
 			toRemove := s
-			if i == 0 {
+			if i == 0 && len(mg.subByPlace[sub.Region][sub.SubRegion].subs) == 1 {
+				mg.subByPlace[sub.Region][sub.SubRegion].subs = nil
+			} else if i == 0 {
 				mg.subByPlace[sub.Region][sub.SubRegion].subs = mg.subByPlace[sub.Region][sub.SubRegion].subs[1:]
 			} else if i+1 == len(mg.subByPlace[sub.Region][sub.SubRegion].subs) {
-				mg.subByPlace[sub.Region][sub.SubRegion].subs = mg.subByPlace[sub.Region][sub.SubRegion].subs[:i-1]
+				mg.subByPlace[sub.Region][sub.SubRegion].subs = mg.subByPlace[sub.Region][sub.SubRegion].subs[:i]
 			} else {
-				mg.subByPlace[sub.Region][sub.SubRegion].subs = append(mg.subByPlace[sub.Region][sub.SubRegion].subs[:i-1],
+				mg.subByPlace[sub.Region][sub.SubRegion].subs = append(mg.subByPlace[sub.Region][sub.SubRegion].subs[:i],
 					mg.subByPlace[sub.Region][sub.SubRegion].subs[i+1:]...)
 			}
 
@@ -238,12 +240,14 @@ func (mg *MulticastGroup) RemoveSubFromGroup(sub *pb.PremiumSubscription) error 
 					return errors.New("failed to unsubscribe from helper")
 				}
 
-				if i == 0 {
+				if i == 0 && len(mg.trackHelp[helper.addr].subsDelegated) == 1 {
+					mg.trackHelp[helper.addr].subsDelegated = nil
+				} else if i == 0 {
 					mg.trackHelp[helper.addr].subsDelegated = mg.trackHelp[helper.addr].subsDelegated[1:]
 				} else if i+1 == len(mg.subByPlace[sub.Region][sub.SubRegion].subs) {
-					mg.trackHelp[helper.addr].subsDelegated = mg.trackHelp[helper.addr].subsDelegated[:i-1]
+					mg.trackHelp[helper.addr].subsDelegated = mg.trackHelp[helper.addr].subsDelegated[:i]
 				} else {
-					mg.trackHelp[helper.addr].subsDelegated = append(mg.trackHelp[helper.addr].subsDelegated[:i-1],
+					mg.trackHelp[helper.addr].subsDelegated = append(mg.trackHelp[helper.addr].subsDelegated[:i],
 						mg.trackHelp[helper.addr].subsDelegated[i+1:]...)
 				}
 
@@ -372,13 +376,17 @@ func (mg *MulticastGroup) RemoveSubFromList(sub *SubData) {
 
 	for i, s := range mg.simpleList {
 		if s.addr == sub.addr {
-			if i == 0 {
+			if i == 0 && len(mg.simpleList) == 1 {
+				mg.simpleList = nil
+			} else if i == 0 {
 				mg.simpleList = mg.simpleList[1:]
 			} else if i+1 == len(mg.simpleList) {
 				mg.simpleList = mg.simpleList[:i]
 			} else {
 				mg.simpleList = append(mg.simpleList[:i], mg.simpleList[i+1:]...)
 			}
+
+			break
 		}
 	}
 }
@@ -417,12 +425,14 @@ func (mg *MulticastGroup) StopDelegating(tracker *HelperTracker, add bool) {
 
 	for i := 0; i < len(mg.subByPlace[tracker.helper.region][tracker.helper.subRegion].helpers); i++ {
 		if mg.subByPlace[tracker.helper.region][tracker.helper.subRegion].helpers[i].addr == tracker.helper.addr {
-			if i == 0 {
+			if i == 0 && len(mg.subByPlace[tracker.helper.region][tracker.helper.subRegion].helpers) == 1 {
+				mg.subByPlace[tracker.helper.region][tracker.helper.subRegion].helpers = nil
+			} else if i == 0 {
 				mg.subByPlace[tracker.helper.region][tracker.helper.subRegion].helpers = mg.subByPlace[tracker.helper.region][tracker.helper.subRegion].helpers[1:]
 			} else if len(mg.subByPlace[tracker.helper.region][tracker.helper.subRegion].helpers) == i+1 {
-				mg.subByPlace[tracker.helper.region][tracker.helper.subRegion].helpers = mg.subByPlace[tracker.helper.region][tracker.helper.subRegion].helpers[:i-1]
+				mg.subByPlace[tracker.helper.region][tracker.helper.subRegion].helpers = mg.subByPlace[tracker.helper.region][tracker.helper.subRegion].helpers[:i]
 			} else {
-				mg.subByPlace[tracker.helper.region][tracker.helper.subRegion].helpers = append(mg.subByPlace[tracker.helper.region][tracker.helper.subRegion].helpers[:i-1],
+				mg.subByPlace[tracker.helper.region][tracker.helper.subRegion].helpers = append(mg.subByPlace[tracker.helper.region][tracker.helper.subRegion].helpers[:i],
 					mg.subByPlace[tracker.helper.region][tracker.helper.subRegion].helpers[i+1:]...)
 			}
 
@@ -534,7 +544,9 @@ func (sg *SubGroupView) RemoveSubFromList(sub *SubData) {
 
 	for i, s := range sg.simpleList {
 		if s.addr == sub.addr {
-			if i == 0 {
+			if i == 0 && len(sg.simpleList) == 1 {
+				sg.simpleList = nil
+			} else if i == 0 {
 				sg.simpleList = sg.simpleList[1:]
 			} else if i+1 == len(sg.simpleList) {
 				sg.simpleList = sg.simpleList[:i]
