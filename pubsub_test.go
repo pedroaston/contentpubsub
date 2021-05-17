@@ -140,6 +140,8 @@ func TestSubscriptionForwarding(t *testing.T) {
 	}
 
 	time.Sleep(time.Second)
+
+	fmt.Printf("Avg time to Sub was %d ms\n", pubsubs[0].record.CompileAvgTimeToSub())
 }
 
 // TestSimpleFaultTolerance just tries to show the system

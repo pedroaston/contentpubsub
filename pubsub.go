@@ -159,6 +159,7 @@ type SubState struct {
 	sub      *pb.Subscription
 	aged     bool
 	dialAddr string
+	started  string
 }
 
 type ForwardSubRequest struct {
@@ -221,7 +222,12 @@ func (ps *PubSub) MySubscribe(info string) error {
 		SubAddr:   ps.serverAddr,
 	}
 
-	ps.unconfirmedSubs[sub.Predicate] = &SubState{sub: sub, aged: false, dialAddr: dialAddr}
+	ps.unconfirmedSubs[sub.Predicate] = &SubState{
+		sub:      sub,
+		aged:     false,
+		dialAddr: dialAddr,
+		started:  time.Now().Format(time.StampMilli),
+	}
 	if !ps.eventTickerState {
 		ps.subTicker.Reset(OpResendRate * time.Second)
 		ps.subTickerState = true
@@ -229,9 +235,6 @@ func (ps *PubSub) MySubscribe(info string) error {
 	}
 
 	ps.subsToForward <- &ForwardSubRequest{dialAddr: dialAddr, sub: sub}
-
-	// Statistical Code
-	ps.record.AddOperationStat("mySubscribe")
 
 	return nil
 }
@@ -479,9 +482,6 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 			ps.ackToSendUp <- &AckUp{dialAddr: dialAddr, eventID: event.EventID, peerID: peer.Encode(ps.ipfsDHT.PeerID()), rvID: event.RvId}
 		}
 	}
-
-	// Statistical Code
-	ps.record.AddOperationStat("myPublish")
 
 	return nil
 }
@@ -755,7 +755,8 @@ func (ps *PubSub) AckOp(ctx context.Context, ack *pb.Ack) (*pb.Ack, error) {
 		}
 	} else if ack.Op == "Subscribe" {
 		if ps.unconfirmedSubs[ack.Info] != nil {
-			delete(ps.unconfirmedEvents, ack.Info)
+			ps.record.SaveTimeToSub(ps.unconfirmedSubs[ack.Info].started)
+			delete(ps.unconfirmedSubs, ack.Info)
 		}
 
 		if len(ps.unconfirmedSubs) == 0 {
