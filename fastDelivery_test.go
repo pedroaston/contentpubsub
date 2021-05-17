@@ -37,7 +37,7 @@ func TestSimpleFastDeliveryWithSearch(t *testing.T) {
 	}
 
 	pubsubs[4].CreateMulticastGroup("portugal T")
-	pubsubs[1].MyGroupSearchRequest("portugal T")
+	pubsubs[1].MySearchAndPremiumSub("portugal T")
 	pubsubs[1].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 10)
 	pubsubs[2].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 10)
 	pubsubs[3].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 10)
