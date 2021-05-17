@@ -1750,6 +1750,8 @@ func (ps *PubSub) MySearchAndPremiumSub(pred string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
+	start := time.Now().Format(time.StampMilli)
+
 	p, err := NewPredicate(pred)
 	if err != nil {
 		return err
@@ -1805,6 +1807,7 @@ func (ps *PubSub) MySearchAndPremiumSub(pred string) error {
 				for _, g := range reply.Groups {
 					fmt.Println("Pub: " + g.OwnerAddr + " Theme: " + g.Predicate)
 					ps.MyPremiumSubscribe(pred, g.OwnerAddr, g.Predicate, 5)
+					ps.record.SaveTimeToSub(start)
 				}
 				break
 			}
@@ -1812,11 +1815,10 @@ func (ps *PubSub) MySearchAndPremiumSub(pred string) error {
 	} else {
 		for _, g := range reply.Groups {
 			fmt.Println("Pub: " + g.OwnerAddr + " Theme: " + g.Predicate)
+			ps.MyPremiumSubscribe(pred, g.OwnerAddr, g.Predicate, 5)
+			ps.record.SaveTimeToSub(start)
 		}
 	}
-
-	// Statistical Code
-	ps.record.AddOperationStat("myGroupSearchRequest")
 
 	return nil
 }
