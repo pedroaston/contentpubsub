@@ -8,6 +8,7 @@ import (
 
 type HistoryRecord struct {
 	receivedEvents   []*EventRecord
+	timeToSub        []int
 	operationHistory map[string]int
 }
 
@@ -79,6 +80,37 @@ func (r *HistoryRecord) SaveReceivedPremiumEvent(event *pb.PremiumEvent) {
 	}
 
 	r.receivedEvents = append(r.receivedEvents, eventRecord)
+}
+
+// SaveTimeToSub
+func (r *HistoryRecord) SaveTimeToSub(start string) {
+
+	past, err1 := time.Parse(time.StampMilli, start)
+	if err1 != nil {
+		return
+	}
+
+	present, err2 := time.Parse(time.StampMilli, time.Now().Format(time.StampMilli))
+	if err2 != nil {
+		return
+	}
+
+	r.timeToSub = append(r.timeToSub, int(present.Sub(past).Milliseconds()))
+}
+
+// CompileAvgTimeToSub
+func (r *HistoryRecord) CompileAvgTimeToSub() int {
+
+	sum := 0
+	for _, t := range r.timeToSub {
+		sum += t
+	}
+
+	if len(r.timeToSub) == 0 {
+		return 0
+	} else {
+		return sum / len(r.timeToSub)
+	}
 }
 
 // CompileLatencyResults
