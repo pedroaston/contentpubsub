@@ -159,6 +159,7 @@ type SubState struct {
 	sub      *pb.Subscription
 	aged     bool
 	dialAddr string
+	started  string
 }
 
 type ForwardSubRequest struct {
@@ -230,7 +231,13 @@ func (ps *PubSub) MySubscribe(info string) error {
 		SubAddr:   ps.serverAddr,
 	}
 
-	ps.unconfirmedSubs[sub.Predicate] = &SubState{sub: sub, aged: false, dialAddr: dialAddr}
+	ps.unconfirmedSubs[sub.Predicate] = &SubState{
+		sub:      sub,
+		aged:     false,
+		dialAddr: dialAddr,
+		started:  time.Now().Format(time.StampMilli),
+	}
+
 	if !ps.eventTickerState {
 		ps.subTicker.Reset(OpResendRate * time.Second)
 		ps.subTickerState = true
@@ -238,9 +245,6 @@ func (ps *PubSub) MySubscribe(info string) error {
 	}
 
 	ps.subsToForward <- &ForwardSubRequest{dialAddr: dialAddr, sub: sub}
-
-	// Statistical Code
-	ps.record.AddOperationStat("mySubscribe")
 
 	return nil
 }
@@ -546,9 +550,6 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 		}
 	}
 
-	// Statistical Code
-	ps.record.AddOperationStat("myPublish")
-
 	return nil
 }
 
@@ -849,7 +850,8 @@ func (ps *PubSub) AckOp(ctx context.Context, ack *pb.Ack) (*pb.Ack, error) {
 		}
 	} else if ack.Op == "Subscribe" {
 		if ps.unconfirmedSubs[ack.Info] != nil {
-			delete(ps.unconfirmedEvents, ack.Info)
+			ps.record.SaveTimeToSub(ps.unconfirmedSubs[ack.Info].started)
+			delete(ps.unconfirmedSubs, ack.Info)
 		}
 
 		if len(ps.unconfirmedSubs) == 0 {
@@ -1995,8 +1997,8 @@ func (ps *PubSub) MyPremiumUnsubscribe(pubPred string, pubAddr string) error {
 		return err
 	}
 
-	for i, sG := range ps.subbedGroups {
-		if sG.predicate.Equal(pubP) && sG.pubAddr == pubAddr {
+	for i := 0; i < len(ps.subbedGroups); i++ {
+		if ps.subbedGroups[i].predicate.Equal(pubP) && ps.subbedGroups[i].pubAddr == pubAddr {
 			conn, err := grpc.Dial(pubAddr, grpc.WithInsecure())
 			if err != nil {
 				log.Fatalf("fail to dial: %v", err)
@@ -2016,12 +2018,14 @@ func (ps *PubSub) MyPremiumUnsubscribe(pubPred string, pubAddr string) error {
 				return errors.New("failed unsubscribing")
 			}
 
-			if i == 0 {
+			if i == 0 && len(ps.subbedGroups) == 1 {
+				ps.subbedGroups = nil
+			} else if i == 0 {
 				ps.subbedGroups = ps.subbedGroups[1:]
 			} else if len(ps.subbedGroups) == i+1 {
-				ps.subbedGroups = ps.subbedGroups[:i-1]
+				ps.subbedGroups = ps.subbedGroups[:i]
 			} else {
-				ps.subbedGroups = append(ps.subbedGroups[:i-1], ps.subbedGroups[i+1:]...)
+				ps.subbedGroups = append(ps.subbedGroups[:i], ps.subbedGroups[i+1:]...)
 			}
 		}
 	}
