@@ -106,7 +106,11 @@ func (r *HistoryRecord) CompileAvgTimeToSub() int {
 		sum += t
 	}
 
-	return sum / len(r.timeToSub)
+	if len(r.timeToSub) == 0 {
+		return 0
+	} else {
+		return sum / len(r.timeToSub)
+	}
 }
 
 // CompileLatencyResults
