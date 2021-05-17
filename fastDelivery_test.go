@@ -8,11 +8,11 @@ import (
 )
 
 // TestSimpleFastDeliveryWithSearch tests subscription, publishing
-// and advertising/search of the FastDelivery protocol
+// and advertising of the FastDelivery protocol
 // Test composition: 5 nodes
 // >> 1 Premium Publisher that creates and publishes in a MulticastGroup
 // >> 4 Premium Subscribers that subscribe to a MulticastGroup
-func TestSimpleFastDeliveryWithSearch(t *testing.T) {
+func TestSimpleFastDelivery(t *testing.T) {
 	fmt.Printf("\n$$$ TestSimpleFastDeliveryWithSearch $$$\n")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
@@ -37,7 +37,6 @@ func TestSimpleFastDeliveryWithSearch(t *testing.T) {
 	}
 
 	pubsubs[4].CreateMulticastGroup("portugal T")
-	pubsubs[1].MyGroupSearchRequest("portugal T")
 	pubsubs[1].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 10)
 	pubsubs[2].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 10)
 	pubsubs[3].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 10)
@@ -45,6 +44,46 @@ func TestSimpleFastDeliveryWithSearch(t *testing.T) {
 	pubsubs[4].MyPremiumPublish("portugal T", "Portugal is great!", "portugal T")
 
 	time.Sleep(time.Second)
+}
+
+// TestFastDeliverySearchAndSub tests search and subscription of the FastDelivery protocol
+// Test composition: 5 nodes
+// >> 1 Premium Publisher that creates and publishes in a MulticastGroup
+// >> 1 Premium Subscriber that searches and subscribes to a MulticastGroup
+func TestFastDeliverySearchAndSub(t *testing.T) {
+	fmt.Printf("\n$$$ TestSimpleFastDeliveryWithSearch $$$\n")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	defer cancel()
+
+	dhts := setupDHTS(t, ctx, 5)
+	defer func() {
+		for _, dht := range dhts {
+			dht.Close()
+			defer dht.Host().Close()
+		}
+	}()
+
+	connect(t, ctx, dhts[0], dhts[1])
+	connect(t, ctx, dhts[0], dhts[2])
+	connect(t, ctx, dhts[0], dhts[3])
+	connect(t, ctx, dhts[0], dhts[4])
+
+	var pubsubs [5]*PubSub
+	for i, dht := range dhts {
+		pubsubs[i] = NewPubSub(dht, "EU", "PT")
+	}
+
+	pubsubs[2].CreateMulticastGroup("portugal T")
+	time.Sleep(200 * time.Millisecond)
+
+	pubsubs[3].MySearchAndPremiumSub("portugal T")
+	time.Sleep(200 * time.Millisecond)
+
+	pubsubs[2].MyPremiumPublish("portugal T", "Portugal is great!", "portugal T")
+	time.Sleep(200 * time.Millisecond)
+
+	fmt.Printf("Avg time to Sub was %d ms\n", pubsubs[3].record.CompileAvgTimeToSub())
 }
 
 // TestSimpleFastDeliveryWithRanges is similar to the test above but instead of using

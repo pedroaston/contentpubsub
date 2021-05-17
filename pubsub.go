@@ -1638,7 +1638,7 @@ func (ps *PubSub) myAdvertiseGroup(pred *Predicate) error {
 	}
 
 	// Statistical Code
-	ps.record.AddOperationStat("myPublish")
+	ps.record.AddOperationStat("myAdvertiseGroup")
 
 	return nil
 }
@@ -1744,11 +1744,13 @@ func (ps *PubSub) addAdvertToBoards(adv *pb.AdvertRequest) error {
 
 // MyGroupSearchRequest requests to the closest rendezvous of his whished
 // Group predicate for MulticastGroups of his interest
-func (ps *PubSub) MyGroupSearchRequest(pred string) error {
+func (ps *PubSub) MySearchAndPremiumSub(pred string) error {
 	fmt.Println("myGroupSearchRequest: " + ps.serverAddr)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
+
+	start := time.Now().Format(time.StampMilli)
 
 	p, err := NewPredicate(pred)
 	if err != nil {
@@ -1804,6 +1806,8 @@ func (ps *PubSub) MyGroupSearchRequest(pred string) error {
 			if err == nil {
 				for _, g := range reply.Groups {
 					fmt.Println("Pub: " + g.OwnerAddr + " Theme: " + g.Predicate)
+					ps.MyPremiumSubscribe(pred, g.OwnerAddr, g.Predicate, 5)
+					ps.record.SaveTimeToSub(start)
 				}
 				break
 			}
@@ -1811,11 +1815,10 @@ func (ps *PubSub) MyGroupSearchRequest(pred string) error {
 	} else {
 		for _, g := range reply.Groups {
 			fmt.Println("Pub: " + g.OwnerAddr + " Theme: " + g.Predicate)
+			ps.MyPremiumSubscribe(pred, g.OwnerAddr, g.Predicate, 5)
+			ps.record.SaveTimeToSub(start)
 		}
 	}
-
-	// Statistical Code
-	ps.record.AddOperationStat("myGroupSearchRequest")
 
 	return nil
 }
@@ -1830,29 +1833,9 @@ func (ps *PubSub) GroupSearchRequest(ctx context.Context, req *pb.SearchRequest)
 		return nil, err
 	}
 
-	marshalSelf, err := ps.ipfsDHT.Host().ID().MarshalBinary()
+	minID, minAttr, err := ps.closerAttrRvToSelf(p)
 	if err != nil {
-		return nil, err
-	}
-
-	selfKey := key.XORKeySpace.Key(marshalSelf)
-	var minAttr string
-	var minID peer.ID
-	var minDist *big.Int = nil
-
-	for _, attr := range p.attributes {
-		candidateID := peer.ID(kb.ConvertKey(attr.name))
-		aux, err := candidateID.MarshalBinary()
-		if err != nil {
-			return nil, err
-		}
-
-		candidateDist := key.XORKeySpace.Distance(selfKey, key.XORKeySpace.Key(aux))
-		if minDist == nil || candidateDist.Cmp(minDist) == -1 {
-			minAttr = attr.name
-			minID = candidateID
-			minDist = candidateDist
-		}
+		return nil, errors.New("failed to find the closest attribute Rv")
 	}
 
 	res, _ := ps.rendezvousSelfCheck(minAttr)
@@ -1895,14 +1878,14 @@ func (ps *PubSub) GroupSearchRequest(ctx context.Context, req *pb.SearchRequest)
 			reply, err := client.GroupSearchRequest(ctx, req)
 			if err == nil {
 				// Statistical Code
-				ps.record.AddOperationStat("myGroupSearchRequest")
+				ps.record.AddOperationStat("GroupSearchRequest")
 
 				return reply, nil
 			}
 		}
 	} else {
 		// Statistical Code
-		ps.record.AddOperationStat("myGroupSearchRequest")
+		ps.record.AddOperationStat("GroupSearchRequest")
 
 		return reply, nil
 	}
