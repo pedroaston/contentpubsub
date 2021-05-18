@@ -33,7 +33,7 @@ func TestSimpleFastDelivery(t *testing.T) {
 
 	var pubsubs [5]*PubSub
 	for i, dht := range dhts {
-		pubsubs[i] = NewPubSub(dht, "EU", "PT")
+		pubsubs[i] = NewPubSub(dht, "PT")
 	}
 
 	pubsubs[4].CreateMulticastGroup("portugal T")
@@ -71,7 +71,7 @@ func TestFastDeliverySearchAndSub(t *testing.T) {
 
 	var pubsubs [5]*PubSub
 	for i, dht := range dhts {
-		pubsubs[i] = NewPubSub(dht, "EU", "PT")
+		pubsubs[i] = NewPubSub(dht, "PT")
 	}
 
 	pubsubs[2].CreateMulticastGroup("portugal T")
@@ -112,7 +112,7 @@ func TestSimpleFastDeliveryWithRanges(t *testing.T) {
 
 	var pubsubs [5]*PubSub
 	for i, dht := range dhts {
-		pubsubs[i] = NewPubSub(dht, "EU", "PT")
+		pubsubs[i] = NewPubSub(dht, "PT")
 	}
 
 	pubsubs[0].CreateMulticastGroup("wine T/year R 1990 1997")
@@ -156,7 +156,7 @@ func TestFastDeliveryWithHelperAndLatMetrics(t *testing.T) {
 
 	var pubsubs [8]*PubSub
 	for i, dht := range dhts {
-		pubsubs[i] = NewPubSub(dht, "EU", "PT")
+		pubsubs[i] = NewPubSub(dht, "PT")
 	}
 
 	pubsubs[0].CreateMulticastGroup("portugal T")
@@ -209,7 +209,7 @@ func TestSimpleFastDeliveryUnsubscribe(t *testing.T) {
 
 	var pubsubs [8]*PubSub
 	for i, dht := range dhts {
-		pubsubs[i] = NewPubSub(dht, "EU", "PT")
+		pubsubs[i] = NewPubSub(dht, "PT")
 	}
 
 	pubsubs[0].CreateMulticastGroup("portugal T")
@@ -260,7 +260,7 @@ func TestFastDeliveryHelperUnsubscribe(t *testing.T) {
 
 	var pubsubs [8]*PubSub
 	for i, dht := range dhts {
-		pubsubs[i] = NewPubSub(dht, "EU", "PT")
+		pubsubs[i] = NewPubSub(dht, "PT")
 	}
 
 	pubsubs[0].CreateMulticastGroup("portugal T")
@@ -311,7 +311,7 @@ func TestFastDeliveryWithHelperFailure(t *testing.T) {
 
 	var pubsubs [8]*PubSub
 	for i, dht := range dhts {
-		pubsubs[i] = NewPubSub(dht, "EU", "PT")
+		pubsubs[i] = NewPubSub(dht, "PT")
 	}
 
 	pubsubs[0].CreateMulticastGroup("portugal T")
