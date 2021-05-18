@@ -2251,7 +2251,14 @@ func (ps *PubSub) DelegateSubToHelper(ctx context.Context, sub *pb.DelegateSub) 
 	return &pb.Ack{State: true, Info: ""}, nil
 }
 
+// ReturnReceivedEventStats
 func (ps *PubSub) ReturnReceivedEventsStats() (int, int, int, int) {
 
 	return ps.record.CompileLatencyResults()
+}
+
+// ReturnSubsStats
+func (ps *PubSub) ReturnSubStats() int {
+
+	return ps.record.CompileAvgTimeToSub()
 }
