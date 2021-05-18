@@ -122,9 +122,8 @@ message PremiumSubscription {
     string addr = 1;
     int32 cap = 2;
     string region = 3;
-    string subRegion = 4;
-    string ownPredicate = 5;
-    string pubPredicate = 6;
+    string ownPredicate = 4;
+    string pubPredicate = 5;
 }
 
 message HelpRequest {
