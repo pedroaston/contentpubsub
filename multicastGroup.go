@@ -23,7 +23,7 @@ const (
 type MulticastGroup struct {
 	selfAddr       string
 	predicate      *Predicate
-	subByPlace     map[string]map[string]*SubRegionData
+	subByPlace     map[string]*RegionData
 	trackHelp      map[string]*HelperTracker
 	helpers        []*SubData
 	attrTrees      map[string]*RangeAttributeTree
@@ -39,7 +39,7 @@ func NewMulticastGroup(p *Predicate, addr string) *MulticastGroup {
 	mg := &MulticastGroup{
 		selfAddr:       addr,
 		predicate:      p,
-		subByPlace:     make(map[string]map[string]*SubRegionData),
+		subByPlace:     make(map[string]*RegionData),
 		trackHelp:      make(map[string]*HelperTracker),
 		attrTrees:      make(map[string]*RangeAttributeTree),
 		lock:           &sync.RWMutex{},
@@ -56,11 +56,10 @@ func NewMulticastGroup(p *Predicate, addr string) *MulticastGroup {
 }
 
 type SubData struct {
-	pred      *Predicate
-	addr      string
-	capacity  int
-	region    string
-	subRegion string
+	pred     *Predicate
+	addr     string
+	capacity int
+	region   string
 }
 
 type ByCapacity []*SubData
@@ -69,7 +68,7 @@ func (a ByCapacity) Len() int           { return len(a) }
 func (a ByCapacity) Less(i, j int) bool { return a[i].capacity > a[j].capacity }
 func (a ByCapacity) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 
-type SubRegionData struct {
+type RegionData struct {
 	subs     []*SubData
 	unhelped int
 	helpers  []*SubData
@@ -88,26 +87,21 @@ type HelperTracker struct {
 // to a node that is already helping him and still can receive more. To utilize helpers properly the
 // subs are oredered in geografical regions to minimize latency between helper nodes and its delegated
 // nodes by only delegating to the helper nodes that are geo-close to him and so minimizing redundant hops
-func (mg *MulticastGroup) AddSubToGroup(addr string, cap int, region string, subRegion string, pred *Predicate) error {
+func (mg *MulticastGroup) AddSubToGroup(addr string, cap int, region string, pred *Predicate) error {
 
 	newSub := &SubData{
-		pred:      pred,
-		addr:      addr,
-		capacity:  cap,
-		region:    region,
-		subRegion: subRegion,
+		pred:     pred,
+		addr:     addr,
+		capacity: cap,
+		region:   region,
 	}
 
 	if _, ok := mg.subByPlace[region]; !ok {
-		subReg := &SubRegionData{unhelped: 0, lock: &sync.RWMutex{}}
-		mg.subByPlace[region] = map[string]*SubRegionData{}
-		mg.subByPlace[region][subRegion] = subReg
-	} else if _, ok := mg.subByPlace[region][subRegion]; !ok {
-		subReg := &SubRegionData{unhelped: 0, lock: &sync.RWMutex{}}
-		mg.subByPlace[region][subRegion] = subReg
+		subReg := &RegionData{unhelped: 0, lock: &sync.RWMutex{}}
+		mg.subByPlace[region] = subReg
 	}
 
-	subReg := mg.subByPlace[region][subRegion]
+	subReg := mg.subByPlace[region]
 	subReg.lock.Lock()
 	defer subReg.lock.Unlock()
 
@@ -177,24 +171,24 @@ func (mg *MulticastGroup) AddSubToGroup(addr string, cap int, region string, sub
 // him to also remove that sub
 func (mg *MulticastGroup) RemoveSubFromGroup(sub *pb.PremiumSubscription) error {
 
-	mg.subByPlace[sub.Region][sub.SubRegion].lock.Lock()
-	defer mg.subByPlace[sub.Region][sub.SubRegion].lock.Unlock()
+	mg.subByPlace[sub.Region].lock.Lock()
+	defer mg.subByPlace[sub.Region].lock.Unlock()
 
-	for i, s := range mg.subByPlace[sub.Region][sub.SubRegion].subs {
+	for i, s := range mg.subByPlace[sub.Region].subs {
 		if s.addr == sub.Addr {
 			toRemove := s
-			if i == 0 && len(mg.subByPlace[sub.Region][sub.SubRegion].subs) == 1 {
-				mg.subByPlace[sub.Region][sub.SubRegion].subs = nil
+			if i == 0 && len(mg.subByPlace[sub.Region].subs) == 1 {
+				mg.subByPlace[sub.Region].subs = nil
 			} else if i == 0 {
-				mg.subByPlace[sub.Region][sub.SubRegion].subs = mg.subByPlace[sub.Region][sub.SubRegion].subs[1:]
-			} else if i+1 == len(mg.subByPlace[sub.Region][sub.SubRegion].subs) {
-				mg.subByPlace[sub.Region][sub.SubRegion].subs = mg.subByPlace[sub.Region][sub.SubRegion].subs[:i]
+				mg.subByPlace[sub.Region].subs = mg.subByPlace[sub.Region].subs[1:]
+			} else if i+1 == len(mg.subByPlace[sub.Region].subs) {
+				mg.subByPlace[sub.Region].subs = mg.subByPlace[sub.Region].subs[:i]
 			} else {
-				mg.subByPlace[sub.Region][sub.SubRegion].subs = append(mg.subByPlace[sub.Region][sub.SubRegion].subs[:i],
-					mg.subByPlace[sub.Region][sub.SubRegion].subs[i+1:]...)
+				mg.subByPlace[sub.Region].subs = append(mg.subByPlace[sub.Region].subs[:i],
+					mg.subByPlace[sub.Region].subs[i+1:]...)
 			}
 
-			mg.subByPlace[sub.Region][sub.SubRegion].unhelped--
+			mg.subByPlace[sub.Region].unhelped--
 			if len(mg.attrTrees) == 0 {
 				mg.RemoveSubFromList(toRemove)
 			} else {
@@ -210,11 +204,11 @@ func (mg *MulticastGroup) RemoveSubFromGroup(sub *pb.PremiumSubscription) error 
 			helperFailedSubs := helper.subsDelegated
 			mg.StopDelegating(helper, false)
 
-			mg.subByPlace[sub.Region][sub.SubRegion].lock.Unlock()
+			mg.subByPlace[sub.Region].lock.Unlock()
 			for _, sub := range helperFailedSubs {
-				mg.AddSubToGroup(sub.addr, sub.capacity, sub.region, sub.subRegion, sub.pred)
+				mg.AddSubToGroup(sub.addr, sub.capacity, sub.region, sub.pred)
 			}
-			mg.subByPlace[sub.Region][sub.SubRegion].lock.Lock()
+			mg.subByPlace[sub.Region].lock.Lock()
 
 			return nil
 		}
@@ -223,7 +217,7 @@ func (mg *MulticastGroup) RemoveSubFromGroup(sub *pb.PremiumSubscription) error 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()
 
-	for _, helper := range mg.subByPlace[sub.Region][sub.SubRegion].helpers {
+	for _, helper := range mg.subByPlace[sub.Region].helpers {
 		for i, s := range mg.trackHelp[helper.addr].subsDelegated {
 			if s.addr == sub.Addr {
 				conn, err := grpc.Dial(helper.addr, grpc.WithInsecure())
@@ -244,7 +238,7 @@ func (mg *MulticastGroup) RemoveSubFromGroup(sub *pb.PremiumSubscription) error 
 					mg.trackHelp[helper.addr].subsDelegated = nil
 				} else if i == 0 {
 					mg.trackHelp[helper.addr].subsDelegated = mg.trackHelp[helper.addr].subsDelegated[1:]
-				} else if i+1 == len(mg.subByPlace[sub.Region][sub.SubRegion].subs) {
+				} else if i+1 == len(mg.subByPlace[sub.Region].subs) {
 					mg.trackHelp[helper.addr].subsDelegated = mg.trackHelp[helper.addr].subsDelegated[:i]
 				} else {
 					mg.trackHelp[helper.addr].subsDelegated = append(mg.trackHelp[helper.addr].subsDelegated[:i],
@@ -423,17 +417,17 @@ func (mg *MulticastGroup) AddrsToPublishEvent(p *Predicate) []*SubData {
 // StopDelegating erases data-structure of a unsubscribed/failed helper
 func (mg *MulticastGroup) StopDelegating(tracker *HelperTracker, add bool) {
 
-	for i := 0; i < len(mg.subByPlace[tracker.helper.region][tracker.helper.subRegion].helpers); i++ {
-		if mg.subByPlace[tracker.helper.region][tracker.helper.subRegion].helpers[i].addr == tracker.helper.addr {
-			if i == 0 && len(mg.subByPlace[tracker.helper.region][tracker.helper.subRegion].helpers) == 1 {
-				mg.subByPlace[tracker.helper.region][tracker.helper.subRegion].helpers = nil
+	for i := 0; i < len(mg.subByPlace[tracker.helper.region].helpers); i++ {
+		if mg.subByPlace[tracker.helper.region].helpers[i].addr == tracker.helper.addr {
+			if i == 0 && len(mg.subByPlace[tracker.helper.region].helpers) == 1 {
+				mg.subByPlace[tracker.helper.region].helpers = nil
 			} else if i == 0 {
-				mg.subByPlace[tracker.helper.region][tracker.helper.subRegion].helpers = mg.subByPlace[tracker.helper.region][tracker.helper.subRegion].helpers[1:]
-			} else if len(mg.subByPlace[tracker.helper.region][tracker.helper.subRegion].helpers) == i+1 {
-				mg.subByPlace[tracker.helper.region][tracker.helper.subRegion].helpers = mg.subByPlace[tracker.helper.region][tracker.helper.subRegion].helpers[:i]
+				mg.subByPlace[tracker.helper.region].helpers = mg.subByPlace[tracker.helper.region].helpers[1:]
+			} else if len(mg.subByPlace[tracker.helper.region].helpers) == i+1 {
+				mg.subByPlace[tracker.helper.region].helpers = mg.subByPlace[tracker.helper.region].helpers[:i]
 			} else {
-				mg.subByPlace[tracker.helper.region][tracker.helper.subRegion].helpers = append(mg.subByPlace[tracker.helper.region][tracker.helper.subRegion].helpers[:i],
-					mg.subByPlace[tracker.helper.region][tracker.helper.subRegion].helpers[i+1:]...)
+				mg.subByPlace[tracker.helper.region].helpers = append(mg.subByPlace[tracker.helper.region].helpers[:i],
+					mg.subByPlace[tracker.helper.region].helpers[i+1:]...)
 			}
 
 			break
