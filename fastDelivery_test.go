@@ -71,7 +71,7 @@ func TestFastDeliverySearchAndSub(t *testing.T) {
 
 	var pubsubs [5]*PubSub
 	for i, dht := range dhts {
-		pubsubs[i] = NewPubSub(dht, "EU", "PT")
+		pubsubs[i] = NewPubSub(dht, "PT")
 	}
 
 	pubsubs[2].CreateMulticastGroup("portugal T")
