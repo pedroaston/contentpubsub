@@ -75,7 +75,6 @@ type PubSub struct {
 	managedGroups         []*MulticastGroup
 	subbedGroups          []*SubGroupView
 	region                string
-	subRegion             string
 	premiumEvents         chan *pb.PremiumEvent
 	currentAdvertiseBoard []*pb.MulticastGroupID
 	nextAdvertiseBoard    []*pb.MulticastGroupID
@@ -88,7 +87,7 @@ type PubSub struct {
 
 // NewPubSub initializes the PubSub's data structure
 // sets up the server and starts processloop
-func NewPubSub(dht *kaddht.IpfsDHT, region string, subRegion string) *PubSub {
+func NewPubSub(dht *kaddht.IpfsDHT, region string) *PubSub {
 
 	filterTable := NewFilterTable(dht)
 	auxFilterTable := NewFilterTable(dht)
@@ -119,7 +118,6 @@ func NewPubSub(dht *kaddht.IpfsDHT, region string, subRegion string) *PubSub {
 		subTicker:           time.NewTicker(OpResendRate * time.Second),
 		tablesLock:          &sync.RWMutex{},
 		region:              region,
-		subRegion:           subRegion,
 		record:              NewHistoryRecord(),
 		session:             rand.Intn(9999),
 		eventSeq:            0,
@@ -1951,7 +1949,6 @@ func (ps *PubSub) MyPremiumSubscribe(info string, pubAddr string, pubPredicate s
 		PubPredicate: pubPredicate,
 		Addr:         ps.serverAddr,
 		Region:       ps.region,
-		SubRegion:    ps.subRegion,
 		Cap:          int32(cap),
 	}
 
@@ -1993,7 +1990,7 @@ func (ps *PubSub) PremiumSubscribe(ctx context.Context, sub *pb.PremiumSubscript
 
 	for _, mg := range ps.managedGroups {
 		if mg.predicate.Equal(pubP) {
-			mg.AddSubToGroup(sub.Addr, int(sub.Cap), sub.Region, sub.SubRegion, subP)
+			mg.AddSubToGroup(sub.Addr, int(sub.Cap), sub.Region, subP)
 		}
 	}
 
@@ -2026,7 +2023,6 @@ func (ps *PubSub) MyPremiumUnsubscribe(pubPred string, pubAddr string) error {
 
 			protoSub := &pb.PremiumSubscription{
 				Region:       ps.region,
-				SubRegion:    ps.subRegion,
 				Addr:         ps.serverAddr,
 				PubPredicate: pubPred,
 			}
@@ -2139,7 +2135,7 @@ func (ps *PubSub) MyPremiumPublish(grpPred string, event string, eventInfo strin
 
 	before := len(mGrp.helpers)
 	for _, sub := range helperFailedSubs {
-		mGrp.AddSubToGroup(sub.addr, sub.capacity, sub.region, sub.subRegion, sub.pred)
+		mGrp.AddSubToGroup(sub.addr, sub.capacity, sub.region, sub.pred)
 	}
 	aux := len(mGrp.helpers) - before
 
