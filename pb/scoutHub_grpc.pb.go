@@ -26,6 +26,7 @@ type ScoutHubClient interface {
 	BackupRefresh(ctx context.Context, opts ...grpc.CallOption) (ScoutHub_BackupRefreshClient, error)
 	LogToTracker(ctx context.Context, in *EventLog, opts ...grpc.CallOption) (*Ack, error)
 	AckToTracker(ctx context.Context, in *EventAck, opts ...grpc.CallOption) (*Ack, error)
+	TrackerRefresh(ctx context.Context, in *RecruitTrackerMessage, opts ...grpc.CallOption) (*Ack, error)
 	AckUp(ctx context.Context, in *EventAck, opts ...grpc.CallOption) (*Ack, error)
 	ResendEvent(ctx context.Context, opts ...grpc.CallOption) (ScoutHub_ResendEventClient, error)
 	AckOp(ctx context.Context, in *Ack, opts ...grpc.CallOption) (*Ack, error)
@@ -129,6 +130,15 @@ func (c *scoutHubClient) LogToTracker(ctx context.Context, in *EventLog, opts ..
 func (c *scoutHubClient) AckToTracker(ctx context.Context, in *EventAck, opts ...grpc.CallOption) (*Ack, error) {
 	out := new(Ack)
 	err := c.cc.Invoke(ctx, "/contentpubsub.pb.ScoutHub/AckToTracker", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *scoutHubClient) TrackerRefresh(ctx context.Context, in *RecruitTrackerMessage, opts ...grpc.CallOption) (*Ack, error) {
+	out := new(Ack)
+	err := c.cc.Invoke(ctx, "/contentpubsub.pb.ScoutHub/TrackerRefresh", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -262,6 +272,7 @@ type ScoutHubServer interface {
 	BackupRefresh(ScoutHub_BackupRefreshServer) error
 	LogToTracker(context.Context, *EventLog) (*Ack, error)
 	AckToTracker(context.Context, *EventAck) (*Ack, error)
+	TrackerRefresh(context.Context, *RecruitTrackerMessage) (*Ack, error)
 	AckUp(context.Context, *EventAck) (*Ack, error)
 	ResendEvent(ScoutHub_ResendEventServer) error
 	AckOp(context.Context, *Ack) (*Ack, error)
@@ -300,6 +311,9 @@ func (UnimplementedScoutHubServer) LogToTracker(context.Context, *EventLog) (*Ac
 }
 func (UnimplementedScoutHubServer) AckToTracker(context.Context, *EventAck) (*Ack, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AckToTracker not implemented")
+}
+func (UnimplementedScoutHubServer) TrackerRefresh(context.Context, *RecruitTrackerMessage) (*Ack, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method TrackerRefresh not implemented")
 }
 func (UnimplementedScoutHubServer) AckUp(context.Context, *EventAck) (*Ack, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AckUp not implemented")
@@ -474,6 +488,24 @@ func _ScoutHub_AckToTracker_Handler(srv interface{}, ctx context.Context, dec fu
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ScoutHubServer).AckToTracker(ctx, req.(*EventAck))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ScoutHub_TrackerRefresh_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RecruitTrackerMessage)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ScoutHubServer).TrackerRefresh(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/contentpubsub.pb.ScoutHub/TrackerRefresh",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ScoutHubServer).TrackerRefresh(ctx, req.(*RecruitTrackerMessage))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -696,6 +728,10 @@ var ScoutHub_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "AckToTracker",
 			Handler:    _ScoutHub_AckToTracker_Handler,
+		},
+		{
+			MethodName: "TrackerRefresh",
+			Handler:    _ScoutHub_TrackerRefresh_Handler,
 		},
 		{
 			MethodName: "AckUp",
