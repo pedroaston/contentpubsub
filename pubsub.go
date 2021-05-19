@@ -744,9 +744,29 @@ func (ps *PubSub) LogToTracker(ctx context.Context, log *pb.EventLog) (*pb.Ack, 
 	if ps.myTrackers[log.RecruitMessage.RvID] != nil {
 		ps.myTrackers[log.RecruitMessage.RvID].leader = log.RecruitMessage.Leader
 		ps.myTrackers[log.RecruitMessage.RvID].rvAddr = log.RecruitMessage.RvAddr
-	}
+	} else {
+		ps.myTrackers[log.RecruitMessage.RvID] = NewTracker(log.RecruitMessage.Leader, log.RecruitMessage.RvID, log.RecruitMessage.RvAddr)
 
-	ps.myTrackers[log.RecruitMessage.RvID] = NewTracker(log.RecruitMessage.Leader, log.RecruitMessage.RvID, log.RecruitMessage.RvAddr)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		for _, addr := range ps.alternativesToRv(log.RvID) {
+			conn, err := grpc.Dial(addr, grpc.WithInsecure())
+			if err != nil {
+				return &pb.Ack{State: false, Info: ""}, err
+			}
+			defer conn.Close()
+
+			log.RecruitMessage.RvAddr = ps.serverAddr
+
+			client := pb.NewScoutHubClient(conn)
+			resp, err := client.TrackerRefresh(ctx, log.RecruitMessage)
+			if err == nil && resp.State {
+				break
+			}
+		}
+
+	}
 
 	eID := fmt.Sprintf("%s%d%d", log.EventID.PublisherID, log.EventID.SessionNumber, log.EventID.SeqID)
 	ps.myTrackers[log.RvID].newEventToCheck(NewEventLedger(eID, log.Log, "", log.Event))
@@ -762,12 +782,65 @@ func (ps *PubSub) AckToTracker(ctx context.Context, ack *pb.EventAck) (*pb.Ack, 
 	if ps.myTrackers[ack.RecruitMessage.RvID] != nil {
 		ps.myTrackers[ack.RecruitMessage.RvID].leader = ack.RecruitMessage.Leader
 		ps.myTrackers[ack.RecruitMessage.RvID].rvAddr = ack.RecruitMessage.RvAddr
-	}
+	} else {
+		ps.myTrackers[ack.RecruitMessage.RvID] = NewTracker(ack.RecruitMessage.Leader, ack.RecruitMessage.RvID, ack.RecruitMessage.RvAddr)
 
-	ps.myTrackers[ack.RecruitMessage.RvID] = NewTracker(ack.RecruitMessage.Leader, ack.RecruitMessage.RvID, ack.RecruitMessage.RvAddr)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		for _, addr := range ps.alternativesToRv(ack.RecruitMessage.RvID) {
+			conn, err := grpc.Dial(addr, grpc.WithInsecure())
+			if err != nil {
+				return &pb.Ack{State: false, Info: ""}, err
+			}
+			defer conn.Close()
+
+			ack.RecruitMessage.RvAddr = ps.serverAddr
+
+			client := pb.NewScoutHubClient(conn)
+			resp, err := client.TrackerRefresh(ctx, ack.RecruitMessage)
+			if err == nil && resp.State {
+				break
+			}
+		}
+
+	}
 
 	if ps.myTrackers[ack.RvID] != nil {
 		ps.myTrackers[ack.RvID].addEventAck <- ack
+	}
+
+	return &pb.Ack{State: true, Info: ""}, nil
+}
+
+// TrackerRefresh
+func (ps *PubSub) TrackerRefresh(ctx context.Context, req *pb.RecruitTrackerMessage) (*pb.Ack, error) {
+	fmt.Println("TrackerRefresh: " + ps.serverAddr)
+
+	if ps.myTrackers[req.RvID] != nil && len(ps.myTrackers[req.RvID].eventStats) > 1 {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		conn, err := grpc.Dial(req.RvAddr, grpc.WithInsecure())
+		if err != nil {
+			log.Fatalf("fail to dial: %v", err)
+		}
+		defer conn.Close()
+
+		for _, l := range ps.myTrackers[req.RvID].eventStats {
+			eL := &pb.EventLog{
+				RecruitMessage: req,
+				RvID:           l.event.RvId,
+				EventID:        l.event.EventID,
+				Event:          l.event,
+				Log:            l.eventLog,
+			}
+
+			client := pb.NewScoutHubClient(conn)
+			client.LogToTracker(ctx, eL)
+		}
+	} else {
+		return &pb.Ack{State: false, Info: "no tracker"}, nil
 	}
 
 	return &pb.Ack{State: true, Info: ""}, nil
