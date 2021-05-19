@@ -12,7 +12,6 @@ service ScoutHub {
     rpc Notify(Event) returns (Ack) {}
     rpc UpdateBackup(Update) returns (Ack) {}
     rpc BackupRefresh(stream Update) returns (Ack) {}
-    rpc RecruitHasTracker(RecruitTrackerMessage) returns (Ack) {}
     rpc LogToTracker(EventLog) returns (Ack) {}
     rpc AckToTracker(EventAck) returns (Ack) {}
     rpc AckUp(EventAck) returns (Ack) {}
@@ -78,6 +77,7 @@ message RecruitTrackerMessage {
 }
 
 message EventLog {
+    RecruitTrackerMessage recruitMessage = 5;
     string rvID = 1;
     EventID eventID = 2;
     Event event = 3; 
@@ -85,6 +85,7 @@ message EventLog {
 }
 
 message EventAck {
+    RecruitTrackerMessage recruitMessage = 4;
     string rvID = 1;
     EventID eventID = 2;
     string peerID = 3;

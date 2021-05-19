@@ -621,92 +621,62 @@ func (ps *PubSub) sendLogToTracker(attr string, eID *pb.EventID, eLog map[string
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	ps.checkAndRecruitTracker(ctx, attr)
-
-	for i := 0; i < len(ps.myRvTrackers[attr]); i++ {
-		conn, err := grpc.Dial(ps.myRvTrackers[attr][i], grpc.WithInsecure())
+	needLeader := true
+	for _, addr := range ps.alternativesToRv(attr) {
+		conn, err := grpc.Dial(addr, grpc.WithInsecure())
 		if err != nil {
 			log.Fatalf("fail to dial: %v", err)
 		}
 		defer conn.Close()
 
+		rm := &pb.RecruitTrackerMessage{
+			Leader: needLeader,
+			RvID:   attr,
+			RvAddr: ps.serverAddr,
+		}
+
 		eL := &pb.EventLog{
-			RvID:    attr,
-			EventID: eID,
-			Event:   e,
-			Log:     eLog,
+			RecruitMessage: rm,
+			RvID:           attr,
+			EventID:        eID,
+			Event:          e,
+			Log:            eLog,
 		}
 
 		client := pb.NewScoutHubClient(conn)
 		resp, err := client.LogToTracker(ctx, eL)
-		if err != nil || !resp.State {
-			if i == 0 && len(ps.myRvTrackers[attr]) == 1 {
-				ps.myRvTrackers[attr] = nil
-			} else if i == 0 {
-				ps.myRvTrackers[attr] = ps.myRvTrackers[attr][i:]
-				i--
-			} else if len(ps.myRvTrackers[attr]) == i+1 {
-				ps.myRvTrackers[attr] = ps.myRvTrackers[attr][:i]
-			} else {
-				ps.myRvTrackers[attr] = append(ps.myRvTrackers[attr][:i], ps.myRvTrackers[attr][i+1:]...)
-				i--
-			}
+		if err == nil && resp.State {
+			needLeader = false
 		}
 	}
 }
 
-// sendAckToTracker sends an acknowledge from event delerery at the Rv to the tracker
+// sendAckToTracker sends an acknowledge from event delivery at the Rv to the tracker
 func (ps *PubSub) sendAckToTrackers(ack *pb.EventAck) {
+
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	ps.checkAndRecruitTracker(ctx, ack.RvID)
-
-	for i := 0; i < len(ps.myRvTrackers[ack.RvID]); i++ {
-		conn, err := grpc.Dial(ps.myRvTrackers[ack.RvID][i], grpc.WithInsecure())
+	needLeader := true
+	for _, addr := range ps.alternativesToRv(ack.RvID) {
+		conn, err := grpc.Dial(addr, grpc.WithInsecure())
 		if err != nil {
 			log.Fatalf("fail to dial: %v", err)
 		}
 		defer conn.Close()
 
+		rm := &pb.RecruitTrackerMessage{
+			Leader: needLeader,
+			RvID:   ack.RvID,
+			RvAddr: ps.serverAddr,
+		}
+
+		ack.RecruitMessage = rm
+
 		client := pb.NewScoutHubClient(conn)
 		resp, err := client.AckToTracker(ctx, ack)
-		if err != nil || !resp.State {
-			if i == 0 && len(ps.myRvTrackers[ack.RvID]) == 1 {
-				ps.myRvTrackers[ack.RvID] = nil
-			} else if i == 0 {
-				ps.myRvTrackers[ack.RvID] = ps.myRvTrackers[ack.RvID][1:]
-				i--
-			} else if len(ps.myRvTrackers[ack.RvID]) == i+1 {
-				ps.myRvTrackers[ack.RvID] = ps.myRvTrackers[ack.RvID][:i]
-			} else {
-				ps.myRvTrackers[ack.RvID] = append(ps.myRvTrackers[ack.RvID][:i], ps.myRvTrackers[ack.RvID][i+1:]...)
-				i--
-			}
-		}
-	}
-}
-
-// checkAndRecruitTracker
-func (ps *PubSub) checkAndRecruitTracker(ctx context.Context, attr string) {
-
-	if ps.myRvTrackers[attr] == nil || len(ps.myRvTrackers[attr]) < FaultToleranceFactor {
-		needLeader := true
-		for _, addr := range ps.alternativesToRv(attr) {
-			conn, err := grpc.Dial(addr, grpc.WithInsecure())
-			if err != nil {
-				log.Fatalf("fail to dial: %v", err)
-			}
-			defer conn.Close()
-
-			client := pb.NewScoutHubClient(conn)
-			ack, err := client.RecruitHasTracker(ctx, &pb.RecruitTrackerMessage{Leader: needLeader, RvID: attr, RvAddr: ps.serverAddr})
-			if err == nil && ack.Info == "Already Tracking" {
-				needLeader = false
-			} else if err == nil && ack.State {
-				ps.myRvTrackers[attr] = append(ps.myRvTrackers[attr], addr)
-				needLeader = false
-			}
+		if err == nil && resp.State {
+			needLeader = false
 		}
 	}
 }
@@ -766,30 +736,17 @@ func (ps *PubSub) AckOp(ctx context.Context, ack *pb.Ack) (*pb.Ack, error) {
 	return &pb.Ack{State: true, Info: ""}, nil
 }
 
-// RecruitHasTracker
-func (ps *PubSub) RecruitHasTracker(ctx context.Context, rm *pb.RecruitTrackerMessage) (*pb.Ack, error) {
-	fmt.Println("RecruitHasTracker >> " + ps.serverAddr)
-
-	if ps.myTrackers[rm.RvID] != nil {
-		ps.myTrackers[rm.RvID].leader = rm.Leader
-
-		if ps.myTrackers[rm.RvID].rvAddr == rm.RvAddr {
-			return &pb.Ack{State: true, Info: "Already Tracking"}, nil
-		}
-
-		ps.myTrackers[rm.RvID].rvAddr = rm.RvAddr
-		return &pb.Ack{State: true, Info: ""}, nil
-	}
-
-	ps.myTrackers[rm.RvID] = NewTracker(rm.Leader, rm.RvID, rm.RvAddr)
-
-	return &pb.Ack{State: true, Info: ""}, nil
-}
-
 // LogToTracker is the remote call a tracker receives from the
 // Rv node with a event log for him to start tracking
 func (ps *PubSub) LogToTracker(ctx context.Context, log *pb.EventLog) (*pb.Ack, error) {
 	fmt.Println("LogTracker: " + ps.serverAddr)
+
+	if ps.myTrackers[log.RecruitMessage.RvID] != nil {
+		ps.myTrackers[log.RecruitMessage.RvID].leader = log.RecruitMessage.Leader
+		ps.myTrackers[log.RecruitMessage.RvID].rvAddr = log.RecruitMessage.RvAddr
+	}
+
+	ps.myTrackers[log.RecruitMessage.RvID] = NewTracker(log.RecruitMessage.Leader, log.RecruitMessage.RvID, log.RecruitMessage.RvAddr)
 
 	eID := fmt.Sprintf("%s%d%d", log.EventID.PublisherID, log.EventID.SessionNumber, log.EventID.SeqID)
 	ps.myTrackers[log.RvID].newEventToCheck(NewEventLedger(eID, log.Log, "", log.Event))
@@ -801,6 +758,13 @@ func (ps *PubSub) LogToTracker(ctx context.Context, log *pb.EventLog) (*pb.Ack, 
 // received event acknowledges to the tracker
 func (ps *PubSub) AckToTracker(ctx context.Context, ack *pb.EventAck) (*pb.Ack, error) {
 	fmt.Println("AckToTracker: " + ps.serverAddr)
+
+	if ps.myTrackers[ack.RecruitMessage.RvID] != nil {
+		ps.myTrackers[ack.RecruitMessage.RvID].leader = ack.RecruitMessage.Leader
+		ps.myTrackers[ack.RecruitMessage.RvID].rvAddr = ack.RecruitMessage.RvAddr
+	}
+
+	ps.myTrackers[ack.RecruitMessage.RvID] = NewTracker(ack.RecruitMessage.Leader, ack.RecruitMessage.RvID, ack.RecruitMessage.RvAddr)
 
 	if ps.myTrackers[ack.RvID] != nil {
 		ps.myTrackers[ack.RvID].addEventAck <- ack
