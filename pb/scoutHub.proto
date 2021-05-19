@@ -12,7 +12,6 @@ service ScoutHub {
     rpc Notify(Event) returns (Ack) {}
     rpc UpdateBackup(Update) returns (Ack) {}
     rpc BackupRefresh(stream Update) returns (Ack) {}
-    rpc RecruitHasTracker(RecruitTrackerMessage) returns (Ack) {}
     rpc LogToTracker(EventLog) returns (Ack) {}
     rpc AckToTracker(EventAck) returns (Ack) {}
     rpc AckUp(EventAck) returns (Ack) {}
@@ -83,12 +82,14 @@ message EventLog {
     EventID eventID = 2;
     Event event = 3; 
     map <string, bool> log = 4;
+    RecruitTrackerMessage recruitMessage = 5;
 }
 
 message EventAck {
     string rvID = 1;
     EventID eventID = 2;
     string peerID = 3;
+    RecruitTrackerMessage recruitMessage = 4;
 }
 
 // +++++++++++++++++++ FastDelivery message types +++++++++++++++++++
