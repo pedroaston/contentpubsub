@@ -283,7 +283,7 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 // still needs to be forward towards the rendevous
 func (ps *PubSub) forwardSub(dialAddr string, sub *pb.Subscription) {
 
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	conn, err := grpc.Dial(dialAddr, grpc.WithInsecure())
@@ -479,7 +479,7 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 // towards a rendezvous by calling another publish operation towards it
 func (ps *PubSub) forwardEventUp(dialAddr string, event *pb.Event) {
 
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	conn, err := grpc.Dial(dialAddr, grpc.WithInsecure())
@@ -571,7 +571,7 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 // until it finds all subscribers by calling a notify operation towards them
 func (ps *PubSub) forwardEventDown(dialAddr string, event *pb.Event, originalRoute string) {
 
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	if dialAddr == ps.serverAddr {
@@ -634,7 +634,7 @@ func (ps *PubSub) UpdateBackup(ctx context.Context, update *pb.Update) (*pb.Ack,
 // to update their versions of his filter table
 func (ps *PubSub) updateMyBackups(route string, info string) error {
 
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	defer cancel()
 
 	for _, addrB := range ps.myBackups {
@@ -820,7 +820,7 @@ func (ps *PubSub) filtersForBackupRefresh() ([]*pb.Update, error) {
 // refreshOneBackup refreshes one of the nodes backup
 func (ps *PubSub) refreshOneBackup(backup string, updates []*pb.Update) error {
 
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	conn, err := grpc.Dial(backup, grpc.WithInsecure())
