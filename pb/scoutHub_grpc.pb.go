@@ -24,7 +24,6 @@ type ScoutHubClient interface {
 	Notify(ctx context.Context, in *Event, opts ...grpc.CallOption) (*Ack, error)
 	UpdateBackup(ctx context.Context, in *Update, opts ...grpc.CallOption) (*Ack, error)
 	BackupRefresh(ctx context.Context, opts ...grpc.CallOption) (ScoutHub_BackupRefreshClient, error)
-	RecruitHasTracker(ctx context.Context, in *RecruitTrackerMessage, opts ...grpc.CallOption) (*Ack, error)
 	LogToTracker(ctx context.Context, in *EventLog, opts ...grpc.CallOption) (*Ack, error)
 	AckToTracker(ctx context.Context, in *EventAck, opts ...grpc.CallOption) (*Ack, error)
 	AckUp(ctx context.Context, in *EventAck, opts ...grpc.CallOption) (*Ack, error)
@@ -116,15 +115,6 @@ func (x *scoutHubBackupRefreshClient) CloseAndRecv() (*Ack, error) {
 		return nil, err
 	}
 	return m, nil
-}
-
-func (c *scoutHubClient) RecruitHasTracker(ctx context.Context, in *RecruitTrackerMessage, opts ...grpc.CallOption) (*Ack, error) {
-	out := new(Ack)
-	err := c.cc.Invoke(ctx, "/contentpubsub.pb.ScoutHub/RecruitHasTracker", in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
 }
 
 func (c *scoutHubClient) LogToTracker(ctx context.Context, in *EventLog, opts ...grpc.CallOption) (*Ack, error) {
@@ -270,7 +260,6 @@ type ScoutHubServer interface {
 	Notify(context.Context, *Event) (*Ack, error)
 	UpdateBackup(context.Context, *Update) (*Ack, error)
 	BackupRefresh(ScoutHub_BackupRefreshServer) error
-	RecruitHasTracker(context.Context, *RecruitTrackerMessage) (*Ack, error)
 	LogToTracker(context.Context, *EventLog) (*Ack, error)
 	AckToTracker(context.Context, *EventAck) (*Ack, error)
 	AckUp(context.Context, *EventAck) (*Ack, error)
@@ -305,9 +294,6 @@ func (UnimplementedScoutHubServer) UpdateBackup(context.Context, *Update) (*Ack,
 }
 func (UnimplementedScoutHubServer) BackupRefresh(ScoutHub_BackupRefreshServer) error {
 	return status.Errorf(codes.Unimplemented, "method BackupRefresh not implemented")
-}
-func (UnimplementedScoutHubServer) RecruitHasTracker(context.Context, *RecruitTrackerMessage) (*Ack, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method RecruitHasTracker not implemented")
 }
 func (UnimplementedScoutHubServer) LogToTracker(context.Context, *EventLog) (*Ack, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method LogToTracker not implemented")
@@ -454,24 +440,6 @@ func (x *scoutHubBackupRefreshServer) Recv() (*Update, error) {
 		return nil, err
 	}
 	return m, nil
-}
-
-func _ScoutHub_RecruitHasTracker_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(RecruitTrackerMessage)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ScoutHubServer).RecruitHasTracker(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: "/contentpubsub.pb.ScoutHub/RecruitHasTracker",
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ScoutHubServer).RecruitHasTracker(ctx, req.(*RecruitTrackerMessage))
-	}
-	return interceptor(ctx, in, info, handler)
 }
 
 func _ScoutHub_LogToTracker_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -720,10 +688,6 @@ var ScoutHub_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpdateBackup",
 			Handler:    _ScoutHub_UpdateBackup_Handler,
-		},
-		{
-			MethodName: "RecruitHasTracker",
-			Handler:    _ScoutHub_RecruitHasTracker_Handler,
 		},
 		{
 			MethodName: "LogToTracker",
