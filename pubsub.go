@@ -1665,7 +1665,7 @@ func (ps *PubSub) myAdvertiseGroup(pred *Predicate) error {
 
 				client := pb.NewScoutHubClient(conn)
 				ack, err := client.AdvertiseGroup(ctx, advReq)
-				if ack.State && err == nil {
+				if err == nil && ack.State {
 					break
 				}
 			}
