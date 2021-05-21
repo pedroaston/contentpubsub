@@ -309,7 +309,7 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 
 	fmt.Println(sub.PeerID)
 	if ps.currentFilterTable.routes[sub.PeerID] == nil {
-		fmt.Println("Bollocks")
+		fmt.Printf("Bollocks >> %d\n", len(ps.currentFilterTable.routes))
 	}
 
 	ps.currentFilterTable.routes[sub.PeerID].backups = aux
