@@ -307,20 +307,6 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 	ps.currentFilterTable.addToRouteTracker(sub.RvId, sub.PeerID)
 	ps.nextFilterTable.addToRouteTracker(sub.RvId, sub.PeerID)
 
-	if ps.currentFilterTable.routes[sub.PeerID] == nil {
-		auxBull, err := peer.Decode(sub.PeerID)
-		if err != nil {
-			return nil, err
-		}
-
-		fmt.Printf("Bollocks >> %d\n", len(ps.currentFilterTable.routes))
-
-		bumm := ps.ipfsDHT.FindLocal(auxBull).Addrs
-		if bumm == nil {
-			fmt.Println("Big Bollocks")
-		}
-	}
-
 	ps.currentFilterTable.routes[sub.PeerID].backups = aux
 	ps.nextFilterTable.routes[sub.PeerID].backups = aux
 	ps.currentFilterTable.routes[sub.PeerID].SimpleAddSummarizedFilter(p)
