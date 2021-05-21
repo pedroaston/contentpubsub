@@ -30,7 +30,7 @@ import (
 // SubRefreshRateMin >> frequency in which a subscriber needs to resub in minutes
 const (
 	OpResendRate               = 10
-	FaultToleranceFactor       = 3
+	FaultToleranceFactor       = 2
 	ConcurrentProcessingFactor = 3
 	MaxAttributesPerPredicate  = 5
 	SubRefreshRateMin          = 15
@@ -1536,11 +1536,11 @@ func (ps *PubSub) processLoop() {
 	for {
 		select {
 		case pid := <-ps.subsToForward:
-			ps.forwardSub(pid.dialAddr, pid.sub)
+			go ps.forwardSub(pid.dialAddr, pid.sub)
 		case pid := <-ps.eventsToForwardUp:
-			ps.forwardEventUp(pid.dialAddr, pid.event)
+			go ps.forwardEventUp(pid.dialAddr, pid.event)
 		case pid := <-ps.eventsToForwardDown:
-			ps.forwardEventDown(pid.dialAddr, pid.event, pid.originalRoute, pid.redirectOption)
+			go ps.forwardEventDown(pid.dialAddr, pid.event, pid.originalRoute, pid.redirectOption)
 		case pid := <-ps.interestingEvents:
 			ps.record.SaveReceivedEvent(pid)
 			fmt.Printf("Received Event at: %s\n", ps.serverAddr)
@@ -1550,9 +1550,9 @@ func (ps *PubSub) processLoop() {
 			fmt.Printf("Received Event at: %s\n", ps.serverAddr)
 			fmt.Println(">> " + pid.Event)
 		case pid := <-ps.ackToSendUp:
-			ps.sendAckUp(pid)
+			go ps.sendAckUp(pid)
 		case pid := <-ps.advToForward:
-			ps.forwardAdvertising(pid.dialAddr, pid.adv)
+			go ps.forwardAdvertising(pid.dialAddr, pid.adv)
 		case <-ps.eventTicker.C:
 			for _, e := range ps.unconfirmedEvents {
 				if e.aged {
@@ -1670,7 +1670,7 @@ func (ps *PubSub) myAdvertiseGroup(pred *Predicate) error {
 
 				client := pb.NewScoutHubClient(conn)
 				ack, err := client.AdvertiseGroup(ctx, advReq)
-				if ack.State && err == nil {
+				if err == nil && ack.State {
 					break
 				}
 			}
