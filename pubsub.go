@@ -1707,8 +1707,6 @@ func (ps *PubSub) forwardAdvertising(dialAddr string, adv *pb.AdvertRequest) {
 			}
 			defer conn.Close()
 
-			fmt.Println("BIMBA!")
-
 			client := pb.NewScoutHubClient(conn)
 			ack, err := client.AdvertiseGroup(ctx, adv)
 			if ack.State && err == nil {
