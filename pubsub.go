@@ -1615,9 +1615,6 @@ func (ps *PubSub) CreateMulticastGroup(pred string) error {
 func (ps *PubSub) myAdvertiseGroup(pred *Predicate) error {
 	fmt.Printf("myAdvertiseGroup: %s\n", ps.serverAddr)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
 	var dialAddr string
 	for _, attr := range pred.attributes {
 
@@ -1631,44 +1628,22 @@ func (ps *PubSub) myAdvertiseGroup(pred *Predicate) error {
 			RvId:    attr.name,
 		}
 
-		res, _ := ps.rendezvousSelfCheck(attr.name)
+		res, nextHop := ps.rendezvousSelfCheck(attr.name)
 		if res {
 			ps.addAdvertToBoards(advReq)
 			return nil
 		}
 
-		attrID := ps.ipfsDHT.RoutingTable().NearestPeer(kb.ID(attr.name))
-		attrAddr := ps.ipfsDHT.FindLocal(attrID).Addrs[0]
+		attrAddr := ps.ipfsDHT.FindLocal(nextHop).Addrs[0]
 		if attrAddr == nil {
 			return errors.New("no address for closest peer")
 		} else {
 			dialAddr = addrForPubSubServer(attrAddr)
 		}
 
-		conn, err := grpc.Dial(dialAddr, grpc.WithInsecure())
-		if err != nil {
-			log.Fatalf("fail to dial: %v", err)
-		}
-		defer conn.Close()
-
-		client := pb.NewScoutHubClient(conn)
-
-		ack, err := client.AdvertiseGroup(ctx, advReq)
-		if err != nil || !ack.State {
-			alternatives := ps.alternativesToRv(attr.name)
-			for _, addr := range alternatives {
-				conn, err := grpc.Dial(addr, grpc.WithInsecure())
-				if err != nil {
-					log.Fatalf("fail to dial: %v", err)
-				}
-				defer conn.Close()
-
-				client := pb.NewScoutHubClient(conn)
-				ack, err := client.AdvertiseGroup(ctx, advReq)
-				if err == nil && ack.State {
-					break
-				}
-			}
+		ps.advToForward <- &ForwardAdvert{
+			dialAddr: dialAddr,
+			adv:      advReq,
 		}
 	}
 
@@ -1682,14 +1657,13 @@ func (ps *PubSub) myAdvertiseGroup(pred *Predicate) error {
 func (ps *PubSub) AdvertiseGroup(ctx context.Context, adv *pb.AdvertRequest) (*pb.Ack, error) {
 	fmt.Printf("AdvertiseGroup: %s\n", ps.serverAddr)
 
-	res, _ := ps.rendezvousSelfCheck(adv.RvId)
+	res, nextHop := ps.rendezvousSelfCheck(adv.RvId)
 	if res {
 		ps.addAdvertToBoards(adv)
 		return &pb.Ack{State: true, Info: ""}, nil
 	}
 
-	attrID := ps.ipfsDHT.RoutingTable().NearestPeer(kb.ID(adv.RvId))
-	attrAddr := ps.ipfsDHT.FindLocal(attrID).Addrs[0]
+	attrAddr := ps.ipfsDHT.FindLocal(nextHop).Addrs[0]
 
 	var dialAddr string
 	if attrAddr == nil {
