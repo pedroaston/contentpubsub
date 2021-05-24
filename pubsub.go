@@ -28,7 +28,7 @@ import (
 // MaxAttributesPerSub >> maximum allowed number of attributes per predicate
 // SubRefreshRateMin >> frequency in which a subscriber needs to resub in minutes
 const (
-	FaultToleranceFactor       = 3
+	FaultToleranceFactor       = 2
 	ConcurrentProcessingFactor = 3
 	MaxAttributesPerPredicate  = 5
 	SubRefreshRateMin          = 15
@@ -1039,11 +1039,11 @@ func (ps *PubSub) processLoop() {
 	for {
 		select {
 		case pid := <-ps.subsToForward:
-			ps.forwardSub(pid.dialAddr, pid.sub)
+			go ps.forwardSub(pid.dialAddr, pid.sub)
 		case pid := <-ps.eventsToForwardUp:
-			ps.forwardEventUp(pid.dialAddr, pid.event)
+			go ps.forwardEventUp(pid.dialAddr, pid.event)
 		case pid := <-ps.eventsToForwardDown:
-			ps.forwardEventDown(pid.dialAddr, pid.event, pid.originalRoute, pid.redirectOption)
+			go ps.forwardEventDown(pid.dialAddr, pid.event, pid.originalRoute, pid.redirectOption)
 		case pid := <-ps.interestingEvents:
 			ps.record.SaveReceivedEvent(pid)
 			fmt.Printf("Received Event at: %s\n", ps.serverAddr)
@@ -1053,7 +1053,7 @@ func (ps *PubSub) processLoop() {
 			fmt.Printf("Received Event at: %s\n", ps.serverAddr)
 			fmt.Println(">> " + pid.Event)
 		case pid := <-ps.advToForward:
-			ps.forwardAdvertising(pid.dialAddr, pid.adv)
+			go ps.forwardAdvertising(pid.dialAddr, pid.adv)
 		case <-ps.heartbeatTicker.C:
 			for _, filters := range ps.myFilters.filters {
 				for _, filter := range filters {
