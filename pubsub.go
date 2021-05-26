@@ -2133,7 +2133,7 @@ func (ps *PubSub) ReturnReceivedEventsStats() (int, int, int, int) {
 }
 
 // ReturnSubsStats
-func (ps *PubSub) ReturnSubsStats() int {
+func (ps *PubSub) ReturnSubStats() int {
 
 	return ps.record.CompileAvgTimeToSub()
 }
