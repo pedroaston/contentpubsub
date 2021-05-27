@@ -891,11 +891,11 @@ func (ps *PubSub) gracefullyTerminate() {
 		ps.MyPremiumUnsubscribe(g.predicate.ToString(), g.pubAddr)
 	}
 
-	ps.terminateService()
+	ps.TerminateService()
 }
 
 // terminateService closes the PubSub service
-func (ps *PubSub) terminateService() {
+func (ps *PubSub) TerminateService() {
 	ps.terminate <- "end"
 	ps.server.Stop()
 	ps.ipfsDHT.Close()
