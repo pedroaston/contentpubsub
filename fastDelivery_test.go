@@ -286,7 +286,7 @@ func TestFastDeliveryWithHelperFailure(t *testing.T) {
 	pubsubs[0].MyPremiumPublish("portugal T", "Portugal is great!", "portugal T")
 	time.Sleep(time.Second)
 
-	pubsubs[3].terminateService()
+	pubsubs[3].TerminateService()
 	pubsubs[0].MyPremiumPublish("portugal T", "Portugal is really great!", "portugal T")
 	time.Sleep(time.Second)
 }

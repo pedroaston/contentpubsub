@@ -180,7 +180,7 @@ func TestSimpleFaultTolerance(t *testing.T) {
 	pubsubs[0].MySubscribe("portugal T")
 	time.Sleep(time.Second)
 
-	pubsubs[1].terminateService()
+	pubsubs[1].TerminateService()
 	time.Sleep(time.Second)
 
 	pubsubs[4].MyPublish("valmitão tem as melhores marolas do mundo!", "portugal T")
@@ -226,7 +226,7 @@ func TestBackupReplacement(t *testing.T) {
 
 	pubsubs[3].MySubscribe("benfica T")
 	time.Sleep(time.Second)
-	pubsubs[2].terminateService()
+	pubsubs[2].TerminateService()
 	time.Sleep(time.Second)
 	pubsubs[1].MySubscribe("benfica T")
 	time.Sleep(3 * time.Second)
@@ -273,7 +273,7 @@ func TestRefreshRoutine(t *testing.T) {
 	pubsubs[2].CreateMulticastGroup("portugal T")
 	pubsubs[1].MyUnsubscribe("portugal T")
 	pubsubs[3].MySubscribe("bali T")
-	pubsubs[2].terminateService()
+	pubsubs[2].TerminateService()
 
 	time.Sleep(5 * time.Second)
 
