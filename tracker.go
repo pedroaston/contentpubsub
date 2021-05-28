@@ -28,15 +28,16 @@ type Tracker struct {
 func NewTracker(leader bool, attr string, rvAddr string) *Tracker {
 
 	t := &Tracker{
-		leader:      leader,
-		fresh:       true,
-		attr:        attr,
-		rvAddr:      rvAddr,
-		timeOfBirth: time.Now().Format(time.StampMilli),
-		eventStats:  make(map[string]*EventLedger),
-		addEventAck: make(chan *pb.EventAck, 8),
-		addEventLog: make(chan *EventLedger, 8),
-		checkEvents: time.NewTicker(secondsToCheckEventDelivery * time.Second),
+		leader:       leader,
+		fresh:        true,
+		attr:         attr,
+		rvAddr:       rvAddr,
+		timeOfBirth:  time.Now().Format(time.StampMilli),
+		eventStats:   make(map[string]*EventLedger),
+		addEventAck:  make(chan *pb.EventAck, 8),
+		addEventLog:  make(chan *EventLedger, 8),
+		checkForAcks: make(chan string),
+		checkEvents:  time.NewTicker(secondsToCheckEventDelivery * time.Second),
 	}
 
 	go t.trackerLoop()
