@@ -326,7 +326,6 @@ func TestRedirectMechanismAndLatencyMetric(t *testing.T) {
 // TestReliableEventDelivery proves that the rv tracker leader
 // warns the rv node to retransmit a certain event to certain
 // pathways were the event still has been confirmed
-// TODO >> Composition
 // Test composition: 5 nodes
 // >> 1 Publisher that publishes a event
 // >> 3 Subscriber that subscribe to a event and artificially
@@ -371,4 +370,45 @@ func TestReliableEventDelivery(t *testing.T) {
 
 	time.Sleep(7 * time.Second)
 
+}
+
+// TestReliableEventDeliveryBetweenRvAndPub assures that no node
+// between the publisher and the Rv receives duplicated events
+// Test composition: 10 nodes
+// >> 1 Publisher that publishes a event
+// >> 3 Subscriber that subscribe to a event and artificially
+// don't ackUp for 6 seconds
+// Special conditions
+// >> secondsToCheckEventDelivery = 5
+func TestReliableEventDeliveryBetweenRvAndPub(t *testing.T) {
+	fmt.Printf("\n$$$ TestReliableEventDeliveryBetweenRvAndPub $$$\n")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	defer cancel()
+
+	dhts := setupDHTS(t, ctx, 10)
+	defer func() {
+		for _, dht := range dhts {
+			dht.Close()
+			defer dht.Host().Close()
+		}
+	}()
+
+	connect(t, ctx, dhts[0], dhts[5])
+	connect(t, ctx, dhts[1], dhts[2])
+	connect(t, ctx, dhts[1], dhts[5])
+	connect(t, ctx, dhts[3], dhts[2])
+
+	var pubsubs [10]*PubSub
+	for i, dht := range dhts {
+		pubsubs[i] = NewPubSub(dht, "PT")
+	}
+
+	pubsubs[0].MySubscribe("portugal T")
+	time.Sleep(100 * time.Millisecond)
+	pubsubs[3].MySubscribe("portugal T")
+	time.Sleep(100 * time.Millisecond)
+
+	pubsubs[5].MyPublish("Ronaldo Rocks!", "portugal T")
+	time.Sleep(1 * time.Second)
 }

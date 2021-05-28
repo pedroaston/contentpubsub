@@ -10,18 +10,18 @@ import (
 	"google.golang.org/grpc"
 )
 
-const secondsToCheckEventDelivery = 30
-
 type Tracker struct {
-	leader      bool
-	fresh       bool
-	attr        string
-	rvAddr      string
-	timeOfBirth string
-	eventStats  map[string]*EventLedger
-	addEventAck chan *pb.EventAck
-	addEventLog chan *EventLedger
-	checkEvents *time.Ticker
+	leader       bool
+	fresh        bool
+	attr         string
+	rvAddr       string
+	timeOfBirth  string
+	eventStats   map[string]*EventLedger
+	addEventAck  chan *pb.EventAck
+	addEventLog  chan *EventLedger
+	checkForAcks chan string
+	checkEvents  *time.Ticker
+	buffedAcks   []*pb.EventAck
 }
 
 // NewTracker initiates a new tracker struct
@@ -54,6 +54,8 @@ func (t *Tracker) trackerLoop() {
 			t.newEventToCheck(pid)
 		case pid := <-t.addEventAck:
 			t.addAckToLedger(pid)
+		case <-t.checkForAcks:
+			t.applyBuffedAcks()
 		case <-t.checkEvents.C:
 			if t.leader {
 				t.returnUnAckedEvents()
@@ -75,6 +77,7 @@ func (t *Tracker) addAckToLedger(ack *pb.EventAck) {
 
 	if _, ok := t.eventStats[eID]; !ok {
 		fmt.Println("Already acked")
+		t.buffedAcks = append(t.buffedAcks, ack)
 		return
 	} else if _, ok := t.eventStats[eID].eventLog[ack.PeerID]; !ok {
 		fmt.Println("Not possible to ack")
@@ -90,9 +93,23 @@ func (t *Tracker) addAckToLedger(ack *pb.EventAck) {
 
 }
 
+// applyBuffedAcks
+func (t *Tracker) applyBuffedAcks() {
+
+	for _, ack := range t.buffedAcks {
+		t.addAckToLedger(ack)
+	}
+
+	t.buffedAcks = nil
+}
+
 // returnUnAckedEvents returns which event pathways haven't confirmed event
 // delivery and warns the Rv of which are they and for which events
 func (t *Tracker) returnUnAckedEvents() {
+
+	if len(t.eventStats) == 0 {
+		return
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
