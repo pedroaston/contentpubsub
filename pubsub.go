@@ -52,9 +52,8 @@ type PubSub struct {
 	myBackupsFilters map[string]*FilterTable
 	mapBackupAddr    map[string]string
 
-	myTrackers   map[string]*Tracker
-	myRvTrackers map[string][]string
-	myETrackers  map[string]*EventLedger
+	myTrackers  map[string]*Tracker
+	myETrackers map[string]*EventLedger
 
 	interestingEvents   chan *pb.Event
 	subsToForward       chan *ForwardSubRequest
@@ -101,7 +100,6 @@ func NewPubSub(dht *kaddht.IpfsDHT, region string) *PubSub {
 		myBackupsFilters:    make(map[string]*FilterTable),
 		mapBackupAddr:       make(map[string]string),
 		myTrackers:          make(map[string]*Tracker),
-		myRvTrackers:        make(map[string][]string),
 		myETrackers:         make(map[string]*EventLedger),
 		unconfirmedEvents:   make(map[string]*PubEventState),
 		unconfirmedSubs:     make(map[string]*SubState),
