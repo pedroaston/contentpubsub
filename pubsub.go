@@ -387,13 +387,12 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 		}
 		ps.tablesLock.RUnlock()
 
-		res, _ := ps.rendezvousSelfCheck(attr.name)
+		res, nextRvHop := ps.rendezvousSelfCheck(attr.name)
 		if res {
 			continue
 		}
 
-		attrID := ps.ipfsDHT.RoutingTable().NearestPeer(kb.ID(attr.name))
-		attrAddr := ps.ipfsDHT.FindLocal(attrID).Addrs[0]
+		attrAddr := ps.ipfsDHT.FindLocal(nextRvHop).Addrs[0]
 		if attrAddr == nil {
 			return errors.New("no address for closest peer")
 		} else {
