@@ -29,11 +29,12 @@ import (
 // MaxAttributesPerSub >> maximum allowed number of attributes per predicate
 // SubRefreshRateMin >> frequency in which a subscriber needs to resub in minutes
 const (
-	OpResendRate               = 10
-	FaultToleranceFactor       = 2
-	ConcurrentProcessingFactor = 3
-	MaxAttributesPerPredicate  = 5
-	SubRefreshRateMin          = 15
+	OpResendRate                = 10
+	FaultToleranceFactor        = 2
+	ConcurrentProcessingFactor  = 3
+	MaxAttributesPerPredicate   = 5
+	SubRefreshRateMin           = 15
+	secondsToCheckEventDelivery = 30
 )
 
 type PubSub struct {
@@ -51,9 +52,8 @@ type PubSub struct {
 	myBackupsFilters map[string]*FilterTable
 	mapBackupAddr    map[string]string
 
-	myTrackers   map[string]*Tracker
-	myRvTrackers map[string][]string
-	myETrackers  map[string]*EventLedger
+	myTrackers  map[string]*Tracker
+	myETrackers map[string]*EventLedger
 
 	interestingEvents   chan *pb.Event
 	subsToForward       chan *ForwardSubRequest
@@ -100,7 +100,6 @@ func NewPubSub(dht *kaddht.IpfsDHT, region string) *PubSub {
 		myBackupsFilters:    make(map[string]*FilterTable),
 		mapBackupAddr:       make(map[string]string),
 		myTrackers:          make(map[string]*Tracker),
-		myRvTrackers:        make(map[string][]string),
 		myETrackers:         make(map[string]*EventLedger),
 		unconfirmedEvents:   make(map[string]*PubEventState),
 		unconfirmedSubs:     make(map[string]*SubState),
@@ -396,7 +395,7 @@ func (ps *PubSub) MyUnsubscribe(info string) error {
 // predicate of that event data. The publish operation is made towards all
 // attributes rendezvous in order find the way to all subscribers
 func (ps *PubSub) MyPublish(data string, info string) error {
-	fmt.Printf("myPublish: %s\n", ps.serverAddr)
+	fmt.Printf("MyPublish: %s\n", ps.serverAddr)
 
 	p, err := NewPredicate(info)
 	if err != nil {
@@ -424,7 +423,7 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 			PubAddr:   ps.serverAddr,
 		}
 
-		res, _ := ps.rendezvousSelfCheck(attr.name)
+		res, nextRvHop := ps.rendezvousSelfCheck(attr.name)
 		eLog := make(map[string]bool)
 
 		ps.tablesLock.RLock()
@@ -453,8 +452,7 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 		eID := fmt.Sprintf("%s%d%d%s", eventID.PublisherID, ps.session, ps.eventSeq, attr.name)
 
 		if !res {
-			attrID := ps.ipfsDHT.RoutingTable().NearestPeer(kb.ID(attr.name))
-			attrAddr := ps.ipfsDHT.FindLocal(attrID).Addrs[0]
+			attrAddr := ps.ipfsDHT.FindLocal(nextRvHop).Addrs[0]
 			if attrAddr == nil {
 				return errors.New("no address for closest peer")
 			} else {
@@ -771,6 +769,8 @@ func (ps *PubSub) LogToTracker(ctx context.Context, log *pb.EventLog) (*pb.Ack, 
 	eID := fmt.Sprintf("%s%d%d", log.EventID.PublisherID, log.EventID.SessionNumber, log.EventID.SeqID)
 	ps.myTrackers[log.RvID].newEventToCheck(NewEventLedger(eID, log.Log, "", log.Event))
 
+	ps.myTrackers[log.RvID].checkForAcks <- "do it"
+
 	return &pb.Ack{State: true, Info: ""}, nil
 }
 
@@ -810,6 +810,8 @@ func (ps *PubSub) AckToTracker(ctx context.Context, ack *pb.EventAck) (*pb.Ack, 
 		ps.myTrackers[ack.RvID].addEventAck <- ack
 	}
 
+	ps.myTrackers[ack.RvID].checkForAcks <- "do it"
+
 	return &pb.Ack{State: true, Info: ""}, nil
 }
 
@@ -817,7 +819,7 @@ func (ps *PubSub) AckToTracker(ctx context.Context, ack *pb.EventAck) (*pb.Ack, 
 func (ps *PubSub) TrackerRefresh(ctx context.Context, req *pb.RecruitTrackerMessage) (*pb.Ack, error) {
 	fmt.Println("TrackerRefresh: " + ps.serverAddr)
 
-	if ps.myTrackers[req.RvID] != nil && len(ps.myTrackers[req.RvID].eventStats) > 1 {
+	if ps.myTrackers[req.RvID] != nil && len(ps.myTrackers[req.RvID].eventStats) > 0 {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
