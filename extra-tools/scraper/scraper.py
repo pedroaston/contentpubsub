@@ -127,7 +127,7 @@ def getPriorScores(kPhraseList, webNews):
 ## Get structure to provide cosine similarity to keyphrases ##
 ##############################################################
 def getKPhrSimilarity(kPhraseList):
-	return gensim.models.Word2Vec(kPhraseList,min_count = 1,size = 100,window = 5)
+	return gensim.models.Word2Vec(kPhraseList,min_count = 1,vector_size = 100,window = 5)
 
 ########################
 # Get weight of edges ##
@@ -213,7 +213,7 @@ def getGraph(kPhraseList,edgeWeights,kPhrSimilarity):
 		for wordOrig in sentence:
 			for wordDest in sentence:
 				if wordOrig != wordDest:
-					G.add_weighted_edges_from([(wordOrig,wordDest,edgeWeights[wordOrig+" "+wordDest]+abs(kPhrSimilarity.similarity(wordOrig,wordDest)))]) 
+					G.add_weighted_edges_from([(wordOrig,wordDest,edgeWeights[wordOrig+" "+wordDest])]) 
 
 	return G
 
