@@ -146,3 +146,36 @@ func (r *HistoryRecord) CompileLatencyResults() (int, int, int, int) {
 
 	return scoutEvents, fastEvents, avgScoutLatency, avgFastLatency
 }
+
+// CompileCorrectnessResults
+func (r *HistoryRecord) CompileCorrectnessResults(expected []string) (int, int, int, int) {
+
+	notReceivedScout := 0
+	duplicatedScout := 0
+	notReceivedFast := 0
+	duplicatedFast := 0
+
+	for _, exp := range expected {
+		receivedScout := false
+		receivedFast := false
+		for _, e := range r.receivedEvents {
+			if e.protocol == "ScoutSubs" && e.eventData == exp && !receivedScout {
+				receivedScout = true
+			} else if e.protocol == "ScoutSubs" && e.eventData == exp {
+				duplicatedScout++
+			} else if e.protocol == "FastDelivery" && e.eventData == exp && !receivedFast {
+				receivedFast = true
+			} else if e.protocol == "FastDelivery" && e.eventData == exp {
+				duplicatedFast++
+			}
+		}
+
+		if !receivedScout {
+			notReceivedScout++
+		} else if !receivedFast {
+			notReceivedFast++
+		}
+	}
+
+	return notReceivedScout, duplicatedScout, notReceivedFast, duplicatedFast
+}

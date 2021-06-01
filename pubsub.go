@@ -2264,6 +2264,8 @@ func (ps *PubSub) DelegateSubToHelper(ctx context.Context, sub *pb.DelegateSub) 
 	return &pb.Ack{State: true, Info: ""}, nil
 }
 
+// ++++++++++++++++++++++ Metrics Fetching ++++++++++++++++++++++
+
 // ReturnReceivedEventStats
 func (ps *PubSub) ReturnReceivedEventsStats() (int, int, int, int) {
 
@@ -2274,4 +2276,10 @@ func (ps *PubSub) ReturnReceivedEventsStats() (int, int, int, int) {
 func (ps *PubSub) ReturnSubStats() int {
 
 	return ps.record.CompileAvgTimeToSub()
+}
+
+// ReturnCorrectnessStats
+func (ps *PubSub) ReturnCorrectnessStats(expected []string) (int, int, int, int) {
+
+	return ps.record.CompileCorrectnessResults(expected)
 }

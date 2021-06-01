@@ -1,0 +1,8 @@
+urllib3
+bs4
+sklearn
+nltk
+networkx 
+gensim
+yattag
+python-Levenshtein
