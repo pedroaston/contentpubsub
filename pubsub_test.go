@@ -412,3 +412,61 @@ func TestReliableEventDeliveryBetweenRvAndPub(t *testing.T) {
 	pubsubs[5].MyPublish("Ronaldo Rocks!", "portugal T")
 	time.Sleep(1 * time.Second)
 }
+
+// TestMultipleAttributeEvent is for a correctness error debug
+// Test composition: 6 nodes
+// Bollocks
+// >> 1 Publisher that publishes a event
+// >> 3 Subscriber that subscribe to a event and artificially
+// don't ackUp for 6 seconds
+// Special conditions
+// >> secondsToCheckEventDelivery = 5
+func TestMultipleAttributeEvent(t *testing.T) {
+	fmt.Printf("\n$$$ TestMultipleAttributeEvent $$$\n")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	defer cancel()
+
+	dhts := setupDHTS(t, ctx, 6)
+	defer func() {
+		for _, dht := range dhts {
+			dht.Close()
+			defer dht.Host().Close()
+		}
+	}()
+
+	connect(t, ctx, dhts[0], dhts[1])
+	connect(t, ctx, dhts[0], dhts[2])
+	connect(t, ctx, dhts[0], dhts[3])
+	connect(t, ctx, dhts[0], dhts[4])
+	connect(t, ctx, dhts[0], dhts[5])
+
+	connect(t, ctx, dhts[1], dhts[2])
+	connect(t, ctx, dhts[1], dhts[3])
+	connect(t, ctx, dhts[1], dhts[4])
+	connect(t, ctx, dhts[1], dhts[5])
+
+	connect(t, ctx, dhts[2], dhts[3])
+	connect(t, ctx, dhts[2], dhts[4])
+	connect(t, ctx, dhts[2], dhts[5])
+
+	connect(t, ctx, dhts[3], dhts[4])
+	connect(t, ctx, dhts[3], dhts[5])
+
+	connect(t, ctx, dhts[4], dhts[5])
+
+	var pubsubs [6]*PubSub
+	for i, dht := range dhts {
+		pubsubs[i] = NewPubSub(dht, "PT")
+	}
+
+	pubsubs[0].MySubscribe("portugal T")
+	pubsubs[1].MySubscribe("portugal T/trip T")
+	pubsubs[2].MySubscribe("portugal T/trip T/surf T")
+	pubsubs[3].MySubscribe("portugal T/trip T/surf T/price R 1000 1500")
+	pubsubs[4].MySubscribe("trip T/surf T/price R 1000 1500")
+	time.Sleep(200 * time.Millisecond)
+
+	pubsubs[5].MyPublish("Scam message :)", "portugal T/trip T/surf T/price R 1200 1200")
+	time.Sleep(200 * time.Millisecond)
+}
