@@ -92,3 +92,35 @@ func TestPredicateMatching(t *testing.T) {
 			" and " + pEvent.String())
 	}
 }
+
+// TestSubEventMatching
+func TestSubEventMatching(t *testing.T) {
+
+	pEvent, _ := NewPredicate("portugal T/trip T/surf T/price R 1200 1200")
+
+	pSub1, _ := NewPredicate("portugal T")
+	pSub2, _ := NewPredicate("portugal T/trip T")
+	pSub3, _ := NewPredicate("portugal T/trip T/surf T")
+	pSub4, _ := NewPredicate("portugal T/trip T/surf T/price R 1000 1500")
+	pSub5, _ := NewPredicate("trip T/surf T/price R 1000 1500")
+
+	if !pSub1.SimplePredicateMatch(pEvent) {
+		t.Fatal("error matching at 1")
+	}
+
+	if !pSub2.SimplePredicateMatch(pEvent) {
+		t.Fatal("error matching at 2")
+	}
+
+	if !pSub3.SimplePredicateMatch(pEvent) {
+		t.Fatal("error matching at 3")
+	}
+
+	if !pSub4.SimplePredicateMatch(pEvent) {
+		t.Fatal("error matching at 4")
+	}
+
+	if !pSub5.SimplePredicateMatch(pEvent) {
+		t.Fatal("error matching at 5")
+	}
+}
