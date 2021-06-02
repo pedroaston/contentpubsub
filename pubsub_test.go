@@ -415,12 +415,10 @@ func TestReliableEventDeliveryBetweenRvAndPub(t *testing.T) {
 
 // TestMultipleAttributeEvent is for a correctness error debug
 // Test composition: 6 nodes
-// Bollocks
+// Solved missing and now have duplicates
 // >> 1 Publisher that publishes a event
 // >> 3 Subscriber that subscribe to a event and artificially
 // don't ackUp for 6 seconds
-// Special conditions
-// >> secondsToCheckEventDelivery = 5
 func TestMultipleAttributeEvent(t *testing.T) {
 	fmt.Printf("\n$$$ TestMultipleAttributeEvent $$$\n")
 
