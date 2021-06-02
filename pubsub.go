@@ -48,6 +48,8 @@ type PubSub struct {
 	nextFilterTable    *FilterTable
 	myFilters          *RouteStats
 
+	rvCache []string
+
 	myBackups        []string
 	myBackupsFilters map[string]*FilterTable
 	mapBackupAddr    map[string]string
@@ -194,14 +196,16 @@ func (ps *PubSub) MySubscribe(info string) error {
 		p = pNew
 	}
 
+	for _, attr := range p.attributes {
+		isRv, _ := ps.rendezvousSelfCheck(attr.name)
+		if isRv {
+			return nil
+		}
+	}
+
 	minID, minAttr, err := ps.closerAttrRvToSelf(p)
 	if err != nil {
 		return errors.New("failed to find the closest attribute Rv")
-	}
-
-	res, _ := ps.rendezvousSelfCheck(minAttr)
-	if res {
-		return nil
 	}
 
 	var dialAddr string
@@ -450,6 +454,9 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 		return err
 	}
 
+	// prevents multiple attribute forwarding
+	notSent := true
+
 	var dialAddr string
 	for _, attr := range p.attributes {
 
@@ -471,54 +478,58 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 			PubAddr:   ps.serverAddr,
 		}
 
-		res, nextRvHop := ps.rendezvousSelfCheck(attr.name)
+		isRv, nextRvHop := ps.rendezvousSelfCheck(attr.name)
 		eLog := make(map[string]bool)
 
-		ps.tablesLock.RLock()
-		for next, route := range ps.currentFilterTable.routes {
-			if route.IsInterested(p) {
-				var dialAddr string
-				nextID, err := peer.Decode(next)
-				if err != nil {
-					return err
-				}
+		if isRv && notSent {
 
-				eLog[next] = false
-
-				nextAddr := ps.ipfsDHT.FindLocal(nextID).Addrs[0]
-				if nextAddr == nil {
-					return errors.New("no address to send")
-				} else {
-					dialAddr = addrForPubSubServer(nextAddr)
-				}
-
-				ps.currentFilterTable.redirectLock.Lock()
-				ps.nextFilterTable.redirectLock.Lock()
-				if ps.currentFilterTable.redirectTable[next] == nil {
-					ps.currentFilterTable.redirectTable[next] = make(map[string]string)
-					ps.currentFilterTable.redirectTable[next][event.RvId] = ""
-					ps.nextFilterTable.redirectTable[next] = make(map[string]string)
-					ps.nextFilterTable.redirectTable[next][event.RvId] = ""
-					ps.eventsToForwardDown <- &ForwardEvent{dialAddr: dialAddr, event: event, redirectOption: ""}
-				} else if ps.currentFilterTable.redirectTable[next][event.RvId] == "" {
-					ps.eventsToForwardDown <- &ForwardEvent{dialAddr: dialAddr, event: event, redirectOption: ""}
-				} else {
-					ps.eventsToForwardDown <- &ForwardEvent{
-						dialAddr:       dialAddr,
-						event:          event,
-						redirectOption: ps.currentFilterTable.redirectTable[next][event.RvId],
+			notSent = false
+			ps.tablesLock.RLock()
+			for next, route := range ps.currentFilterTable.routes {
+				if route.IsInterested(p) {
+					var dialAddr string
+					nextID, err := peer.Decode(next)
+					if err != nil {
+						return err
 					}
+
+					eLog[next] = false
+
+					nextAddr := ps.ipfsDHT.FindLocal(nextID).Addrs[0]
+					if nextAddr == nil {
+						return errors.New("no address to send")
+					} else {
+						dialAddr = addrForPubSubServer(nextAddr)
+					}
+
+					ps.currentFilterTable.redirectLock.Lock()
+					ps.nextFilterTable.redirectLock.Lock()
+					if ps.currentFilterTable.redirectTable[next] == nil {
+						ps.currentFilterTable.redirectTable[next] = make(map[string]string)
+						ps.currentFilterTable.redirectTable[next][event.RvId] = ""
+						ps.nextFilterTable.redirectTable[next] = make(map[string]string)
+						ps.nextFilterTable.redirectTable[next][event.RvId] = ""
+						ps.eventsToForwardDown <- &ForwardEvent{dialAddr: dialAddr, event: event, redirectOption: ""}
+					} else if ps.currentFilterTable.redirectTable[next][event.RvId] == "" {
+						ps.eventsToForwardDown <- &ForwardEvent{dialAddr: dialAddr, event: event, redirectOption: ""}
+					} else {
+						ps.eventsToForwardDown <- &ForwardEvent{
+							dialAddr:       dialAddr,
+							event:          event,
+							redirectOption: ps.currentFilterTable.redirectTable[next][event.RvId],
+						}
+					}
+
+					ps.currentFilterTable.redirectLock.Unlock()
+					ps.nextFilterTable.redirectLock.Unlock()
 				}
-
-				ps.currentFilterTable.redirectLock.Unlock()
-				ps.nextFilterTable.redirectLock.Unlock()
 			}
-		}
-		ps.tablesLock.RUnlock()
+			ps.tablesLock.RUnlock()
 
-		eID := fmt.Sprintf("%s%d%d%s", eventID.PublisherID, ps.session, ps.eventSeq, attr.name)
-
-		if !res {
+			if len(eLog) > 0 {
+				ps.sendLogToTracker(attr.name, eventID, eLog, event)
+			}
+		} else {
 			attrAddr := ps.ipfsDHT.FindLocal(nextRvHop).Addrs[0]
 			if attrAddr == nil {
 				return errors.New("no address for closest peer")
@@ -526,6 +537,7 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 				dialAddr = addrForPubSubServer(attrAddr)
 			}
 
+			eID := fmt.Sprintf("%s%d%d%s", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID, event.RvId)
 			ps.unconfirmedEvents[eID] = &PubEventState{event: event, aged: false, dialAddr: dialAddr}
 			if !ps.eventTickerState {
 				ps.eventTicker.Reset(OpResendRate * time.Second)
@@ -534,15 +546,6 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 			}
 
 			ps.eventsToForwardUp <- &ForwardEvent{dialAddr: dialAddr, event: event}
-		}
-
-		if res && len(eLog) > 0 {
-			ps.sendLogToTracker(attr.name, eventID, eLog, event)
-		} else if len(eLog) > 0 {
-			ps.myETrackers[eID] = NewEventLedger(eID, eLog, dialAddr, event)
-		} else {
-			time.Sleep(500 * time.Millisecond)
-			ps.ackToSendUp <- &AckUp{dialAddr: dialAddr, eventID: event.EventID, peerID: peer.Encode(ps.ipfsDHT.PeerID()), rvID: event.RvId}
 		}
 	}
 
@@ -558,104 +561,102 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 		return &pb.Ack{State: false, Info: err.Error()}, err
 	}
 
-	if ps.myFilters.IsInterested(p) {
-		ps.interestingEvents <- event
-	}
-
-	isRv, nextHop := ps.rendezvousSelfCheck(event.RvId)
-	var upPeer string
-	if !isRv && nextHop != "" {
+	isRv, nextRvHop := ps.rendezvousSelfCheck(event.RvId)
+	if !isRv && nextRvHop != "" {
 		var dialAddr string
-		nextAddr := ps.ipfsDHT.FindLocal(nextHop).Addrs[0]
+		nextAddr := ps.ipfsDHT.FindLocal(nextRvHop).Addrs[0]
 		if nextAddr == nil {
 			return &pb.Ack{State: false, Info: "No address for next hop peer"}, nil
 		} else {
 			dialAddr = addrForPubSubServer(nextAddr)
-			upPeer = dialAddr
 		}
 
 		ps.eventsToForwardUp <- &ForwardEvent{dialAddr: dialAddr, event: event}
 
 	} else if !isRv {
 		return &pb.Ack{State: false, Info: "rendezvous check failed"}, nil
-	}
-
-	eL := make(map[string]bool)
-	event.AckAddr = ps.serverAddr
-
-	ps.tablesLock.RLock()
-	for next, route := range ps.currentFilterTable.routes {
-		if route.IsInterested(p) {
-
-			eL[next] = false
-			if next == event.LastHop {
-				continue
-			}
-
-			var dialAddr string
-			nextID, err := peer.Decode(next)
-			if err != nil {
-				ps.tablesLock.RUnlock()
-				return &pb.Ack{State: false, Info: "decoding failed"}, err
-			}
-
-			nextAddr := ps.ipfsDHT.FindLocal(nextID).Addrs[0]
-			if nextAddr == nil {
-				ps.tablesLock.RUnlock()
-				return &pb.Ack{State: false, Info: "No address for next hop peer"}, nil
-			} else {
-				dialAddr = addrForPubSubServer(nextAddr)
-			}
-
-			ps.currentFilterTable.redirectLock.Lock()
-			ps.nextFilterTable.redirectLock.Lock()
-
-			if ps.currentFilterTable.redirectTable[next] == nil {
-				ps.currentFilterTable.redirectTable[next] = make(map[string]string)
-				ps.currentFilterTable.redirectTable[next][event.RvId] = ""
-				ps.nextFilterTable.redirectTable[next] = make(map[string]string)
-				ps.nextFilterTable.redirectTable[next][event.RvId] = ""
-
-				ps.eventsToForwardDown <- &ForwardEvent{
-					dialAddr:       dialAddr,
-					event:          event,
-					redirectOption: "",
-					originalRoute:  next,
-				}
-			} else if ps.currentFilterTable.redirectTable[next][event.RvId] == "" {
-				ps.eventsToForwardDown <- &ForwardEvent{
-					dialAddr:       dialAddr,
-					event:          event,
-					redirectOption: "",
-					originalRoute:  next,
-				}
-			} else {
-				ps.eventsToForwardDown <- &ForwardEvent{
-					dialAddr:       dialAddr,
-					event:          event,
-					redirectOption: ps.currentFilterTable.redirectTable[next][event.RvId],
-					originalRoute:  next,
-				}
-			}
-
-			ps.currentFilterTable.redirectLock.Unlock()
-			ps.nextFilterTable.redirectLock.Unlock()
-		}
-	}
-	ps.tablesLock.RUnlock()
-
-	eID := fmt.Sprintf("%s%d%d%s", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID, event.RvId)
-
-	if isRv && len(eL) > 0 {
-		ps.sendLogToTracker(event.RvId, event.EventID, eL, event)
-		ps.sendAckOp(event.PubAddr, "Publish", eID)
 	} else if isRv {
+
+		ps.tablesLock.RLock()
+
+		eIDRv := fmt.Sprintf("%s%d%d", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID)
+		for _, cached := range ps.rvCache {
+			if eIDRv == cached {
+				ps.record.AddOperationStat("Publish")
+				return &pb.Ack{State: true, Info: ""}, nil
+			}
+		}
+
+		ps.rvCache = append(ps.rvCache, eIDRv)
+		eL := make(map[string]bool)
+		event.AckAddr = ps.serverAddr
+		for next, route := range ps.currentFilterTable.routes {
+			if route.IsInterested(p) {
+
+				eL[next] = false
+
+				var dialAddr string
+				nextID, err := peer.Decode(next)
+				if err != nil {
+					ps.tablesLock.RUnlock()
+					return &pb.Ack{State: false, Info: "decoding failed"}, err
+				}
+
+				nextAddr := ps.ipfsDHT.FindLocal(nextID).Addrs[0]
+				if nextAddr == nil {
+					ps.tablesLock.RUnlock()
+					return &pb.Ack{State: false, Info: "No address for next hop peer"}, nil
+				} else {
+					dialAddr = addrForPubSubServer(nextAddr)
+				}
+
+				ps.currentFilterTable.redirectLock.Lock()
+				ps.nextFilterTable.redirectLock.Lock()
+
+				if ps.currentFilterTable.redirectTable[next] == nil {
+					ps.currentFilterTable.redirectTable[next] = make(map[string]string)
+					ps.currentFilterTable.redirectTable[next][event.RvId] = ""
+					ps.nextFilterTable.redirectTable[next] = make(map[string]string)
+					ps.nextFilterTable.redirectTable[next][event.RvId] = ""
+
+					ps.eventsToForwardDown <- &ForwardEvent{
+						dialAddr:       dialAddr,
+						event:          event,
+						redirectOption: "",
+						originalRoute:  next,
+					}
+				} else if ps.currentFilterTable.redirectTable[next][event.RvId] == "" {
+					ps.eventsToForwardDown <- &ForwardEvent{
+						dialAddr:       dialAddr,
+						event:          event,
+						redirectOption: "",
+						originalRoute:  next,
+					}
+				} else {
+					ps.eventsToForwardDown <- &ForwardEvent{
+						dialAddr:       dialAddr,
+						event:          event,
+						redirectOption: ps.currentFilterTable.redirectTable[next][event.RvId],
+						originalRoute:  next,
+					}
+				}
+
+				ps.currentFilterTable.redirectLock.Unlock()
+				ps.nextFilterTable.redirectLock.Unlock()
+			}
+		}
+		ps.tablesLock.RUnlock()
+
+		eID := fmt.Sprintf("%s%d%d%s", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID, event.RvId)
+		if len(eL) > 0 {
+			ps.sendLogToTracker(event.RvId, event.EventID, eL, event)
+		}
+
 		ps.sendAckOp(event.PubAddr, "Publish", eID)
-	} else if len(eL) > 0 {
-		ps.myETrackers[eID] = NewEventLedger(eID, eL, upPeer, event)
-	} else {
-		time.Sleep(500 * time.Millisecond)
-		ps.ackToSendUp <- &AckUp{dialAddr: upPeer, eventID: event.EventID, peerID: peer.Encode(ps.ipfsDHT.PeerID()), rvID: event.RvId}
+
+		if ps.myFilters.IsInterested(p) {
+			ps.interestingEvents <- event
+		}
 	}
 
 	// Statistical Code
@@ -664,7 +665,7 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 	return &pb.Ack{State: true, Info: ""}, nil
 }
 
-// sendAckOp just sends an ack to the operation iniator to confirm completion
+// sendAckOp just sends an ack to the operation initiator to confirm completion
 func (ps *PubSub) sendAckOp(dialAddr string, Op string, info string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

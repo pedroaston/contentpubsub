@@ -50,9 +50,9 @@ func TestSimpleUnsubscribing(t *testing.T) {
 }
 
 // TestSimplePublish simply subscribes to a event and then publishes it
-// Test composition: 2 nodes
+// Test composition: 3 nodes
 // >> 1 Publisher that publishes a event
-// >> 1 Subscriber that subscribe to a event
+// >> 2 Subscribers that subscribe to a event
 func TestSimplePublish(t *testing.T) {
 	fmt.Printf("\n$$$ TestSimplePublish $$$\n")
 
