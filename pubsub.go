@@ -31,7 +31,7 @@ import (
 const (
 	OpResendRate                = 10
 	FaultToleranceFactor        = 2
-	ConcurrentProcessingFactor  = 3
+	ConcurrentProcessingFactor  = 25
 	MaxAttributesPerPredicate   = 5
 	SubRefreshRateMin           = 15
 	secondsToCheckEventDelivery = 30

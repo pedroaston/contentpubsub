@@ -413,7 +413,8 @@ func TestReliableEventDeliveryBetweenRvAndPub(t *testing.T) {
 	time.Sleep(1 * time.Second)
 }
 
-// TestMultipleAttributeEvent is for a correctness error debug
+// TestMultipleAttributeEvent tries to provide debug help to
+// solve the duplicated event problem
 // Test composition: 6 nodes
 // Solved missing and now have duplicates
 // >> 1 Publisher that publishes a event
