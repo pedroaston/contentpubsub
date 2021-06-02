@@ -1525,11 +1525,11 @@ func (ps *PubSub) processLoop() {
 		case pid := <-ps.eventsToForwardDown:
 			go ps.forwardEventDown(pid.dialAddr, pid.event, pid.originalRoute, pid.redirectOption)
 		case pid := <-ps.interestingEvents:
-			ps.record.SaveReceivedEvent(pid)
+			ps.record.SaveReceivedEvent(pid.EventID.PublisherID, pid.BirthTime, pid.Event)
 			fmt.Printf("Received Event at: %s\n", ps.serverAddr)
 			fmt.Println(">> " + pid.Event)
 		case pid := <-ps.premiumEvents:
-			ps.record.SaveReceivedPremiumEvent(pid)
+			ps.record.SaveReceivedEvent(pid.GroupID.OwnerAddr, pid.BirthTime, pid.Event)
 			fmt.Printf("Received Event at: %s\n", ps.serverAddr)
 			fmt.Println(">> " + pid.Event)
 		case pid := <-ps.ackToSendUp:
@@ -2216,20 +2216,20 @@ func (ps *PubSub) DelegateSubToHelper(ctx context.Context, sub *pb.DelegateSub) 
 
 // ++++++++++++++++++++++ Metrics Fetching ++++++++++++++++++++++
 
-// ReturnReceivedEventStats
-func (ps *PubSub) ReturnReceivedEventsStats() (int, int, int, int) {
+// ReturnEventStats
+func (ps *PubSub) ReturnEventStats() []int {
 
-	return ps.record.CompileLatencyResults()
+	return ps.record.EventStats()
 }
 
 // ReturnSubsStats
-func (ps *PubSub) ReturnSubStats() int {
+func (ps *PubSub) ReturnSubStats() []int {
 
-	return ps.record.CompileAvgTimeToSub()
+	return ps.record.timeToSub
 }
 
 // ReturnCorrectnessStats
-func (ps *PubSub) ReturnCorrectnessStats(expected []string) (int, int, int, int) {
+func (ps *PubSub) ReturnCorrectnessStats(expected []string) (int, int) {
 
-	return ps.record.CompileCorrectnessResults(expected)
+	return ps.record.CorrectnessStats(expected)
 }
