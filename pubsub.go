@@ -73,6 +73,7 @@ type PubSub struct {
 	unconfirmedSubs     map[string]*SubState
 
 	tablesLock *sync.RWMutex
+	upBackLock *sync.Mutex
 
 	managedGroups         []*MulticastGroup
 	subbedGroups          []*SubGroupView
@@ -118,6 +119,7 @@ func NewPubSub(dht *kaddht.IpfsDHT, region string) *PubSub {
 		eventTicker:         time.NewTicker(OpResendRate * time.Second),
 		subTicker:           time.NewTicker(OpResendRate * time.Second),
 		tablesLock:          &sync.RWMutex{},
+		upBackLock:          &sync.Mutex{},
 		region:              region,
 		record:              NewHistoryRecord(),
 		session:             rand.Intn(9999),
@@ -383,9 +385,6 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 		ps.sendAckOp(sub.SubAddr, "Subscribe", sub.Predicate)
 	}
 
-	// Statistical Code
-	ps.record.AddOperationStat("Subscribe")
-
 	return &pb.Ack{State: true, Info: ""}, nil
 }
 
@@ -435,9 +434,6 @@ func (ps *PubSub) MyUnsubscribe(info string) error {
 	}
 
 	ps.myFilters.SimpleSubtractFilter(p)
-
-	// Statistical Code
-	ps.record.AddOperationStat("myUnsubscribe")
 
 	return nil
 }
@@ -658,9 +654,6 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 			ps.interestingEvents <- event
 		}
 	}
-
-	// Statistical Code
-	ps.record.AddOperationStat("Publish")
 
 	return &pb.Ack{State: true, Info: ""}, nil
 }
@@ -953,9 +946,6 @@ func (ps *PubSub) ResendEvent(stream pb.ScoutHub_ResendEventServer) error {
 	for {
 		eLog, err := stream.Recv()
 		if err == io.EOF {
-			// Statistical Code
-			ps.record.AddOperationStat("ResendEvent")
-
 			return stream.SendAndClose(&pb.Ack{State: true, Info: ""})
 		} else if err != nil {
 			return err
@@ -1175,9 +1165,6 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 		ps.ackToSendUp <- &AckUp{dialAddr: ackAddr, eventID: event.EventID, peerID: peer.Encode(ps.ipfsDHT.PeerID()), rvID: event.RvId}
 	}
 
-	// Statistical Code
-	ps.record.AddOperationStat("Notify")
-
 	return &pb.Ack{State: true, Info: ""}, nil
 }
 
@@ -1249,9 +1236,13 @@ func (ps *PubSub) UpdateBackup(ctx context.Context, update *pb.Update) (*pb.Ack,
 	p, err := NewPredicate(update.Predicate)
 	if err != nil {
 		return &pb.Ack{State: false, Info: err.Error()}, err
-	} else if _, ok := ps.myBackupsFilters[update.Sender]; !ok {
+	}
+
+	ps.upBackLock.Lock()
+	if _, ok := ps.myBackupsFilters[update.Sender]; !ok {
 		ps.myBackupsFilters[update.Sender] = &FilterTable{routes: make(map[string]*RouteStats)}
 	}
+	ps.upBackLock.Unlock()
 
 	if _, ok := ps.myBackupsFilters[update.Sender].routes[update.Route]; !ok {
 		ps.myBackupsFilters[update.Sender].routes[update.Route] = NewRouteStats()
@@ -1259,9 +1250,6 @@ func (ps *PubSub) UpdateBackup(ctx context.Context, update *pb.Update) (*pb.Ack,
 
 	ps.myBackupsFilters[update.Sender].routes[update.Route].SimpleAddSummarizedFilter(p)
 	ps.mapBackupAddr[update.Route] = update.RouteAddr
-
-	// Statistical Code
-	ps.record.AddOperationStat("UpdateBackup")
 
 	return &pb.Ack{State: true, Info: ""}, nil
 }
@@ -1370,9 +1358,6 @@ func (ps *PubSub) BackupRefresh(stream pb.ScoutHub_BackupRefreshServer) error {
 	for {
 		update, err := stream.Recv()
 		if err == io.EOF {
-			// Statistical Code
-			ps.record.AddOperationStat("BackupRefresh")
-
 			return stream.SendAndClose(&pb.Ack{State: true, Info: ""})
 		}
 		if err != nil {
@@ -1540,11 +1525,11 @@ func (ps *PubSub) processLoop() {
 		case pid := <-ps.eventsToForwardDown:
 			go ps.forwardEventDown(pid.dialAddr, pid.event, pid.originalRoute, pid.redirectOption)
 		case pid := <-ps.interestingEvents:
-			ps.record.SaveReceivedEvent(pid)
+			ps.record.SaveReceivedEvent(pid.EventID.PublisherID, pid.BirthTime, pid.Event)
 			fmt.Printf("Received Event at: %s\n", ps.serverAddr)
 			fmt.Println(">> " + pid.Event)
 		case pid := <-ps.premiumEvents:
-			ps.record.SaveReceivedPremiumEvent(pid)
+			ps.record.SaveReceivedEvent(pid.GroupID.OwnerAddr, pid.BirthTime, pid.Event)
 			fmt.Printf("Received Event at: %s\n", ps.serverAddr)
 			fmt.Println(">> " + pid.Event)
 		case pid := <-ps.ackToSendUp:
@@ -1650,9 +1635,6 @@ func (ps *PubSub) myAdvertiseGroup(pred *Predicate) error {
 		}
 	}
 
-	// Statistical Code
-	ps.record.AddOperationStat("myAdvertiseGroup")
-
 	return nil
 }
 
@@ -1679,9 +1661,6 @@ func (ps *PubSub) AdvertiseGroup(ctx context.Context, adv *pb.AdvertRequest) (*p
 		dialAddr: dialAddr,
 		adv:      adv,
 	}
-
-	// Statistical Code
-	ps.record.AddOperationStat("AdvertiseGroup")
 
 	return &pb.Ack{State: true, Info: ""}, nil
 }
@@ -1889,16 +1868,10 @@ func (ps *PubSub) GroupSearchRequest(ctx context.Context, req *pb.SearchRequest)
 			client := pb.NewScoutHubClient(conn)
 			reply, err := client.GroupSearchRequest(ctx, req)
 			if err == nil {
-				// Statistical Code
-				ps.record.AddOperationStat("GroupSearchRequest")
-
 				return reply, nil
 			}
 		}
 	} else {
-		// Statistical Code
-		ps.record.AddOperationStat("GroupSearchRequest")
-
 		return reply, nil
 	}
 
@@ -1961,9 +1934,6 @@ func (ps *PubSub) MyPremiumSubscribe(info string, pubAddr string, pubPredicate s
 
 		ps.subbedGroups = append(ps.subbedGroups, subG)
 
-		// Statistical Code
-		ps.record.AddOperationStat("myPremiumSubscribe")
-
 		return nil
 	} else {
 		return errors.New("failed my premium subscribe")
@@ -1990,9 +1960,6 @@ func (ps *PubSub) PremiumSubscribe(ctx context.Context, sub *pb.PremiumSubscript
 			mg.AddSubToGroup(sub.Addr, int(sub.Cap), sub.Region, subP)
 		}
 	}
-
-	// Statistical Code
-	ps.record.AddOperationStat("PremiumSubscribe")
 
 	return &pb.Ack{State: true, Info: ""}, nil
 }
@@ -2042,9 +2009,6 @@ func (ps *PubSub) MyPremiumUnsubscribe(pubPred string, pubAddr string) error {
 		}
 	}
 
-	// Statistical Code
-	ps.record.AddOperationStat("myPremiumUnsubscribe")
-
 	return nil
 }
 
@@ -2071,9 +2035,6 @@ func (ps *PubSub) PremiumUnsubscribe(ctx context.Context, sub *pb.PremiumSubscri
 			return &pb.Ack{State: true, Info: ""}, nil
 		}
 	}
-
-	// Statistical Code
-	ps.record.AddOperationStat("PremiumSubscribe")
 
 	return &pb.Ack{State: true, Info: ""}, nil
 }
@@ -2147,9 +2108,6 @@ func (ps *PubSub) MyPremiumPublish(grpPred string, event string, eventInfo strin
 		client.PremiumPublish(ctx, premiumE)
 	}
 
-	// Statistical Code
-	ps.record.AddOperationStat("myPremiumPublish")
-
 	return nil
 }
 
@@ -2205,9 +2163,6 @@ func (ps *PubSub) PremiumPublish(ctx context.Context, event *pb.PremiumEvent) (*
 		}
 	}
 
-	// Statistical Code
-	ps.record.AddOperationStat("PremiumPublish")
-
 	return &pb.Ack{State: true, Info: ""}, nil
 }
 
@@ -2231,9 +2186,6 @@ func (ps *PubSub) RequestHelp(ctx context.Context, req *pb.HelpRequest) (*pb.Ack
 			break
 		}
 	}
-
-	// Statistical Code
-	ps.record.AddOperationStat("RequestHelp")
 
 	return &pb.Ack{State: true, Info: ""}, nil
 }
@@ -2259,28 +2211,25 @@ func (ps *PubSub) DelegateSubToHelper(ctx context.Context, sub *pb.DelegateSub) 
 		}
 	}
 
-	// Statistical Code
-	ps.record.AddOperationStat("DelegateSubToHelper")
-
 	return &pb.Ack{State: true, Info: ""}, nil
 }
 
 // ++++++++++++++++++++++ Metrics Fetching ++++++++++++++++++++++
 
-// ReturnReceivedEventStats
-func (ps *PubSub) ReturnReceivedEventsStats() (int, int, int, int) {
+// ReturnEventStats
+func (ps *PubSub) ReturnEventStats() []int {
 
-	return ps.record.CompileLatencyResults()
+	return ps.record.EventStats()
 }
 
 // ReturnSubsStats
-func (ps *PubSub) ReturnSubStats() int {
+func (ps *PubSub) ReturnSubStats() []int {
 
-	return ps.record.CompileAvgTimeToSub()
+	return ps.record.timeToSub
 }
 
 // ReturnCorrectnessStats
-func (ps *PubSub) ReturnCorrectnessStats(expected []string) (int, int, int, int) {
+func (ps *PubSub) ReturnCorrectnessStats(expected []string) (int, int) {
 
-	return ps.record.CompileCorrectnessResults(expected)
+	return ps.record.CorrectnessStats(expected)
 }

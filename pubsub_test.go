@@ -140,8 +140,6 @@ func TestSubscriptionForwarding(t *testing.T) {
 	}
 
 	time.Sleep(time.Second)
-
-	fmt.Printf("Avg time to Sub was %d ms\n", pubsubs[0].record.CompileAvgTimeToSub())
 }
 
 // TestSimpleFaultTolerance just tries to show the system
@@ -282,13 +280,13 @@ func TestRefreshRoutine(t *testing.T) {
 	time.Sleep(time.Second)
 }
 
-// TestRedirectMechanismAndLatencyMetric shows that a event my jump several hops on
+// TestRedirectMechanism shows that a event my jump several hops on
 // the network if those intermidiate nodes don't lead to more subscribers and
 // finishes the test by printing the latency on the event delivery
 // Test composition: 4 nodes
 // >> 1 Subscriber subscribes at the bottom of the dissemination chain
 // >> 1 Publisher publishing a event next to the dissemination chain
-func TestRedirectMechanismAndLatencyMetric(t *testing.T) {
+func TestRedirectMechanism(t *testing.T) {
 	fmt.Printf("\n$$$ TestRedirectMechanism $$$\n")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
@@ -318,9 +316,6 @@ func TestRedirectMechanismAndLatencyMetric(t *testing.T) {
 	pubsubs[3].MyPublish("Portugal sometime can be the best!", "portugal T")
 
 	time.Sleep(time.Second)
-
-	_, _, lat, _ := pubsubs[0].ReturnReceivedEventsStats()
-	fmt.Printf("Average latency was %d ms\n", lat)
 }
 
 // TestReliableEventDelivery proves that the rv tracker leader

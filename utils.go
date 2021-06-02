@@ -8,11 +8,11 @@ import (
 	"github.com/multiformats/go-multiaddr"
 )
 
-const InstrumentedVersion = true
+const TestgroundReady = true
 
 func addrForPubSubServer(addr multiaddr.Multiaddr) string {
 
-	if InstrumentedVersion {
+	if TestgroundReady {
 		aux := strings.Split(addr.String(), "/")
 		i, _ := strconv.Atoi(aux[4])
 		lastDigit := (i + 1) % 10

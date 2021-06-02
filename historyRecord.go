@@ -2,8 +2,6 @@ package contentpubsub
 
 import (
 	"time"
-
-	"github.com/pedroaston/contentpubsub/pb"
 )
 
 type HistoryRecord struct {
@@ -15,7 +13,6 @@ type HistoryRecord struct {
 type EventRecord struct {
 	eventSource  string
 	eventData    string
-	protocol     string
 	timeOfTravel time.Duration
 }
 
@@ -37,9 +34,9 @@ func (r *HistoryRecord) AddOperationStat(opName string) {
 }
 
 // SaveReceivedEvent
-func (r *HistoryRecord) SaveReceivedEvent(event *pb.Event) {
+func (r *HistoryRecord) SaveReceivedEvent(eScource string, eBirth string, eData string) {
 
-	past, err1 := time.Parse(time.StampMilli, event.BirthTime)
+	past, err1 := time.Parse(time.StampMilli, eBirth)
 	if err1 != nil {
 		return
 	}
@@ -50,33 +47,9 @@ func (r *HistoryRecord) SaveReceivedEvent(event *pb.Event) {
 	}
 
 	eventRecord := &EventRecord{
-		eventSource:  event.EventID.PublisherID,
+		eventSource:  eScource,
 		timeOfTravel: present.Sub(past),
-		eventData:    event.Event,
-		protocol:     "ScoutSubs",
-	}
-
-	r.receivedEvents = append(r.receivedEvents, eventRecord)
-}
-
-// SaveReceivedEvent
-func (r *HistoryRecord) SaveReceivedPremiumEvent(event *pb.PremiumEvent) {
-
-	past, err1 := time.Parse(time.StampMilli, event.BirthTime)
-	if err1 != nil {
-		return
-	}
-
-	present, err2 := time.Parse(time.StampMilli, time.Now().Format(time.StampMilli))
-	if err2 != nil {
-		return
-	}
-
-	eventRecord := &EventRecord{
-		eventSource:  event.GroupID.OwnerAddr,
-		timeOfTravel: present.Sub(past),
-		eventData:    event.Event,
-		protocol:     "FastDelivery",
+		eventData:    eData,
 	}
 
 	r.receivedEvents = append(r.receivedEvents, eventRecord)
@@ -98,84 +71,38 @@ func (r *HistoryRecord) SaveTimeToSub(start string) {
 	r.timeToSub = append(r.timeToSub, int(present.Sub(past).Milliseconds()))
 }
 
-// CompileAvgTimeToSub
-func (r *HistoryRecord) CompileAvgTimeToSub() int {
+// EventStats
+func (r *HistoryRecord) EventStats() []int {
 
-	sum := 0
-	for _, t := range r.timeToSub {
-		sum += t
-	}
+	var events []int
 
-	if len(r.timeToSub) == 0 {
-		return 0
-	} else {
-		return sum / len(r.timeToSub)
-	}
-}
-
-// CompileLatencyResults
-func (r *HistoryRecord) CompileLatencyResults() (int, int, int, int) {
-
-	var scoutLatencySum int = 0
-	var scoutEvents int = 0
-	var fastLatencySum int = 0
-	var fastEvents int = 0
 	for _, e := range r.receivedEvents {
-		if e.protocol == "ScoutSubs" {
-			scoutEvents++
-			scoutLatencySum += int(e.timeOfTravel.Milliseconds())
-		} else {
-			fastEvents++
-			fastLatencySum += int(e.timeOfTravel.Milliseconds())
-		}
+		events = append(events, int(e.timeOfTravel.Milliseconds()))
 	}
 
-	var avgScoutLatency int
-	if scoutEvents == 0 {
-		avgScoutLatency = 0
-	} else {
-		avgScoutLatency = scoutLatencySum / len(r.receivedEvents)
-	}
-
-	var avgFastLatency int
-	if fastEvents == 0 {
-		avgFastLatency = 0
-	} else {
-		avgFastLatency = fastLatencySum / len(r.receivedEvents)
-	}
-
-	return scoutEvents, fastEvents, avgScoutLatency, avgFastLatency
+	return events
 }
 
 // CompileCorrectnessResults
-func (r *HistoryRecord) CompileCorrectnessResults(expected []string) (int, int, int, int) {
+func (r *HistoryRecord) CorrectnessStats(expected []string) (int, int) {
 
-	notReceivedScout := 0
-	duplicatedScout := 0
-	notReceivedFast := 0
-	duplicatedFast := 0
+	missed := 0
+	duplicated := 0
 
 	for _, exp := range expected {
-		receivedScout := false
-		receivedFast := false
+		received := false
 		for _, e := range r.receivedEvents {
-			if e.protocol == "ScoutSubs" && e.eventData == exp && !receivedScout {
-				receivedScout = true
-			} else if e.protocol == "ScoutSubs" && e.eventData == exp {
-				duplicatedScout++
-			} else if e.protocol == "FastDelivery" && e.eventData == exp && !receivedFast {
-				receivedFast = true
-			} else if e.protocol == "FastDelivery" && e.eventData == exp {
-				duplicatedFast++
+			if e.eventData == exp && !received {
+				received = true
+			} else if e.eventData == exp {
+				duplicated++
 			}
 		}
 
-		if !receivedScout {
-			notReceivedScout++
-		} else if !receivedFast {
-			notReceivedFast++
+		if !received {
+			missed++
 		}
 	}
 
-	return notReceivedScout, duplicatedScout, notReceivedFast, duplicatedFast
+	return missed, duplicated
 }

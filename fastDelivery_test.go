@@ -82,8 +82,6 @@ func TestFastDeliverySearchAndSub(t *testing.T) {
 
 	pubsubs[2].MyPremiumPublish("portugal T", "Portugal is great!", "portugal T")
 	time.Sleep(200 * time.Millisecond)
-
-	fmt.Printf("Avg time to Sub was %d ms\n", pubsubs[3].record.CompileAvgTimeToSub())
 }
 
 // TestSimpleFastDeliveryWithRanges is similar to the test above but instead of using
@@ -125,14 +123,14 @@ func TestSimpleFastDeliveryWithRanges(t *testing.T) {
 	time.Sleep(time.Second)
 }
 
-// TestFastDeliveryWithHelperAndLatMetrics shows the correct dissemination of events
+// TestFastDeliveryWithHelper shows the correct dissemination of events
 // when the publisher recruits a helper to assist him and at the end the latency of
 // the published event will be reveiled at a helped and unhelped node
 // Test composition: 8 nodes
 // >> 1 Premium Publisher that creates and publishes in a MulticastGroup
 // >> 7 Premium Subscribers that subscribe to a MulticastGroup being one
 // of them more powerfull than the others and so will become a helper
-func TestFastDeliveryWithHelperAndLatMetrics(t *testing.T) {
+func TestFastDeliveryWithHelper(t *testing.T) {
 	fmt.Printf("\n$$$ TestSimpleFastDeliveryWithHelper $$$\n")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
@@ -170,11 +168,6 @@ func TestFastDeliveryWithHelperAndLatMetrics(t *testing.T) {
 	pubsubs[0].MyPremiumPublish("portugal T", "Portugal is great!", "portugal T")
 
 	time.Sleep(time.Second)
-
-	_, _, _, lat3 := pubsubs[3].ReturnReceivedEventsStats()
-	fmt.Printf("Average latency of peer 3 was %d ms\n", lat3)
-	_, _, _, lat7 := pubsubs[7].ReturnReceivedEventsStats()
-	fmt.Printf("Average latency of peer 7 was %d ms\n", lat7)
 }
 
 // TestSimpleFastDeliveryUnsubscribe shows that non-helpers can successfully unsubscribe
