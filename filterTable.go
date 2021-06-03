@@ -215,13 +215,13 @@ func (rs *RouteStats) IsInterested(p *Predicate) bool {
 	defer rs.routeLock.RUnlock()
 
 	for i, filters := range rs.filters {
-		if len(p.attributes) <= i {
-			for _, filter := range filters {
-				if filter.SimplePredicateMatch(p) {
-					return true
-				}
+		for _, filter := range filters {
+			if filter.SimplePredicateMatch(p) {
+				return true
 			}
-		} else {
+		}
+
+		if len(p.attributes) == i {
 			break
 		}
 	}
