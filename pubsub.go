@@ -1242,11 +1242,11 @@ func (ps *PubSub) UpdateBackup(ctx context.Context, update *pb.Update) (*pb.Ack,
 	if _, ok := ps.myBackupsFilters[update.Sender]; !ok {
 		ps.myBackupsFilters[update.Sender] = &FilterTable{routes: make(map[string]*RouteStats)}
 	}
-	ps.upBackLock.Unlock()
 
 	if _, ok := ps.myBackupsFilters[update.Sender].routes[update.Route]; !ok {
 		ps.myBackupsFilters[update.Sender].routes[update.Route] = NewRouteStats()
 	}
+	ps.upBackLock.Unlock()
 
 	ps.myBackupsFilters[update.Sender].routes[update.Route].SimpleAddSummarizedFilter(p)
 	ps.mapBackupAddr[update.Route] = update.RouteAddr
