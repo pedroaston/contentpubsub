@@ -12,7 +12,7 @@
 - v0.0.8  >> Base-Unreliable
 - v0.1.12 >> Redirect-Unreliable
 - v0.4.0  >> Base-Rv-Reliable
-- v0.5.2  >> Redirect-Rv-Reliable
+- v0.5.2  >> Redirect-Rv-Reliable and latest FastDelivery
 
 ### Abandoned
 - v0.2.13 >> Redirect-Reliable and latest FastDelivery
