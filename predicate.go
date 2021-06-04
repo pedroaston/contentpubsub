@@ -74,13 +74,13 @@ func (p *Predicate) String() string {
 
 // NewPredicate creates a predicate. Example of info string:
 // laptop T/RAM R 16 32/price R 0 1000
-func NewPredicate(info string) (*Predicate, error) {
+func NewPredicate(info string, maxAttr int) (*Predicate, error) {
 
 	attrs := make(map[string]*Attribute)
 	firstParse := strings.Split(info, "/")
 	var limit int
-	if len(firstParse) > MaxAttributesPerPredicate {
-		limit = MaxAttributesPerPredicate
+	if len(firstParse) > maxAttr {
+		limit = maxAttr
 	} else {
 		limit = len(firstParse)
 	}
