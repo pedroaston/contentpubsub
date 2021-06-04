@@ -25,7 +25,7 @@ type Tracker struct {
 }
 
 // NewTracker initiates a new tracker struct
-func NewTracker(leader bool, attr string, rvAddr string) *Tracker {
+func NewTracker(leader bool, attr string, rvAddr string, timeToCheckDelivery time.Duration) *Tracker {
 
 	t := &Tracker{
 		leader:       leader,
@@ -37,7 +37,7 @@ func NewTracker(leader bool, attr string, rvAddr string) *Tracker {
 		addEventAck:  make(chan *pb.EventAck, 8),
 		addEventLog:  make(chan *EventLedger, 8),
 		checkForAcks: make(chan string),
-		checkEvents:  time.NewTicker(secondsToCheckEventDelivery * time.Second),
+		checkEvents:  time.NewTicker(timeToCheckDelivery * time.Second),
 	}
 
 	go t.trackerLoop()

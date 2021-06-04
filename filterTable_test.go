@@ -11,9 +11,9 @@ import (
 func InitializeRouteStats() *RouteStats {
 	r := NewRouteStats()
 
-	p1, err1 := NewPredicate("portugal T")
-	p2, err2 := NewPredicate("soccer T/goals R 2 5")
-	p3, err3 := NewPredicate("surf T/bali T/price R 500 850")
+	p1, err1 := NewPredicate("portugal T", 5)
+	p2, err2 := NewPredicate("soccer T/goals R 2 5", 5)
+	p3, err3 := NewPredicate("surf T/bali T/price R 500 850", 5)
 
 	if err1 != nil || err2 != nil || err3 != nil {
 		return nil
@@ -45,7 +45,7 @@ func TestAddSummarizedFilter(t *testing.T) {
 
 	r := InitializeRouteStats()
 	// Test1: Bigger Predicate encompassed
-	pTest, err := NewPredicate("portugal T/soccer T")
+	pTest, err := NewPredicate("portugal T/soccer T", 5)
 	r.SimpleAddSummarizedFilter(pTest)
 
 	if err != nil {
@@ -55,7 +55,7 @@ func TestAddSummarizedFilter(t *testing.T) {
 	}
 
 	// Test2: Same-size Predicate encompassed
-	pTest, err = NewPredicate("soccer T/goals R 2 4")
+	pTest, err = NewPredicate("soccer T/goals R 2 4", 5)
 	r.SimpleAddSummarizedFilter(pTest)
 
 	if err != nil {
@@ -65,7 +65,7 @@ func TestAddSummarizedFilter(t *testing.T) {
 	}
 
 	// Test3: Same-size Predicate encompassing
-	pTest, err = NewPredicate("soccer T/goals R 2 7")
+	pTest, err = NewPredicate("soccer T/goals R 2 7", 5)
 	r.SimpleAddSummarizedFilter(pTest)
 
 	if err != nil {
@@ -77,7 +77,7 @@ func TestAddSummarizedFilter(t *testing.T) {
 	}
 
 	// Test4: Smaller Predicate encompassing
-	pTest, err = NewPredicate("soccer T")
+	pTest, err = NewPredicate("soccer T", 5)
 	r.SimpleAddSummarizedFilter(pTest)
 
 	if err != nil {
@@ -89,7 +89,7 @@ func TestAddSummarizedFilter(t *testing.T) {
 	}
 
 	// Test5: Upper-limit merge
-	pTest, err = NewPredicate("surf T/bali T/price R 700 1000")
+	pTest, err = NewPredicate("surf T/bali T/price R 700 1000", 5)
 	r.SimpleAddSummarizedFilter(pTest)
 
 	if err != nil {
@@ -101,7 +101,7 @@ func TestAddSummarizedFilter(t *testing.T) {
 	}
 
 	// Test6: Lower limit merge
-	pTest, err = NewPredicate("surf T/bali T/price R 400 600")
+	pTest, err = NewPredicate("surf T/bali T/price R 400 600", 5)
 	r.SimpleAddSummarizedFilter(pTest)
 
 	if err != nil {
@@ -113,7 +113,7 @@ func TestAddSummarizedFilter(t *testing.T) {
 	}
 
 	// Test7: Exclusive predicate
-	pTest, err = NewPredicate("Tesla T/stock R 10000 15000")
+	pTest, err = NewPredicate("Tesla T/stock R 10000 15000", 5)
 	r.SimpleAddSummarizedFilter(pTest)
 
 	if err != nil {
