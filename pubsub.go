@@ -2101,6 +2101,9 @@ func (ps *PubSub) MyPremiumPublish(grpPred string, event string, eventInfo strin
 
 	for _, sub := range append(mGrp.helpers[len(mGrp.helpers)-aux:len(mGrp.helpers)], mGrp.AddrsToPublishEvent(eP)...) {
 		go func(sub *SubData) {
+			goctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+
 			conn, err := grpc.Dial(sub.addr, grpc.WithInsecure())
 			if err != nil {
 				log.Fatalf("fail to dial: %v", err)
@@ -2108,7 +2111,7 @@ func (ps *PubSub) MyPremiumPublish(grpPred string, event string, eventInfo strin
 			defer conn.Close()
 
 			client := pb.NewScoutHubClient(conn)
-			client.PremiumPublish(ctx, premiumE)
+			client.PremiumPublish(goctx, premiumE)
 		}(sub)
 
 	}
@@ -2152,14 +2155,19 @@ func (ps *PubSub) PremiumPublish(ctx context.Context, event *pb.PremiumEvent) (*
 				}
 
 				for _, sub := range sg.AddrsToPublishEvent(eP) {
-					conn, err := grpc.Dial(sub.addr, grpc.WithInsecure())
-					if err != nil {
-						log.Fatalf("fail to dial: %v", err)
-					}
-					defer conn.Close()
+					go func(sub *SubData) {
+						goctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+						defer cancel()
 
-					client := pb.NewScoutHubClient(conn)
-					client.PremiumPublish(ctx, event)
+						conn, err := grpc.Dial(sub.addr, grpc.WithInsecure())
+						if err != nil {
+							log.Fatalf("fail to dial: %v", err)
+						}
+						defer conn.Close()
+
+						client := pb.NewScoutHubClient(conn)
+						client.PremiumPublish(goctx, event)
+					}(sub)
 				}
 			}
 
