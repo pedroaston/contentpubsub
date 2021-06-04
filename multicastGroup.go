@@ -12,15 +12,10 @@ import (
 	"google.golang.org/grpc"
 )
 
-// MaxSubsPerRegion >> maximum number of subscribers the pubisher can have in a geographical region
-// PowerSubsPoolSize >> the publisher recruits the strongest sub, but does not delegate the following
-// number of most powerfull ones in order to save them for further recruitment
-const (
-	MaxSubsPerRegion  = 5
-	PowerSubsPoolSize = 2
-)
-
 type MulticastGroup struct {
+	maxSubReg int
+	powerSubs int
+
 	selfAddr       string
 	predicate      *Predicate
 	subByPlace     map[string]*RegionData
@@ -34,9 +29,11 @@ type MulticastGroup struct {
 
 // NewMulticastGroup returns an instance of a multicastGroup with as
 // much rangeAttributeTrees as range attribute its predicate has
-func NewMulticastGroup(p *Predicate, addr string) *MulticastGroup {
+func NewMulticastGroup(p *Predicate, addr string, maxSubReg int, powerSubs int) *MulticastGroup {
 
 	mg := &MulticastGroup{
+		maxSubReg:      maxSubReg,
+		powerSubs:      powerSubs,
 		selfAddr:       addr,
 		predicate:      p,
 		subByPlace:     make(map[string]*RegionData),
@@ -109,11 +106,11 @@ func (mg *MulticastGroup) AddSubToGroup(addr string, cap int, region string, pre
 		lastHelper := subReg.helpers[len(subReg.helpers)-1]
 		mg.AddSubToHelper(newSub, lastHelper.addr)
 	} else {
-		if subReg.unhelped+1 > MaxSubsPerRegion {
+		if subReg.unhelped+1 > mg.maxSubReg {
 			candidate := subReg.subs[0]
 			var indexCutter int
-			if candidate.capacity > subReg.unhelped-PowerSubsPoolSize+1 {
-				indexCutter = PowerSubsPoolSize + 1
+			if candidate.capacity > subReg.unhelped-mg.powerSubs+1 {
+				indexCutter = mg.powerSubs + 1
 			} else {
 				indexCutter = subReg.unhelped - candidate.capacity + 1
 			}
@@ -442,6 +439,7 @@ func (mg *MulticastGroup) StopDelegating(tracker *HelperTracker, add bool) {
 }
 
 type SubGroupView struct {
+	maxAttr    int
 	pubAddr    string
 	predicate  *Predicate
 	helping    bool
@@ -470,7 +468,7 @@ func (sg *SubGroupView) SetHasHelper(req *pb.HelpRequest) error {
 // AddSub adds a subs to a helper responsability
 func (sg *SubGroupView) AddSub(sub *pb.MinimalSubData) error {
 
-	p, err := NewPredicate(sub.Predicate)
+	p, err := NewPredicate(sub.Predicate, sg.maxAttr)
 	if err != nil {
 		return err
 	}
@@ -492,7 +490,7 @@ func (sg *SubGroupView) AddSub(sub *pb.MinimalSubData) error {
 // RemoveSub removes a subs from the helper responsability
 func (sg *SubGroupView) RemoveSub(sub *pb.PremiumSubscription) error {
 
-	p, err := NewPredicate(sub.OwnPredicate)
+	p, err := NewPredicate(sub.OwnPredicate, sg.maxAttr)
 	if err != nil {
 		return err
 	}

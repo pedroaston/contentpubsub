@@ -23,21 +23,15 @@ import (
 	"google.golang.org/grpc"
 )
 
-// EventResendRate >> seconds that the publisher waits for rv ack until it resends event
-// FaultToleranceFactor >> number of backups
-// ConcurrentProcessingFactor >> how many parallel operations of each type can be supported
-// MaxAttributesPerSub >> maximum allowed number of attributes per predicate
-// SubRefreshRateMin >> frequency in which a subscriber needs to resub in minutes
-const (
-	OpResendRate                = 10
-	FaultToleranceFactor        = 2
-	ConcurrentProcessingFactor  = 25
-	MaxAttributesPerPredicate   = 5
-	SubRefreshRateMin           = 15
-	secondsToCheckEventDelivery = 30
-)
-
 type PubSub struct {
+	maxSubsPerRegion          int
+	powerSubsPoolSize         int
+	maxAttributesPerPredicate int
+	timeToCheckDelivery       time.Duration
+	opResendRate              time.Duration
+	faultToleranceFactor      int
+	region                    string
+
 	pb.UnimplementedScoutHubServer
 	server     *grpc.Server
 	serverAddr string
@@ -77,7 +71,6 @@ type PubSub struct {
 
 	managedGroups         []*MulticastGroup
 	subbedGroups          []*SubGroupView
-	region                string
 	premiumEvents         chan *pb.PremiumEvent
 	currentAdvertiseBoard []*pb.MulticastGroupID
 	nextAdvertiseBoard    []*pb.MulticastGroupID
@@ -90,40 +83,46 @@ type PubSub struct {
 
 // NewPubSub initializes the PubSub's data structure
 // sets up the server and starts processloop
-func NewPubSub(dht *kaddht.IpfsDHT, region string) *PubSub {
+func NewPubSub(dht *kaddht.IpfsDHT, cfg *SetupPubSub) *PubSub {
 
 	filterTable := NewFilterTable(dht)
 	auxFilterTable := NewFilterTable(dht)
 	mySubs := NewRouteStats()
 
 	ps := &PubSub{
-		currentFilterTable:  filterTable,
-		nextFilterTable:     auxFilterTable,
-		myFilters:           mySubs,
-		myBackupsFilters:    make(map[string]*FilterTable),
-		mapBackupAddr:       make(map[string]string),
-		myTrackers:          make(map[string]*Tracker),
-		myETrackers:         make(map[string]*EventLedger),
-		unconfirmedEvents:   make(map[string]*PubEventState),
-		unconfirmedSubs:     make(map[string]*SubState),
-		interestingEvents:   make(chan *pb.Event, ConcurrentProcessingFactor),
-		premiumEvents:       make(chan *pb.PremiumEvent, ConcurrentProcessingFactor),
-		subsToForward:       make(chan *ForwardSubRequest, ConcurrentProcessingFactor),
-		eventsToForwardUp:   make(chan *ForwardEvent, ConcurrentProcessingFactor),
-		eventsToForwardDown: make(chan *ForwardEvent, ConcurrentProcessingFactor),
-		terminate:           make(chan string),
-		advToForward:        make(chan *ForwardAdvert),
-		ackToSendUp:         make(chan *AckUp),
-		heartbeatTicker:     time.NewTicker(SubRefreshRateMin * time.Minute),
-		refreshTicker:       time.NewTicker(2 * SubRefreshRateMin * time.Minute),
-		eventTicker:         time.NewTicker(OpResendRate * time.Second),
-		subTicker:           time.NewTicker(OpResendRate * time.Second),
-		tablesLock:          &sync.RWMutex{},
-		upBackLock:          &sync.Mutex{},
-		region:              region,
-		record:              NewHistoryRecord(),
-		session:             rand.Intn(9999),
-		eventSeq:            0,
+		maxSubsPerRegion:          cfg.MaxSubsPerRegion,
+		powerSubsPoolSize:         cfg.PowerSubsPoolSize,
+		maxAttributesPerPredicate: cfg.MaxAttributesPerPredicate,
+		timeToCheckDelivery:       cfg.TimeToCheckDelivery,
+		faultToleranceFactor:      cfg.FaultToleranceFactor,
+		opResendRate:              cfg.OpResendRate,
+		region:                    cfg.Region,
+		currentFilterTable:        filterTable,
+		nextFilterTable:           auxFilterTable,
+		myFilters:                 mySubs,
+		myBackupsFilters:          make(map[string]*FilterTable),
+		mapBackupAddr:             make(map[string]string),
+		myTrackers:                make(map[string]*Tracker),
+		myETrackers:               make(map[string]*EventLedger),
+		unconfirmedEvents:         make(map[string]*PubEventState),
+		unconfirmedSubs:           make(map[string]*SubState),
+		interestingEvents:         make(chan *pb.Event, cfg.ConcurrentProcessingFactor),
+		premiumEvents:             make(chan *pb.PremiumEvent, cfg.ConcurrentProcessingFactor),
+		subsToForward:             make(chan *ForwardSubRequest, cfg.ConcurrentProcessingFactor),
+		eventsToForwardUp:         make(chan *ForwardEvent, cfg.ConcurrentProcessingFactor),
+		eventsToForwardDown:       make(chan *ForwardEvent, cfg.ConcurrentProcessingFactor),
+		terminate:                 make(chan string),
+		advToForward:              make(chan *ForwardAdvert),
+		ackToSendUp:               make(chan *AckUp),
+		heartbeatTicker:           time.NewTicker(cfg.SubRefreshRateMin * time.Minute),
+		refreshTicker:             time.NewTicker(2 * cfg.SubRefreshRateMin * time.Minute),
+		eventTicker:               time.NewTicker(cfg.OpResendRate * time.Second),
+		subTicker:                 time.NewTicker(cfg.OpResendRate * time.Second),
+		tablesLock:                &sync.RWMutex{},
+		upBackLock:                &sync.Mutex{},
+		record:                    NewHistoryRecord(),
+		session:                   rand.Intn(9999),
+		eventSeq:                  0,
 	}
 
 	ps.ipfsDHT = dht
@@ -187,7 +186,7 @@ type AckUp struct {
 func (ps *PubSub) MySubscribe(info string) error {
 	fmt.Println("MySubscribe: " + ps.serverAddr)
 
-	p, err := NewPredicate(info)
+	p, err := NewPredicate(info, ps.maxAttributesPerPredicate)
 	if err != nil {
 		return err
 	}
@@ -233,7 +232,7 @@ func (ps *PubSub) MySubscribe(info string) error {
 	}
 
 	if !ps.eventTickerState {
-		ps.subTicker.Reset(OpResendRate * time.Second)
+		ps.subTicker.Reset(ps.opResendRate * time.Second)
 		ps.subTickerState = true
 		ps.unconfirmedSubs[sub.Predicate].aged = true
 	}
@@ -281,7 +280,7 @@ func (ps *PubSub) closerAttrRvToSelf(p *Predicate) (peer.ID, string, error) {
 func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack, error) {
 	fmt.Println("Subscribe: " + ps.serverAddr)
 
-	p, err := NewPredicate(sub.Predicate)
+	p, err := NewPredicate(sub.Predicate, ps.maxAttributesPerPredicate)
 	if err != nil {
 		return &pb.Ack{State: false, Info: err.Error()}, err
 	}
@@ -381,7 +380,7 @@ func (ps *PubSub) forwardSub(dialAddr string, sub *pb.Subscription) {
 func (ps *PubSub) MyUnsubscribe(info string) error {
 	fmt.Printf("myUnsubscribe: %s\n", ps.serverAddr)
 
-	p, err := NewPredicate(info)
+	p, err := NewPredicate(info, ps.maxAttributesPerPredicate)
 	if err != nil {
 		return err
 	}
@@ -398,7 +397,7 @@ func (ps *PubSub) MyUnsubscribe(info string) error {
 func (ps *PubSub) MyPublish(data string, info string) error {
 	fmt.Printf("MyPublish: %s\n", ps.serverAddr)
 
-	p, err := NewPredicate(info)
+	p, err := NewPredicate(info, ps.maxAttributesPerPredicate)
 	if err != nil {
 		return err
 	}
@@ -470,7 +469,7 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 			eID := fmt.Sprintf("%s%d%d%s", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID, event.RvId)
 			ps.unconfirmedEvents[eID] = &PubEventState{event: event, aged: false, dialAddr: dialAddr}
 			if !ps.eventTickerState {
-				ps.eventTicker.Reset(OpResendRate * time.Second)
+				ps.eventTicker.Reset(ps.opResendRate * time.Second)
 				ps.eventTickerState = true
 				ps.unconfirmedEvents[eID].aged = true
 			}
@@ -486,7 +485,7 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error) {
 	fmt.Println("Publish: " + ps.serverAddr)
 
-	p, err := NewPredicate(event.Predicate)
+	p, err := NewPredicate(event.Predicate, ps.maxAttributesPerPredicate)
 	if err != nil {
 		return &pb.Ack{State: false, Info: err.Error()}, err
 	}
@@ -738,7 +737,8 @@ func (ps *PubSub) LogToTracker(ctx context.Context, log *pb.EventLog) (*pb.Ack, 
 		ps.myTrackers[log.RecruitMessage.RvID].leader = log.RecruitMessage.Leader
 		ps.myTrackers[log.RecruitMessage.RvID].rvAddr = log.RecruitMessage.RvAddr
 	} else {
-		ps.myTrackers[log.RecruitMessage.RvID] = NewTracker(log.RecruitMessage.Leader, log.RecruitMessage.RvID, log.RecruitMessage.RvAddr)
+		ps.myTrackers[log.RecruitMessage.RvID] = NewTracker(log.RecruitMessage.Leader, log.RecruitMessage.RvID,
+			log.RecruitMessage.RvAddr, ps.timeToCheckDelivery)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
@@ -778,7 +778,8 @@ func (ps *PubSub) AckToTracker(ctx context.Context, ack *pb.EventAck) (*pb.Ack, 
 		ps.myTrackers[ack.RecruitMessage.RvID].leader = ack.RecruitMessage.Leader
 		ps.myTrackers[ack.RecruitMessage.RvID].rvAddr = ack.RecruitMessage.RvAddr
 	} else {
-		ps.myTrackers[ack.RecruitMessage.RvID] = NewTracker(ack.RecruitMessage.Leader, ack.RecruitMessage.RvID, ack.RecruitMessage.RvAddr)
+		ps.myTrackers[ack.RecruitMessage.RvID] = NewTracker(ack.RecruitMessage.Leader, ack.RecruitMessage.RvID,
+			ack.RecruitMessage.RvAddr, ps.timeToCheckDelivery)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
@@ -921,7 +922,7 @@ func (ps *PubSub) forwardEventUp(dialAddr string, event *pb.Event) {
 func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) {
 	fmt.Print("Notify: " + ps.serverAddr)
 
-	p, err := NewPredicate(event.Predicate)
+	p, err := NewPredicate(event.Predicate, ps.maxAttributesPerPredicate)
 	if err != nil {
 		return &pb.Ack{State: false, Info: err.Error()}, err
 	}
@@ -1057,7 +1058,7 @@ func (ps *PubSub) forwardEventDown(dialAddr string, event *pb.Event, originalRou
 func (ps *PubSub) UpdateBackup(ctx context.Context, update *pb.Update) (*pb.Ack, error) {
 	fmt.Println("UpdateBackup >> " + ps.serverAddr)
 
-	p, err := NewPredicate(update.Predicate)
+	p, err := NewPredicate(update.Predicate, ps.maxAttributesPerPredicate)
 	if err != nil {
 		return &pb.Ack{State: false, Info: err.Error()}, err
 	}
@@ -1129,7 +1130,7 @@ func (ps *PubSub) getBackups() []string {
 	var backups []string
 
 	var dialAddr string
-	for _, backup := range ps.ipfsDHT.RoutingTable().NearestPeers(kb.ConvertPeerID(ps.ipfsDHT.PeerID()), FaultToleranceFactor) {
+	for _, backup := range ps.ipfsDHT.RoutingTable().NearestPeers(kb.ConvertPeerID(ps.ipfsDHT.PeerID()), ps.faultToleranceFactor) {
 		backupAddr := ps.ipfsDHT.FindLocal(backup).Addrs[0]
 		if backupAddr == nil {
 			continue
@@ -1153,12 +1154,12 @@ func (ps *PubSub) eraseOldFetchNewBackup(oldAddr string) {
 		}
 	}
 
-	candidate := ps.ipfsDHT.RoutingTable().NearestPeers(kb.ConvertPeerID(ps.ipfsDHT.PeerID()), FaultToleranceFactor+1)
-	if len(candidate) != FaultToleranceFactor+1 {
+	candidate := ps.ipfsDHT.RoutingTable().NearestPeers(kb.ConvertPeerID(ps.ipfsDHT.PeerID()), ps.faultToleranceFactor+1)
+	if len(candidate) != ps.faultToleranceFactor+1 {
 		return
 	}
 
-	backupAddr := ps.ipfsDHT.FindLocal(candidate[FaultToleranceFactor]).Addrs[0]
+	backupAddr := ps.ipfsDHT.FindLocal(candidate[ps.faultToleranceFactor]).Addrs[0]
 	if backupAddr == nil {
 		return
 	}
@@ -1191,7 +1192,7 @@ func (ps *PubSub) BackupRefresh(stream pb.ScoutHub_BackupRefreshServer) error {
 			ps.myBackupsFilters[update.Sender] = nil
 		}
 
-		p, err := NewPredicate(update.Predicate)
+		p, err := NewPredicate(update.Predicate, ps.maxAttributesPerPredicate)
 		if err != nil {
 			return err
 		}
@@ -1314,7 +1315,7 @@ func (ps *PubSub) alternativesToRv(rvID string) []string {
 
 	var validAlt []string
 	selfID := ps.ipfsDHT.PeerID()
-	closestIDs := ps.ipfsDHT.RoutingTable().NearestPeers(kb.ID(kb.ConvertKey(rvID)), FaultToleranceFactor)
+	closestIDs := ps.ipfsDHT.RoutingTable().NearestPeers(kb.ID(kb.ConvertKey(rvID)), ps.faultToleranceFactor)
 
 	for _, ID := range closestIDs {
 		if kb.Closer(selfID, ID, rvID) {
@@ -1410,12 +1411,12 @@ type ForwardAdvert struct {
 // publisher to create a MulticastGroup
 func (ps *PubSub) CreateMulticastGroup(pred string) error {
 
-	p, err := NewPredicate(pred)
+	p, err := NewPredicate(pred, ps.maxAttributesPerPredicate)
 	if err != nil {
 		return err
 	}
 
-	ps.managedGroups = append(ps.managedGroups, NewMulticastGroup(p, ps.serverAddr))
+	ps.managedGroups = append(ps.managedGroups, NewMulticastGroup(p, ps.serverAddr, ps.maxSubsPerRegion, ps.powerSubsPoolSize))
 	ps.myAdvertiseGroup(p)
 
 	return nil
@@ -1525,7 +1526,7 @@ func (ps *PubSub) forwardAdvertising(dialAddr string, adv *pb.AdvertRequest) {
 // addAdvertToBoard adds the advertisement to both the current and next boards
 func (ps *PubSub) addAdvertToBoards(adv *pb.AdvertRequest) error {
 
-	pAdv, err := NewPredicate(adv.GroupID.Predicate)
+	pAdv, err := NewPredicate(adv.GroupID.Predicate, ps.maxAttributesPerPredicate)
 	if err != nil {
 		return err
 	}
@@ -1535,7 +1536,7 @@ func (ps *PubSub) addAdvertToBoards(adv *pb.AdvertRequest) error {
 	defer ps.tablesLock.Unlock()
 
 	for _, a := range ps.currentAdvertiseBoard {
-		pA, _ := NewPredicate(a.Predicate)
+		pA, _ := NewPredicate(a.Predicate, ps.maxAttributesPerPredicate)
 		if a.OwnerAddr == adv.GroupID.OwnerAddr && pA.Equal(pAdv) {
 			miss = false
 		}
@@ -1546,7 +1547,7 @@ func (ps *PubSub) addAdvertToBoards(adv *pb.AdvertRequest) error {
 	}
 
 	for _, a := range ps.nextAdvertiseBoard {
-		pA, _ := NewPredicate(a.Predicate)
+		pA, _ := NewPredicate(a.Predicate, ps.maxAttributesPerPredicate)
 		if a.OwnerAddr == adv.GroupID.OwnerAddr && pA.Equal(pAdv) {
 			return nil
 		}
@@ -1567,7 +1568,7 @@ func (ps *PubSub) MySearchAndPremiumSub(pred string) error {
 
 	start := time.Now().Format(time.StampMilli)
 
-	p, err := NewPredicate(pred)
+	p, err := NewPredicate(pred, ps.maxAttributesPerPredicate)
 	if err != nil {
 		return err
 	}
@@ -1643,7 +1644,7 @@ func (ps *PubSub) MySearchAndPremiumSub(pred string) error {
 func (ps *PubSub) GroupSearchRequest(ctx context.Context, req *pb.SearchRequest) (*pb.SearchReply, error) {
 	fmt.Println("GroupSearchRequest: " + ps.serverAddr)
 
-	p, err := NewPredicate(req.Predicate)
+	p, err := NewPredicate(req.Predicate, ps.maxAttributesPerPredicate)
 	if err != nil {
 		return nil, err
 	}
@@ -1709,7 +1710,7 @@ func (ps *PubSub) returnGroupsOfInterest(p *Predicate) []*pb.MulticastGroupID {
 	var interestGs []*pb.MulticastGroupID
 	ps.tablesLock.RLock()
 	for _, g := range ps.currentAdvertiseBoard {
-		pG, _ := NewPredicate(g.Predicate)
+		pG, _ := NewPredicate(g.Predicate, ps.maxAttributesPerPredicate)
 		if pG.SimplePredicateMatch(p) {
 			interestGs = append(interestGs, g)
 		}
@@ -1727,7 +1728,7 @@ func (ps *PubSub) MyPremiumSubscribe(info string, pubAddr string, pubPredicate s
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	pubP, err := NewPredicate(pubPredicate)
+	pubP, err := NewPredicate(pubPredicate, ps.maxAttributesPerPredicate)
 	if err != nil {
 		return err
 	}
@@ -1750,6 +1751,7 @@ func (ps *PubSub) MyPremiumSubscribe(info string, pubAddr string, pubPredicate s
 	ack, err := client.PremiumSubscribe(ctx, sub)
 	if ack.State && err == nil {
 		subG := &SubGroupView{
+			maxAttr:   ps.maxAttributesPerPredicate,
 			pubAddr:   pubAddr,
 			predicate: pubP,
 			helping:   false,
@@ -1769,12 +1771,12 @@ func (ps *PubSub) MyPremiumSubscribe(info string, pubAddr string, pubPredicate s
 func (ps *PubSub) PremiumSubscribe(ctx context.Context, sub *pb.PremiumSubscription) (*pb.Ack, error) {
 	fmt.Printf("PremiumSubscribe: %s\n", ps.serverAddr)
 
-	pubP, err1 := NewPredicate(sub.PubPredicate)
+	pubP, err1 := NewPredicate(sub.PubPredicate, ps.maxAttributesPerPredicate)
 	if err1 != nil {
 		return &pb.Ack{State: false, Info: ""}, err1
 	}
 
-	subP, err2 := NewPredicate(sub.OwnPredicate)
+	subP, err2 := NewPredicate(sub.OwnPredicate, ps.maxAttributesPerPredicate)
 	if err2 != nil {
 		return &pb.Ack{State: false, Info: ""}, err2
 	}
@@ -1796,7 +1798,7 @@ func (ps *PubSub) MyPremiumUnsubscribe(pubPred string, pubAddr string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	pubP, err := NewPredicate(pubPred)
+	pubP, err := NewPredicate(pubPred, ps.maxAttributesPerPredicate)
 	if err != nil {
 		return err
 	}
@@ -1841,7 +1843,7 @@ func (ps *PubSub) MyPremiumUnsubscribe(pubPred string, pubAddr string) error {
 func (ps *PubSub) PremiumUnsubscribe(ctx context.Context, sub *pb.PremiumSubscription) (*pb.Ack, error) {
 	fmt.Printf("PremiumUnsubscribe: %s\n", ps.serverAddr)
 
-	pubP, err1 := NewPredicate(sub.PubPredicate)
+	pubP, err1 := NewPredicate(sub.PubPredicate, ps.maxAttributesPerPredicate)
 	if err1 != nil {
 		return &pb.Ack{State: false, Info: ""}, err1
 	}
@@ -1871,12 +1873,12 @@ func (ps *PubSub) MyPremiumPublish(grpPred string, event string, eventInfo strin
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	gP, err1 := NewPredicate(grpPred)
+	gP, err1 := NewPredicate(grpPred, ps.maxAttributesPerPredicate)
 	if err1 != nil {
 		return err1
 	}
 
-	eP, err2 := NewPredicate(eventInfo)
+	eP, err2 := NewPredicate(eventInfo, ps.maxAttributesPerPredicate)
 	if err2 != nil {
 		return err2
 	}
@@ -1957,7 +1959,7 @@ func sendEventToHelper(ctx context.Context, tracker *HelperTracker, mGrp *Multic
 func (ps *PubSub) PremiumPublish(ctx context.Context, event *pb.PremiumEvent) (*pb.Ack, error) {
 	fmt.Printf("PremiumPublish: %s\n", ps.serverAddr)
 
-	pubP, err := NewPredicate(event.GroupID.Predicate)
+	pubP, err := NewPredicate(event.GroupID.Predicate, ps.maxAttributesPerPredicate)
 	if err != nil {
 		return &pb.Ack{State: false, Info: ""}, err
 	}
@@ -1965,7 +1967,7 @@ func (ps *PubSub) PremiumPublish(ctx context.Context, event *pb.PremiumEvent) (*
 	for _, sg := range ps.subbedGroups {
 		if sg.predicate.Equal(pubP) {
 			if sg.helping {
-				eP, err := NewPredicate(event.EventPred)
+				eP, err := NewPredicate(event.EventPred, ps.maxAttributesPerPredicate)
 				if err != nil {
 					return &pb.Ack{State: false, Info: ""}, err
 				}
@@ -1995,7 +1997,7 @@ func (ps *PubSub) PremiumPublish(ctx context.Context, event *pb.PremiumEvent) (*
 func (ps *PubSub) RequestHelp(ctx context.Context, req *pb.HelpRequest) (*pb.Ack, error) {
 	fmt.Printf("RequestHelp: %s\n", ps.serverAddr)
 
-	p, err := NewPredicate(req.GroupID.Predicate)
+	p, err := NewPredicate(req.GroupID.Predicate, ps.maxAttributesPerPredicate)
 	if err != nil {
 		return &pb.Ack{State: false, Info: ""}, err
 	}
@@ -2019,7 +2021,7 @@ func (ps *PubSub) RequestHelp(ctx context.Context, req *pb.HelpRequest) (*pb.Ack
 func (ps *PubSub) DelegateSubToHelper(ctx context.Context, sub *pb.DelegateSub) (*pb.Ack, error) {
 	fmt.Printf("DelegateSubToHelper: %s\n", ps.serverAddr)
 
-	p, err := NewPredicate(sub.GroupID.Predicate)
+	p, err := NewPredicate(sub.GroupID.Predicate, ps.maxAttributesPerPredicate)
 	if err != nil {
 		return &pb.Ack{State: false, Info: ""}, err
 	}
