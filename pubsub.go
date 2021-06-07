@@ -549,7 +549,7 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 
 // Publish is a remote function called by a external peer to send an Event upstream
 func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error) {
-	fmt.Println("Publish: " + ps.serverAddr)
+	fmt.Println("Publish: " + event.Event + " >> " + ps.serverAddr)
 
 	p, err := NewPredicate(event.Predicate, ps.maxAttributesPerPredicate)
 	if err != nil {
@@ -1030,7 +1030,7 @@ func (ps *PubSub) forwardEventUp(dialAddr string, event *pb.Event) {
 
 // Notify is a remote function called by a external peer to send an Event downstream
 func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) {
-	fmt.Print("Notify: " + ps.serverAddr)
+	fmt.Print("Notify: " + event.Event + " >> " + ps.serverAddr)
 
 	p, err := NewPredicate(event.Predicate, ps.maxAttributesPerPredicate)
 	if err != nil {
