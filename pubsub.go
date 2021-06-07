@@ -1802,16 +1802,25 @@ func (ps *PubSub) MySearchAndPremiumSub(pred string) error {
 			reply, err := client.GroupSearchRequest(ctx, req)
 			if err == nil {
 				for _, g := range reply.Groups {
-					ps.MyPremiumSubscribe(pred, g.OwnerAddr, g.Predicate, 5)
+					fmt.Println("BOOM!")
 					ps.record.SaveTimeToSub(start)
+					err := ps.MyPremiumSubscribe(pred, g.OwnerAddr, g.Predicate, 5)
+					if err == nil {
+						ps.record.SaveTimeToSub(start)
+						break
+					}
 				}
 				break
 			}
 		}
 	} else {
 		for _, g := range reply.Groups {
-			ps.MyPremiumSubscribe(pred, g.OwnerAddr, g.Predicate, 5)
-			ps.record.SaveTimeToSub(start)
+			fmt.Println("BOOM!")
+			err := ps.MyPremiumSubscribe(pred, g.OwnerAddr, g.Predicate, 5)
+			if err == nil {
+				ps.record.SaveTimeToSub(start)
+				break
+			}
 		}
 	}
 
