@@ -1602,7 +1602,7 @@ func (ps *PubSub) CreateMulticastGroup(pred string) error {
 // existing of a new multicastGroup by sharing it
 // with rendezvous nodes of the Group Predicate
 func (ps *PubSub) myAdvertiseGroup(pred *Predicate) error {
-	fmt.Printf("myAdvertiseGroup: %s\n", ps.serverAddr)
+	fmt.Printf("myAdvertiseGroup: %s >> %s\n", pred.ToString(), ps.serverAddr)
 
 	var dialAddr string
 	for _, attr := range pred.attributes {
@@ -1641,7 +1641,7 @@ func (ps *PubSub) myAdvertiseGroup(pred *Predicate) error {
 
 // AdvertiseGroup remote call used to propagate the advertisement to the rendezvous
 func (ps *PubSub) AdvertiseGroup(ctx context.Context, adv *pb.AdvertRequest) (*pb.Ack, error) {
-	fmt.Printf("AdvertiseGroup: %s\n", ps.serverAddr)
+	fmt.Printf("AdvertiseGroup: %s >> %s\n", adv.RvId, ps.serverAddr)
 
 	res, nextHop := ps.rendezvousSelfCheck(adv.RvId)
 	if res {
