@@ -1620,7 +1620,7 @@ func (ps *PubSub) myAdvertiseGroup(pred *Predicate) error {
 		res, nextHop := ps.rendezvousSelfCheck(attr.name)
 		if res {
 			ps.addAdvertToBoards(advReq)
-			return nil
+			break
 		}
 
 		attrAddr := ps.ipfsDHT.FindLocal(nextHop).Addrs[0]
@@ -1737,7 +1737,7 @@ func (ps *PubSub) addAdvertToBoards(adv *pb.AdvertRequest) error {
 // MyGroupSearchRequest requests to the closest rendezvous of his whished
 // Group predicate for MulticastGroups of his interest
 func (ps *PubSub) MySearchAndPremiumSub(pred string) error {
-	fmt.Println("myGroupSearchRequest: " + ps.serverAddr)
+	fmt.Println("MySearchAndPremiumSub: " + ps.serverAddr)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
@@ -1757,7 +1757,11 @@ func (ps *PubSub) MySearchAndPremiumSub(pred string) error {
 	res, _ := ps.rendezvousSelfCheck(minAttr)
 	if res {
 		for _, g := range ps.returnGroupsOfInterest(p) {
-			fmt.Println("Pub: " + g.OwnerAddr + " Theme: " + g.Predicate)
+			err := ps.MyPremiumSubscribe(pred, g.OwnerAddr, g.Predicate, 5)
+			if err == nil {
+				ps.record.SaveTimeToSub(start)
+				break
+			}
 		}
 		return nil
 	}
@@ -1797,7 +1801,6 @@ func (ps *PubSub) MySearchAndPremiumSub(pred string) error {
 			reply, err := client.GroupSearchRequest(ctx, req)
 			if err == nil {
 				for _, g := range reply.Groups {
-					fmt.Println("Pub: " + g.OwnerAddr + " Theme: " + g.Predicate)
 					ps.MyPremiumSubscribe(pred, g.OwnerAddr, g.Predicate, 5)
 					ps.record.SaveTimeToSub(start)
 				}
@@ -1806,7 +1809,6 @@ func (ps *PubSub) MySearchAndPremiumSub(pred string) error {
 		}
 	} else {
 		for _, g := range reply.Groups {
-			fmt.Println("Pub: " + g.OwnerAddr + " Theme: " + g.Predicate)
 			ps.MyPremiumSubscribe(pred, g.OwnerAddr, g.Predicate, 5)
 			ps.record.SaveTimeToSub(start)
 		}
