@@ -1602,7 +1602,7 @@ func (ps *PubSub) CreateMulticastGroup(pred string) error {
 // existing of a new multicastGroup by sharing it
 // with rendezvous nodes of the Group Predicate
 func (ps *PubSub) myAdvertiseGroup(pred *Predicate) error {
-	fmt.Printf("myAdvertiseGroup: %s >> %s\n", pred.ToString(), ps.serverAddr)
+	fmt.Printf("myAdvertiseGroup: %s\n", ps.serverAddr)
 
 	var dialAddr string
 	for _, attr := range pred.attributes {
@@ -1641,7 +1641,7 @@ func (ps *PubSub) myAdvertiseGroup(pred *Predicate) error {
 
 // AdvertiseGroup remote call used to propagate the advertisement to the rendezvous
 func (ps *PubSub) AdvertiseGroup(ctx context.Context, adv *pb.AdvertRequest) (*pb.Ack, error) {
-	fmt.Printf("AdvertiseGroup: %s >> %s\n", adv.RvId, ps.serverAddr)
+	fmt.Printf("AdvertiseGroup: %s\n", ps.serverAddr)
 
 	res, nextHop := ps.rendezvousSelfCheck(adv.RvId)
 	if res {
@@ -1737,7 +1737,7 @@ func (ps *PubSub) addAdvertToBoards(adv *pb.AdvertRequest) error {
 // MyGroupSearchRequest requests to the closest rendezvous of his whished
 // Group predicate for MulticastGroups of his interest
 func (ps *PubSub) MySearchAndPremiumSub(pred string) error {
-	fmt.Println("MySearchAndPremiumSub: " + pred + " >> " + ps.serverAddr)
+	fmt.Println("MySearchAndPremiumSub: " + ps.serverAddr)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
@@ -1756,9 +1756,6 @@ func (ps *PubSub) MySearchAndPremiumSub(pred string) error {
 
 	res, _ := ps.rendezvousSelfCheck(minAttr)
 	if res {
-		if ps.returnGroupsOfInterest(p) == nil {
-			fmt.Println("BOOM!")
-		}
 		for _, g := range ps.returnGroupsOfInterest(p) {
 			err := ps.MyPremiumSubscribe(pred, g.OwnerAddr, g.Predicate, 5)
 			if err == nil {
@@ -1803,9 +1800,6 @@ func (ps *PubSub) MySearchAndPremiumSub(pred string) error {
 			client := pb.NewScoutHubClient(conn)
 			reply, err := client.GroupSearchRequest(ctx, req)
 			if err == nil {
-				if reply.Groups == nil {
-					fmt.Println("BOOM!")
-				}
 				for _, g := range reply.Groups {
 					ps.record.SaveTimeToSub(start)
 					err := ps.MyPremiumSubscribe(pred, g.OwnerAddr, g.Predicate, 5)
@@ -1818,9 +1812,6 @@ func (ps *PubSub) MySearchAndPremiumSub(pred string) error {
 			}
 		}
 	} else {
-		if reply.Groups == nil {
-			fmt.Println("BOOM!")
-		}
 		for _, g := range reply.Groups {
 			err := ps.MyPremiumSubscribe(pred, g.OwnerAddr, g.Predicate, 5)
 			if err == nil {
@@ -1836,7 +1827,7 @@ func (ps *PubSub) MySearchAndPremiumSub(pred string) error {
 // GroupSearchRequest is a piggybacked remote call that deliveres to the myGroupSerchRequest caller
 // all the multicastGroups he has in his AdvertiseBoard that comply with his search predicate
 func (ps *PubSub) GroupSearchRequest(ctx context.Context, req *pb.SearchRequest) (*pb.SearchReply, error) {
-	fmt.Println("GroupSearchRequest: " + req.RvID + " >> " + ps.serverAddr)
+	fmt.Println("GroupSearchRequest: " + ps.serverAddr)
 
 	p, err := NewPredicate(req.Predicate, ps.maxAttributesPerPredicate)
 	if err != nil {
