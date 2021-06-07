@@ -1737,7 +1737,7 @@ func (ps *PubSub) addAdvertToBoards(adv *pb.AdvertRequest) error {
 // MyGroupSearchRequest requests to the closest rendezvous of his whished
 // Group predicate for MulticastGroups of his interest
 func (ps *PubSub) MySearchAndPremiumSub(pred string) error {
-	fmt.Println("MySearchAndPremiumSub: " + ps.serverAddr)
+	fmt.Println("MySearchAndPremiumSub: " + pred + " >> " + ps.serverAddr)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
@@ -1820,7 +1820,7 @@ func (ps *PubSub) MySearchAndPremiumSub(pred string) error {
 // GroupSearchRequest is a piggybacked remote call that deliveres to the myGroupSerchRequest caller
 // all the multicastGroups he has in his AdvertiseBoard that comply with his search predicate
 func (ps *PubSub) GroupSearchRequest(ctx context.Context, req *pb.SearchRequest) (*pb.SearchReply, error) {
-	fmt.Println("GroupSearchRequest: " + ps.serverAddr)
+	fmt.Println("GroupSearchRequest: " + req.RvID + " >> " + ps.serverAddr)
 
 	p, err := NewPredicate(req.Predicate, ps.maxAttributesPerPredicate)
 	if err != nil {
