@@ -9,12 +9,14 @@
 
 ## Latest versions of each variant prepared for testground
 ### Active
-- v0.0.7  >> Base-Unreliable
-- v0.1.11 >> Redirect-Unreliable
-- v0.2.13 >> Redirect-Reliable and latest FastDelivery
-- v0.3.9  >> Base-Reliable
+- v0.0.8  >> Base-Unreliable
+- v0.1.12 >> Redirect-Unreliable
+- v0.4.0  >> Base-Rv-Reliable
+- v0.5.2  >> Redirect-Rv-Reliable and latest FastDelivery
 
 ### Abandoned
+- v0.2.13 >> Redirect-Reliable and latest FastDelivery
+- v0.3.9  >> Base-Reliable
 
 ### Auxiliar
 - v0.13s  >> Used for Debugging
