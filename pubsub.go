@@ -1094,6 +1094,7 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 	if event.Backup == "" {
 		for next, route := range ps.currentFilterTable.routes {
 			if route.IsInterested(p) {
+				fmt.Println("BOOM!")
 				var dialAddr string
 				nextID, err := peer.Decode(next)
 				if err != nil {
