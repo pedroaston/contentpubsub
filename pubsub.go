@@ -1617,8 +1617,8 @@ func (ps *PubSub) myAdvertiseGroup(pred *Predicate) error {
 			RvId:    attr.name,
 		}
 
-		res, nextHop := ps.rendezvousSelfCheck(attr.name)
-		if res {
+		isRv, nextHop := ps.rendezvousSelfCheck(attr.name)
+		if isRv {
 			ps.addAdvertToBoards(advReq)
 			break
 		}
@@ -1757,6 +1757,7 @@ func (ps *PubSub) MySearchAndPremiumSub(pred string) error {
 	res, _ := ps.rendezvousSelfCheck(minAttr)
 	if res {
 		for _, g := range ps.returnGroupsOfInterest(p) {
+			fmt.Println("BOOM!")
 			err := ps.MyPremiumSubscribe(pred, g.OwnerAddr, g.Predicate, 5)
 			if err == nil {
 				ps.record.SaveTimeToSub(start)
