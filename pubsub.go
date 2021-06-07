@@ -1756,8 +1756,10 @@ func (ps *PubSub) MySearchAndPremiumSub(pred string) error {
 
 	res, _ := ps.rendezvousSelfCheck(minAttr)
 	if res {
-		for _, g := range ps.returnGroupsOfInterest(p) {
+		if ps.returnGroupsOfInterest(p) == nil {
 			fmt.Println("BOOM!")
+		}
+		for _, g := range ps.returnGroupsOfInterest(p) {
 			err := ps.MyPremiumSubscribe(pred, g.OwnerAddr, g.Predicate, 5)
 			if err == nil {
 				ps.record.SaveTimeToSub(start)
@@ -1801,8 +1803,10 @@ func (ps *PubSub) MySearchAndPremiumSub(pred string) error {
 			client := pb.NewScoutHubClient(conn)
 			reply, err := client.GroupSearchRequest(ctx, req)
 			if err == nil {
-				for _, g := range reply.Groups {
+				if reply.Groups == nil {
 					fmt.Println("BOOM!")
+				}
+				for _, g := range reply.Groups {
 					ps.record.SaveTimeToSub(start)
 					err := ps.MyPremiumSubscribe(pred, g.OwnerAddr, g.Predicate, 5)
 					if err == nil {
@@ -1814,8 +1818,10 @@ func (ps *PubSub) MySearchAndPremiumSub(pred string) error {
 			}
 		}
 	} else {
-		for _, g := range reply.Groups {
+		if reply.Groups == nil {
 			fmt.Println("BOOM!")
+		}
+		for _, g := range reply.Groups {
 			err := ps.MyPremiumSubscribe(pred, g.OwnerAddr, g.Predicate, 5)
 			if err == nil {
 				ps.record.SaveTimeToSub(start)
