@@ -927,6 +927,13 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 		return &pb.Ack{State: false, Info: err.Error()}, err
 	}
 
+	for _, attr := range p.attributes {
+		isRv, _ := ps.rendezvousSelfCheck(attr.name)
+		if isRv {
+			return &pb.Ack{State: true, Info: ""}, nil
+		}
+	}
+
 	eID := fmt.Sprintf("%s%d%d%s", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID, event.RvId)
 	if ps.myETrackers[eID] != nil {
 

@@ -30,9 +30,12 @@ type SetupPubSub struct {
 
 	// Geographic region of the peer
 	Region string
+
+	// Number of peer he may help in FastDelivery
+	Capacity int
 }
 
-func DefaultConfig(region string) *SetupPubSub {
+func DefaultConfig(region string, cap int) *SetupPubSub {
 
 	cfg := &SetupPubSub{
 		MaxSubsPerRegion:           5,
@@ -44,6 +47,7 @@ func DefaultConfig(region string) *SetupPubSub {
 		SubRefreshRateMin:          time.Duration(15),
 		TimeToCheckDelivery:        time.Duration(30),
 		Region:                     region,
+		Capacity:                   cap,
 	}
 
 	return cfg
