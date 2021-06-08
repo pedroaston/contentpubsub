@@ -142,6 +142,26 @@ func (p *Predicate) SimplePredicateMatch(pEvent *Predicate) bool {
 	return true
 }
 
+// SimplePredicateMatch evaluates if an event predicate matches a sub predicate
+// or also to know if a predicate encompasses other
+// Special Note >> events range is seen as a single value for now for simplicity
+// and lack of reason to support a range
+func (p *Predicate) SimpleAdvMatch(pAdv *Predicate) bool {
+
+	for _, attr := range p.attributes {
+		if _, ok := pAdv.attributes[attr.name]; !ok {
+			return false
+		} else if attr.attrType == Range {
+			if !(pAdv.attributes[attr.name].rangeQuery[0] < attr.rangeQuery[0] &&
+				pAdv.attributes[attr.name].rangeQuery[1] > attr.rangeQuery[1]) {
+				return false
+			}
+		}
+	}
+
+	return true
+}
+
 // TryMergePredicates is used in FilterSummarizing to attempt merging two
 // different predicates. If the result is false it means they are exclusive,
 // otherwise it will return the merge of both predicates
