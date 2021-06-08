@@ -33,7 +33,7 @@ func TestSimpleUnsubscribing(t *testing.T) {
 
 	var pubsubs [2]*PubSub
 	for i, dht := range dhts {
-		pubsubs[i] = NewPubSub(dht, DefaultConfig("PT"))
+		pubsubs[i] = NewPubSub(dht, DefaultConfig("PT", 10))
 	}
 
 	err := pubsubs[0].MySubscribe("portugal T")
@@ -72,7 +72,7 @@ func TestSimplePublish(t *testing.T) {
 
 	var pubsubs [3]*PubSub
 	for i, dht := range dhts {
-		pubsubs[i] = NewPubSub(dht, DefaultConfig("PT"))
+		pubsubs[i] = NewPubSub(dht, DefaultConfig("PT", 10))
 	}
 
 	pubsubs[0].MySubscribe("portugal T")
@@ -116,7 +116,7 @@ func TestSubscriptionForwarding(t *testing.T) {
 
 	var pubsubs [7]*PubSub
 	for i, dht := range dhts {
-		pubsubs[i] = NewPubSub(dht, DefaultConfig("PT"))
+		pubsubs[i] = NewPubSub(dht, DefaultConfig("PT", 10))
 	}
 
 	err1 := pubsubs[0].MySubscribe("chocolate T")
@@ -172,7 +172,7 @@ func TestSimpleFaultTolerance(t *testing.T) {
 
 	var pubsubs [5]*PubSub
 	for i, dht := range dhts {
-		pubsubs[i] = NewPubSub(dht, DefaultConfig("PT"))
+		pubsubs[i] = NewPubSub(dht, DefaultConfig("PT", 10))
 	}
 
 	pubsubs[0].MySubscribe("portugal T")
@@ -219,7 +219,7 @@ func TestBackupReplacement(t *testing.T) {
 
 	var pubsubs [6]*PubSub
 	for i, dht := range dhts {
-		pubsubs[i] = NewPubSub(dht, DefaultConfig("PT"))
+		pubsubs[i] = NewPubSub(dht, DefaultConfig("PT", 10))
 	}
 
 	pubsubs[3].MySubscribe("benfica T")
@@ -262,7 +262,7 @@ func TestRefreshRoutine(t *testing.T) {
 
 	var pubsubs [6]*PubSub
 	for i, dht := range dhts {
-		pubsubs[i] = NewPubSub(dht, DefaultConfig("PT"))
+		pubsubs[i] = NewPubSub(dht, DefaultConfig("PT", 10))
 	}
 
 	pubsubs[4].CreateMulticastGroup("portugal T")
@@ -306,7 +306,7 @@ func TestRedirectMechanism(t *testing.T) {
 
 	var pubsubs [4]*PubSub
 	for i, dht := range dhts {
-		pubsubs[i] = NewPubSub(dht, DefaultConfig("PT"))
+		pubsubs[i] = NewPubSub(dht, DefaultConfig("PT", 10))
 	}
 
 	pubsubs[0].MySubscribe("portugal T")

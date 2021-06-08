@@ -596,6 +596,13 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 		return &pb.Ack{State: false, Info: err.Error()}, err
 	}
 
+	for _, attr := range p.attributes {
+		isRv, _ := ps.rendezvousSelfCheck(attr.name)
+		if isRv {
+			return &pb.Ack{State: true, Info: ""}, nil
+		}
+	}
+
 	if ps.myFilters.IsInterested(p) {
 		ps.interestingEvents <- event
 	}
