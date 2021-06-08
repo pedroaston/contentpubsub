@@ -1627,7 +1627,7 @@ func (ps *PubSub) myAdvertiseGroup(pred *Predicate) error {
 		isRv, nextHop := ps.rendezvousSelfCheck(attr.name)
 		if isRv {
 			ps.addAdvertToBoards(advReq)
-			break
+			continue
 		}
 
 		attrAddr := ps.ipfsDHT.FindLocal(nextHop).Addrs[0]
