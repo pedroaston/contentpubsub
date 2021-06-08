@@ -1900,11 +1900,20 @@ func (ps *PubSub) returnGroupsOfInterest(p *Predicate) []*pb.MulticastGroupID {
 	ps.tablesLock.RLock()
 	for _, g := range ps.currentAdvertiseBoard {
 		pG, _ := NewPredicate(g.Predicate, ps.maxAttributesPerPredicate)
-		fmt.Println("adv: " + pG.String())
-		fmt.Println("query: " + p.String())
-		if p.SimplePredicateMatch(pG) {
-			fmt.Println("GOOD")
-			interestGs = append(interestGs, g)
+		if len(pG.attributes) == len(p.attributes) {
+			fmt.Println("adv: " + pG.String())
+			fmt.Println("query: " + p.String())
+			if pG.SimplePredicateMatch(p) {
+				fmt.Println("GOOD")
+				interestGs = append(interestGs, g)
+			}
+		} else {
+			fmt.Println("adv: " + pG.String())
+			fmt.Println("query: " + p.String())
+			if p.SimplePredicateMatch(pG) {
+				fmt.Println("GOOD")
+				interestGs = append(interestGs, g)
+			}
 		}
 	}
 
