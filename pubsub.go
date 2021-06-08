@@ -1902,7 +1902,7 @@ func (ps *PubSub) returnGroupsOfInterest(p *Predicate) []*pb.MulticastGroupID {
 		pG, _ := NewPredicate(g.Predicate, ps.maxAttributesPerPredicate)
 		fmt.Println("adv: " + pG.String())
 		fmt.Println("query: " + p.String())
-		if pG.SimplePredicateMatch(p) {
+		if p.SimplePredicateMatch(pG) {
 			fmt.Println("GOOD")
 			interestGs = append(interestGs, g)
 		}
