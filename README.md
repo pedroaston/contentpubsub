@@ -6,6 +6,7 @@
 ## Instructions to run and test this codebase
 - Before running the tests, switch the flag TestgroundReady to false at the utils.go file
 - The tests should be run one by one because of port and peer-ID assigning  
+- Most of the tests need to be confirmed by analyzing the output
 
 ## Latest versions of each variant prepared for testground
 ### Active
