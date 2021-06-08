@@ -33,14 +33,14 @@ func TestSimpleFastDelivery(t *testing.T) {
 
 	var pubsubs [5]*PubSub
 	for i, dht := range dhts {
-		pubsubs[i] = NewPubSub(dht, DefaultConfig("PT"))
+		pubsubs[i] = NewPubSub(dht, DefaultConfig("PT", 10))
 	}
 
 	pubsubs[4].CreateMulticastGroup("portugal T")
-	pubsubs[1].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 10)
-	pubsubs[2].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 10)
-	pubsubs[3].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 10)
-	pubsubs[0].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 10)
+	pubsubs[1].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T")
+	pubsubs[2].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T")
+	pubsubs[3].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T")
+	pubsubs[0].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T")
 	pubsubs[4].MyPremiumPublish("portugal T", "Portugal is great!", "portugal T")
 
 	time.Sleep(time.Second)
@@ -71,7 +71,7 @@ func TestFastDeliverySearchAndSub(t *testing.T) {
 
 	var pubsubs [5]*PubSub
 	for i, dht := range dhts {
-		pubsubs[i] = NewPubSub(dht, DefaultConfig("PT"))
+		pubsubs[i] = NewPubSub(dht, DefaultConfig("PT", 100))
 	}
 
 	pubsubs[2].CreateMulticastGroup("portugal T")
@@ -110,14 +110,14 @@ func TestSimpleFastDeliveryWithRanges(t *testing.T) {
 
 	var pubsubs [5]*PubSub
 	for i, dht := range dhts {
-		pubsubs[i] = NewPubSub(dht, DefaultConfig("PT"))
+		pubsubs[i] = NewPubSub(dht, DefaultConfig("PT", 10))
 	}
 
 	pubsubs[0].CreateMulticastGroup("wine T/year R 1990 1997")
-	pubsubs[1].MyPremiumSubscribe("wine T/year R 1991 1994", pubsubs[0].serverAddr, "wine T/year R 1990 1997", 10)
-	pubsubs[2].MyPremiumSubscribe("wine T/year R 1990 1997", pubsubs[0].serverAddr, "wine T/year R 1990 1997", 20)
-	pubsubs[3].MyPremiumSubscribe("wine T/year R 1992 1997", pubsubs[0].serverAddr, "wine T/year R 1990 1997", 10)
-	pubsubs[4].MyPremiumSubscribe("wine T/year R 1993 1995", pubsubs[0].serverAddr, "wine T/year R 1990 1997", 10)
+	pubsubs[1].MyPremiumSubscribe("wine T/year R 1991 1994", pubsubs[0].serverAddr, "wine T/year R 1990 1997")
+	pubsubs[2].MyPremiumSubscribe("wine T/year R 1990 1997", pubsubs[0].serverAddr, "wine T/year R 1990 1997")
+	pubsubs[3].MyPremiumSubscribe("wine T/year R 1992 1997", pubsubs[0].serverAddr, "wine T/year R 1990 1997")
+	pubsubs[4].MyPremiumSubscribe("wine T/year R 1993 1995", pubsubs[0].serverAddr, "wine T/year R 1990 1997")
 	pubsubs[0].MyPremiumPublish("wine T/year R 1990 1997", "Porto wines from 1996 are rarer", "wine T/year R 1996 1996")
 
 	time.Sleep(time.Second)
@@ -154,17 +154,17 @@ func TestFastDeliveryWithHelper(t *testing.T) {
 
 	var pubsubs [8]*PubSub
 	for i, dht := range dhts {
-		pubsubs[i] = NewPubSub(dht, DefaultConfig("PT"))
+		pubsubs[i] = NewPubSub(dht, DefaultConfig("PT", 10))
 	}
 
 	pubsubs[0].CreateMulticastGroup("portugal T")
-	pubsubs[1].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 10)
-	pubsubs[2].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 10)
-	pubsubs[3].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 20)
-	pubsubs[4].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 10)
-	pubsubs[5].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 10)
-	pubsubs[6].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 10)
-	pubsubs[7].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 10)
+	pubsubs[1].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T")
+	pubsubs[2].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T")
+	pubsubs[3].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T")
+	pubsubs[4].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T")
+	pubsubs[5].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T")
+	pubsubs[6].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T")
+	pubsubs[7].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T")
 	pubsubs[0].MyPremiumPublish("portugal T", "Portugal is great!", "portugal T")
 
 	time.Sleep(time.Second)
@@ -202,17 +202,17 @@ func TestSimpleFastDeliveryUnsubscribe(t *testing.T) {
 
 	var pubsubs [8]*PubSub
 	for i, dht := range dhts {
-		pubsubs[i] = NewPubSub(dht, DefaultConfig("PT"))
+		pubsubs[i] = NewPubSub(dht, DefaultConfig("PT", 10))
 	}
 
 	pubsubs[0].CreateMulticastGroup("portugal T")
-	pubsubs[1].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 10)
-	pubsubs[2].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 10)
-	pubsubs[3].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 20)
-	pubsubs[4].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 10)
-	pubsubs[5].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 10)
-	pubsubs[6].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 10)
-	pubsubs[7].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 10)
+	pubsubs[1].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T")
+	pubsubs[2].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T")
+	pubsubs[3].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T")
+	pubsubs[4].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T")
+	pubsubs[5].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T")
+	pubsubs[6].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T")
+	pubsubs[7].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T")
 	pubsubs[0].MyPremiumPublish("portugal T", "Portugal is great!", "portugal T")
 	time.Sleep(time.Second)
 
@@ -253,17 +253,17 @@ func TestFastDeliveryHelperUnsubscribe(t *testing.T) {
 
 	var pubsubs [8]*PubSub
 	for i, dht := range dhts {
-		pubsubs[i] = NewPubSub(dht, DefaultConfig("PT"))
+		pubsubs[i] = NewPubSub(dht, DefaultConfig("PT", 10))
 	}
 
 	pubsubs[0].CreateMulticastGroup("portugal T")
-	pubsubs[1].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 10)
-	pubsubs[2].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 10)
-	pubsubs[3].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 20)
-	pubsubs[4].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 10)
-	pubsubs[5].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 10)
-	pubsubs[6].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 10)
-	pubsubs[7].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 10)
+	pubsubs[1].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T")
+	pubsubs[2].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T")
+	pubsubs[3].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T")
+	pubsubs[4].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T")
+	pubsubs[5].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T")
+	pubsubs[6].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T")
+	pubsubs[7].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T")
 	pubsubs[0].MyPremiumPublish("portugal T", "Portugal is great!", "portugal T")
 	time.Sleep(time.Second)
 
@@ -304,17 +304,17 @@ func TestFastDeliveryWithHelperFailure(t *testing.T) {
 
 	var pubsubs [8]*PubSub
 	for i, dht := range dhts {
-		pubsubs[i] = NewPubSub(dht, DefaultConfig("PT"))
+		pubsubs[i] = NewPubSub(dht, DefaultConfig("PT", 10))
 	}
 
 	pubsubs[0].CreateMulticastGroup("portugal T")
-	pubsubs[1].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 10)
-	pubsubs[2].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 10)
-	pubsubs[3].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 20)
-	pubsubs[4].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 10)
-	pubsubs[5].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 10)
-	pubsubs[6].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 10)
-	pubsubs[7].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T", 10)
+	pubsubs[1].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T")
+	pubsubs[2].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T")
+	pubsubs[3].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T")
+	pubsubs[4].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T")
+	pubsubs[5].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T")
+	pubsubs[6].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T")
+	pubsubs[7].MyPremiumSubscribe("portugal T", pubsubs[0].serverAddr, "portugal T")
 	pubsubs[0].MyPremiumPublish("portugal T", "Portugal is great!", "portugal T")
 	time.Sleep(time.Second)
 

@@ -69,6 +69,7 @@ type PubSub struct {
 	tablesLock *sync.RWMutex
 	upBackLock *sync.Mutex
 
+	capacity              int
 	managedGroups         []*MulticastGroup
 	subbedGroups          []*SubGroupView
 	premiumEvents         chan *pb.PremiumEvent
@@ -97,6 +98,7 @@ func NewPubSub(dht *kaddht.IpfsDHT, cfg *SetupPubSub) *PubSub {
 		faultToleranceFactor:      cfg.FaultToleranceFactor,
 		opResendRate:              cfg.OpResendRate,
 		region:                    cfg.Region,
+		capacity:                  cfg.Capacity,
 		currentFilterTable:        filterTable,
 		nextFilterTable:           auxFilterTable,
 		myFilters:                 mySubs,
@@ -1037,6 +1039,13 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 		return &pb.Ack{State: false, Info: err.Error()}, err
 	}
 
+	for _, attr := range p.attributes {
+		isRv, _ := ps.rendezvousSelfCheck(attr.name)
+		if isRv {
+			return &pb.Ack{State: true, Info: ""}, nil
+		}
+	}
+
 	eID := fmt.Sprintf("%s%d%d%s", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID, event.RvId)
 	if ps.myETrackers[eID] != nil {
 
@@ -1617,10 +1626,10 @@ func (ps *PubSub) myAdvertiseGroup(pred *Predicate) error {
 			RvId:    attr.name,
 		}
 
-		res, nextHop := ps.rendezvousSelfCheck(attr.name)
-		if res {
+		isRv, nextHop := ps.rendezvousSelfCheck(attr.name)
+		if isRv {
 			ps.addAdvertToBoards(advReq)
-			break
+			continue
 		}
 
 		attrAddr := ps.ipfsDHT.FindLocal(nextHop).Addrs[0]
@@ -1757,10 +1766,9 @@ func (ps *PubSub) MySearchAndPremiumSub(pred string) error {
 	res, _ := ps.rendezvousSelfCheck(minAttr)
 	if res {
 		for _, g := range ps.returnGroupsOfInterest(p) {
-			err := ps.MyPremiumSubscribe(pred, g.OwnerAddr, g.Predicate, 5)
+			err := ps.MyPremiumSubscribe(pred, g.OwnerAddr, g.Predicate)
 			if err == nil {
 				ps.record.SaveTimeToSub(start)
-				break
 			}
 		}
 		return nil
@@ -1801,16 +1809,21 @@ func (ps *PubSub) MySearchAndPremiumSub(pred string) error {
 			reply, err := client.GroupSearchRequest(ctx, req)
 			if err == nil {
 				for _, g := range reply.Groups {
-					ps.MyPremiumSubscribe(pred, g.OwnerAddr, g.Predicate, 5)
 					ps.record.SaveTimeToSub(start)
+					err := ps.MyPremiumSubscribe(pred, g.OwnerAddr, g.Predicate)
+					if err == nil {
+						ps.record.SaveTimeToSub(start)
+					}
 				}
 				break
 			}
 		}
 	} else {
 		for _, g := range reply.Groups {
-			ps.MyPremiumSubscribe(pred, g.OwnerAddr, g.Predicate, 5)
-			ps.record.SaveTimeToSub(start)
+			err := ps.MyPremiumSubscribe(pred, g.OwnerAddr, g.Predicate)
+			if err == nil {
+				ps.record.SaveTimeToSub(start)
+			}
 		}
 	}
 
@@ -1889,7 +1902,8 @@ func (ps *PubSub) returnGroupsOfInterest(p *Predicate) []*pb.MulticastGroupID {
 	ps.tablesLock.RLock()
 	for _, g := range ps.currentAdvertiseBoard {
 		pG, _ := NewPredicate(g.Predicate, ps.maxAttributesPerPredicate)
-		if pG.SimplePredicateMatch(p) {
+
+		if p.SimpleAdvMatch(pG) {
 			interestGs = append(interestGs, g)
 		}
 	}
@@ -1900,7 +1914,7 @@ func (ps *PubSub) returnGroupsOfInterest(p *Predicate) []*pb.MulticastGroupID {
 
 // MyPremiumSubscribe is the operation a subscriber performs in order to belong to
 // a certain MulticastGroup of a certain premium publisher and predicate
-func (ps *PubSub) MyPremiumSubscribe(info string, pubAddr string, pubPredicate string, cap int) error {
+func (ps *PubSub) MyPremiumSubscribe(info string, pubAddr string, pubPredicate string) error {
 	fmt.Printf("myPremiumSubscribe: %s\n", ps.serverAddr)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -1922,7 +1936,7 @@ func (ps *PubSub) MyPremiumSubscribe(info string, pubAddr string, pubPredicate s
 		PubPredicate: pubPredicate,
 		Addr:         ps.serverAddr,
 		Region:       ps.region,
-		Cap:          int32(cap),
+		Cap:          int32(ps.capacity / 2),
 	}
 
 	client := pb.NewScoutHubClient(conn)
@@ -1937,6 +1951,7 @@ func (ps *PubSub) MyPremiumSubscribe(info string, pubAddr string, pubPredicate s
 		}
 
 		ps.subbedGroups = append(ps.subbedGroups, subG)
+		ps.capacity = ps.capacity / 2
 
 		return nil
 	} else {
