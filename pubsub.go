@@ -1767,7 +1767,6 @@ func (ps *PubSub) MySearchAndPremiumSub(pred string) error {
 			err := ps.MyPremiumSubscribe(pred, g.OwnerAddr, g.Predicate, 5)
 			if err == nil {
 				ps.record.SaveTimeToSub(start)
-				break
 			}
 		}
 		return nil
@@ -1812,7 +1811,6 @@ func (ps *PubSub) MySearchAndPremiumSub(pred string) error {
 					err := ps.MyPremiumSubscribe(pred, g.OwnerAddr, g.Predicate, 5)
 					if err == nil {
 						ps.record.SaveTimeToSub(start)
-						break
 					}
 				}
 				break
@@ -1823,7 +1821,6 @@ func (ps *PubSub) MySearchAndPremiumSub(pred string) error {
 			err := ps.MyPremiumSubscribe(pred, g.OwnerAddr, g.Predicate, 5)
 			if err == nil {
 				ps.record.SaveTimeToSub(start)
-				break
 			}
 		}
 	}
