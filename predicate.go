@@ -152,8 +152,8 @@ func (p *Predicate) SimpleAdvMatch(pAdv *Predicate) bool {
 		if _, ok := pAdv.attributes[attr.name]; !ok {
 			return false
 		} else if attr.attrType == Range {
-			if !(pAdv.attributes[attr.name].rangeQuery[0] < attr.rangeQuery[0] &&
-				pAdv.attributes[attr.name].rangeQuery[1] > attr.rangeQuery[1]) {
+			if !(pAdv.attributes[attr.name].rangeQuery[0] <= attr.rangeQuery[0] &&
+				pAdv.attributes[attr.name].rangeQuery[1] >= attr.rangeQuery[1]) {
 				return false
 			}
 		}
