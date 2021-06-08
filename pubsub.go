@@ -549,7 +549,7 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 
 // Publish is a remote function called by a external peer to send an Event upstream
 func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error) {
-	fmt.Println("Publish: " + event.Event + " >> " + ps.serverAddr)
+	fmt.Println("Publish: " + ps.serverAddr)
 
 	p, err := NewPredicate(event.Predicate, ps.maxAttributesPerPredicate)
 	if err != nil {
@@ -1030,11 +1030,18 @@ func (ps *PubSub) forwardEventUp(dialAddr string, event *pb.Event) {
 
 // Notify is a remote function called by a external peer to send an Event downstream
 func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) {
-	fmt.Print("Notify: " + event.Event + " >> " + ps.serverAddr)
+	fmt.Print("Notify: " + ps.serverAddr)
 
 	p, err := NewPredicate(event.Predicate, ps.maxAttributesPerPredicate)
 	if err != nil {
 		return &pb.Ack{State: false, Info: err.Error()}, err
+	}
+
+	for _, attr := range p.attributes {
+		isRv, _ := ps.rendezvousSelfCheck(attr.name)
+		if isRv {
+			return &pb.Ack{State: true, Info: ""}, nil
+		}
 	}
 
 	eID := fmt.Sprintf("%s%d%d%s", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID, event.RvId)
@@ -1094,7 +1101,6 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 	if event.Backup == "" {
 		for next, route := range ps.currentFilterTable.routes {
 			if route.IsInterested(p) {
-				fmt.Println("BOOM!")
 				var dialAddr string
 				nextID, err := peer.Decode(next)
 				if err != nil {
