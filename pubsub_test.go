@@ -85,7 +85,7 @@ func TestSimplePublish(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(250 * time.Millisecond)
 }
 
 // TestSubscriptionForwarding attemps to see if the subscription
@@ -157,7 +157,7 @@ func TestSimpleFaultTolerance(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
 	defer cancel()
 
-	dhts := setupDHTS(t, ctx, 5)
+	dhts := setupDHTS(t, ctx, 6)
 	defer func() {
 		for _, dht := range dhts {
 			dht.Close()
@@ -169,13 +169,15 @@ func TestSimpleFaultTolerance(t *testing.T) {
 	connect(t, ctx, dhts[1], dhts[2])
 	connect(t, ctx, dhts[2], dhts[3])
 	connect(t, ctx, dhts[2], dhts[4])
+	connect(t, ctx, dhts[2], dhts[5])
 
-	var pubsubs [5]*PubSub
+	var pubsubs [6]*PubSub
 	for i, dht := range dhts {
 		pubsubs[i] = NewPubSub(dht, DefaultConfig("PT", 10))
 	}
 
 	pubsubs[0].MySubscribe("portugal T")
+	pubsubs[5].MySubscribe("portugal T")
 	time.Sleep(250 * time.Millisecond)
 
 	pubsubs[1].TerminateService()
