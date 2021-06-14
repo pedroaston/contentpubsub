@@ -67,7 +67,7 @@ type PubSub struct {
 	unconfirmedSubs     map[string]*SubState
 
 	tablesLock *sync.RWMutex
-	upBackLock *sync.Mutex
+	upBackLock *sync.RWMutex
 
 	capacity              int
 	managedGroups         []*MulticastGroup
@@ -121,7 +121,7 @@ func NewPubSub(dht *kaddht.IpfsDHT, cfg *SetupPubSub) *PubSub {
 		eventTicker:               time.NewTicker(cfg.OpResendRate * time.Second),
 		subTicker:                 time.NewTicker(cfg.OpResendRate * time.Second),
 		tablesLock:                &sync.RWMutex{},
-		upBackLock:                &sync.Mutex{},
+		upBackLock:                &sync.RWMutex{},
 		record:                    NewHistoryRecord(),
 		session:                   rand.Intn(9999),
 		eventSeq:                  0,
@@ -470,7 +470,7 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 			RvId:      attr.name,
 			LastHop:   peer.Encode(ps.ipfsDHT.PeerID()),
 			AckAddr:   ps.serverAddr,
-			Backup:    "",
+			Backup:    false,
 			BirthTime: time.Now().Format(time.StampMilli),
 			PubAddr:   ps.serverAddr,
 		}
@@ -490,6 +490,7 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 						return err
 					}
 
+					event.OriginalRoute = next
 					eLog[next] = false
 
 					nextAddr := ps.ipfsDHT.FindLocal(nextID).Addrs[0]
@@ -591,6 +592,7 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 			if route.IsInterested(p) {
 
 				eL[next] = false
+				event.OriginalRoute = next
 
 				var dialAddr string
 				nextID, err := peer.Decode(next)
@@ -787,8 +789,10 @@ func (ps *PubSub) AckUp(ctx context.Context, ack *pb.EventAck) (*pb.Ack, error) 
 		ps.myETrackers[eID].receivedAcks++
 
 		if ps.myETrackers[eID].receivedAcks == ps.myETrackers[eID].expectedAcks {
+
 			ps.ackToSendUp <- &AckUp{dialAddr: ps.myETrackers[eID].addrToAck, eventID: ack.EventID,
-				peerID: peer.Encode(ps.ipfsDHT.PeerID()), rvID: ack.RvID}
+				peerID: ps.myETrackers[eID].originalDestination, rvID: ack.RvID}
+
 			delete(ps.myETrackers, eID)
 		}
 	}
@@ -858,7 +862,7 @@ func (ps *PubSub) LogToTracker(ctx context.Context, log *pb.EventLog) (*pb.Ack, 
 	}
 
 	eID := fmt.Sprintf("%s%d%d", log.EventID.PublisherID, log.EventID.SessionNumber, log.EventID.SeqID)
-	ps.myTrackers[log.RvID].newEventToCheck(NewEventLedger(eID, log.Log, "", log.Event))
+	ps.myTrackers[log.RvID].newEventToCheck(NewEventLedger(eID, log.Log, "", log.Event, ""))
 
 	ps.myTrackers[log.RvID].checkForAcks <- "do it"
 
@@ -1032,7 +1036,7 @@ func (ps *PubSub) forwardEventUp(dialAddr string, event *pb.Event) {
 
 // Notify is a remote function called by a external peer to send an Event downstream
 func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) {
-	fmt.Print("Notify: " + ps.serverAddr)
+	fmt.Println("Notify: " + ps.serverAddr)
 
 	p, err := NewPredicate(event.Predicate, ps.maxAttributesPerPredicate)
 	if err != nil {
@@ -1045,6 +1049,8 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 			return &pb.Ack{State: true, Info: ""}, nil
 		}
 	}
+
+	originalDestination := event.OriginalRoute
 
 	eID := fmt.Sprintf("%s%d%d%s", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID, event.RvId)
 	if ps.myETrackers[eID] != nil {
@@ -1100,9 +1106,13 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 	eL := make(map[string]bool)
 
 	ps.tablesLock.RLock()
-	if event.Backup == "" {
+	if !event.Backup {
 		for next, route := range ps.currentFilterTable.routes {
 			if route.IsInterested(p) {
+
+				eL[next] = false
+				event.OriginalRoute = next
+
 				var dialAddr string
 				nextID, err := peer.Decode(next)
 				if err != nil {
@@ -1117,8 +1127,6 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 				} else {
 					dialAddr = addrForPubSubServer(nextAddr)
 				}
-
-				eL[next] = false
 
 				ps.currentFilterTable.redirectLock.Lock()
 				ps.nextFilterTable.redirectLock.Lock()
@@ -1156,23 +1164,25 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 			}
 		}
 	} else {
-		for next, route := range ps.myBackupsFilters[event.Backup].routes {
+		ps.upBackLock.RLock()
+		for next, route := range ps.myBackupsFilters[event.OriginalRoute].routes {
 			if route.IsInterested(p) {
-				// TODO >> Analyze how to keep reliability with backups
-				event.Backup = ""
+				event.Backup = false
+				event.OriginalRoute = next
 				eL[next] = false
 
 				nextAddr := ps.mapBackupAddr[next]
 				ps.eventsToForwardDown <- &ForwardEvent{dialAddr: nextAddr, event: event}
 			}
 		}
+		ps.upBackLock.RUnlock()
 	}
 	ps.tablesLock.RUnlock()
 
 	if len(eL) > 0 {
-		ps.myETrackers[eID] = NewEventLedger(eID, eL, ackAddr, event)
+		ps.myETrackers[eID] = NewEventLedger(eID, eL, ackAddr, event, originalDestination)
 	} else {
-		ps.ackToSendUp <- &AckUp{dialAddr: ackAddr, eventID: event.EventID, peerID: peer.Encode(ps.ipfsDHT.PeerID()), rvID: event.RvId}
+		ps.ackToSendUp <- &AckUp{dialAddr: ackAddr, eventID: event.EventID, peerID: originalDestination, rvID: event.RvId}
 	}
 
 	return &pb.Ack{State: true, Info: ""}, nil
@@ -1204,7 +1214,7 @@ func (ps *PubSub) forwardEventDown(dialAddr string, event *pb.Event, originalRou
 	ack, err := client.Notify(ctx, event)
 
 	if err != nil || !ack.State {
-		event.Backup = originalRoute
+		event.Backup = true
 		for _, backup := range ps.currentFilterTable.routes[originalRoute].backups {
 			conn, err := grpc.Dial(backup, grpc.WithInsecure())
 			if err != nil {
@@ -1256,10 +1266,10 @@ func (ps *PubSub) UpdateBackup(ctx context.Context, update *pb.Update) (*pb.Ack,
 	if _, ok := ps.myBackupsFilters[update.Sender].routes[update.Route]; !ok {
 		ps.myBackupsFilters[update.Sender].routes[update.Route] = NewRouteStats()
 	}
-	ps.upBackLock.Unlock()
 
 	ps.myBackupsFilters[update.Sender].routes[update.Route].SimpleAddSummarizedFilter(p)
 	ps.mapBackupAddr[update.Route] = update.RouteAddr
+	ps.upBackLock.Unlock()
 
 	return &pb.Ack{State: true, Info: ""}, nil
 }
@@ -1365,6 +1375,9 @@ func (ps *PubSub) BackupRefresh(stream pb.ScoutHub_BackupRefreshServer) error {
 	fmt.Println("BackupRefresh >> " + ps.serverAddr)
 
 	var i = 0
+	ps.upBackLock.Lock()
+	defer ps.upBackLock.RUnlock()
+
 	for {
 		update, err := stream.Recv()
 		if err == io.EOF {
