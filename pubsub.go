@@ -68,6 +68,7 @@ type PubSub struct {
 
 	tablesLock *sync.RWMutex
 	upBackLock *sync.RWMutex
+	ackOpLock  *sync.Mutex
 
 	managedGroups         []*MulticastGroup
 	subbedGroups          []*SubGroupView
@@ -120,6 +121,7 @@ func NewPubSub(dht *kaddht.IpfsDHT, cfg *SetupPubSub) *PubSub {
 		subTicker:                 time.NewTicker(cfg.OpResendRate * time.Second),
 		tablesLock:                &sync.RWMutex{},
 		upBackLock:                &sync.RWMutex{},
+		ackOpLock:                 &sync.Mutex{},
 		record:                    NewHistoryRecord(),
 		session:                   rand.Intn(9999),
 		eventSeq:                  0,
@@ -713,6 +715,7 @@ func (ps *PubSub) AckUp(ctx context.Context, ack *pb.EventAck) (*pb.Ack, error) 
 func (ps *PubSub) AckOp(ctx context.Context, ack *pb.Ack) (*pb.Ack, error) {
 	fmt.Println("AckOp >> " + ps.serverAddr)
 
+	ps.ackOpLock.Lock()
 	if ack.Op == "Publish" {
 		if ps.unconfirmedEvents[ack.Info] != nil {
 			delete(ps.unconfirmedEvents, ack.Info)
@@ -733,6 +736,7 @@ func (ps *PubSub) AckOp(ctx context.Context, ack *pb.Ack) (*pb.Ack, error) {
 			ps.subTickerState = false
 		}
 	}
+	ps.ackOpLock.Unlock()
 
 	return &pb.Ack{State: true, Info: ""}, nil
 }
