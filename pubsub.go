@@ -53,7 +53,7 @@ type PubSub struct {
 	terminate           chan string
 
 	tablesLock *sync.RWMutex
-	upBackLock *sync.Mutex
+	upBackLock *sync.RWMutex
 
 	managedGroups         []*MulticastGroup
 	subbedGroups          []*SubGroupView
@@ -96,7 +96,7 @@ func NewPubSub(dht *kaddht.IpfsDHT, cfg *SetupPubSub) *PubSub {
 		heartbeatTicker:           time.NewTicker(cfg.SubRefreshRateMin * time.Minute),
 		refreshTicker:             time.NewTicker(2 * cfg.SubRefreshRateMin * time.Minute),
 		tablesLock:                &sync.RWMutex{},
-		upBackLock:                &sync.Mutex{},
+		upBackLock:                &sync.RWMutex{},
 		record:                    NewHistoryRecord(),
 		session:                   rand.Intn(9999),
 		eventSeq:                  0,
@@ -543,6 +543,7 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 			}
 		}
 	} else {
+		ps.upBackLock.RLock()
 		for next, route := range ps.myBackupsFilters[event.Backup].routes {
 			if route.IsInterested(p) {
 				event.Backup = ""
@@ -551,6 +552,7 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 				ps.eventsToForwardDown <- &ForwardEvent{dialAddr: nextAddr, event: event}
 			}
 		}
+		ps.upBackLock.RUnlock()
 	}
 	ps.tablesLock.RUnlock()
 
@@ -613,10 +615,10 @@ func (ps *PubSub) UpdateBackup(ctx context.Context, update *pb.Update) (*pb.Ack,
 	if _, ok := ps.myBackupsFilters[update.Sender].routes[update.Route]; !ok {
 		ps.myBackupsFilters[update.Sender].routes[update.Route] = NewRouteStats()
 	}
-	ps.upBackLock.Unlock()
 
 	ps.myBackupsFilters[update.Sender].routes[update.Route].SimpleAddSummarizedFilter(p)
 	ps.mapBackupAddr[update.Route] = update.RouteAddr
+	ps.upBackLock.Unlock()
 
 	return &pb.Ack{State: true, Info: ""}, nil
 }
@@ -722,6 +724,9 @@ func (ps *PubSub) BackupRefresh(stream pb.ScoutHub_BackupRefreshServer) error {
 	fmt.Println("BackupRefresh >> " + ps.serverAddr)
 
 	var i = 0
+	ps.upBackLock.Lock()
+	defer ps.upBackLock.Unlock()
+
 	for {
 		update, err := stream.Recv()
 		if err == io.EOF {
