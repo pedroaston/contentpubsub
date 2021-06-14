@@ -301,6 +301,17 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 		aux = append(aux, addr)
 	}
 
+	// DEBUG >> Catch the guy
+	if ps.currentFilterTable == nil {
+		fmt.Println("Puum!")
+	} else if sub == nil {
+		fmt.Println("Boom!")
+	} else if sub.PeerID == "" {
+		fmt.Println("Badum!")
+	} else if ps.currentFilterTable.routes[sub.PeerID] == nil {
+		fmt.Println("Plock!")
+	}
+
 	ps.tablesLock.RLock()
 	if sub.Shortcut == "!" {
 		ps.currentFilterTable.turnOffRedirect(sub.PeerID, sub.RvId)
