@@ -69,6 +69,7 @@ type PubSub struct {
 	tablesLock *sync.RWMutex
 	upBackLock *sync.RWMutex
 	ackOpLock  *sync.Mutex
+	ackUpLock  *sync.Mutex
 
 	capacity              int
 	managedGroups         []*MulticastGroup
@@ -124,6 +125,7 @@ func NewPubSub(dht *kaddht.IpfsDHT, cfg *SetupPubSub) *PubSub {
 		tablesLock:                &sync.RWMutex{},
 		upBackLock:                &sync.RWMutex{},
 		ackOpLock:                 &sync.Mutex{},
+		ackUpLock:                 &sync.Mutex{},
 		record:                    NewHistoryRecord(),
 		session:                   rand.Intn(9999),
 		eventSeq:                  0,
@@ -785,11 +787,13 @@ func (ps *PubSub) sendAckToTrackers(ack *pb.EventAck) {
 func (ps *PubSub) AckUp(ctx context.Context, ack *pb.EventAck) (*pb.Ack, error) {
 	fmt.Println("AckUp: " + ps.serverAddr)
 
-	res, _ := ps.rendezvousSelfCheck(ack.RvID)
-	if res {
+	isRv, _ := ps.rendezvousSelfCheck(ack.RvID)
+	if isRv {
 		ps.sendAckToTrackers(ack)
 	} else {
 		eID := fmt.Sprintf("%s%d%d%s", ack.EventID.PublisherID, ack.EventID.SessionNumber, ack.EventID.SeqID, ack.RvID)
+
+		ps.ackUpLock.Lock()
 		if ps.myETrackers[eID] == nil {
 			return &pb.Ack{State: true, Info: "Event Tracker already closed"}, nil
 		}
@@ -804,6 +808,8 @@ func (ps *PubSub) AckUp(ctx context.Context, ack *pb.EventAck) (*pb.Ack, error) 
 
 			delete(ps.myETrackers, eID)
 		}
+		ps.ackUpLock.Unlock()
+
 	}
 
 	return &pb.Ack{State: true, Info: ""}, nil
