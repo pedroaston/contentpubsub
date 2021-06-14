@@ -69,6 +69,7 @@ type PubSub struct {
 	tablesLock *sync.RWMutex
 	upBackLock *sync.RWMutex
 	ackOpLock  *sync.Mutex
+	ackUpLock  *sync.Mutex
 
 	managedGroups         []*MulticastGroup
 	subbedGroups          []*SubGroupView
@@ -122,6 +123,7 @@ func NewPubSub(dht *kaddht.IpfsDHT, cfg *SetupPubSub) *PubSub {
 		tablesLock:                &sync.RWMutex{},
 		upBackLock:                &sync.RWMutex{},
 		ackOpLock:                 &sync.Mutex{},
+		ackUpLock:                 &sync.Mutex{},
 		record:                    NewHistoryRecord(),
 		session:                   rand.Intn(9999),
 		eventSeq:                  0,
@@ -694,6 +696,8 @@ func (ps *PubSub) AckUp(ctx context.Context, ack *pb.EventAck) (*pb.Ack, error) 
 		ps.sendAckToTrackers(ack)
 	} else {
 		eID := fmt.Sprintf("%s%d%d%s", ack.EventID.PublisherID, ack.EventID.SessionNumber, ack.EventID.SeqID, ack.RvID)
+
+		ps.ackUpLock.Lock()
 		if ps.myETrackers[eID] == nil {
 			return &pb.Ack{State: true, Info: "Event Tracker already closed"}, nil
 		}
@@ -706,6 +710,8 @@ func (ps *PubSub) AckUp(ctx context.Context, ack *pb.EventAck) (*pb.Ack, error) 
 				peerID: ps.myETrackers[eID].originalDestination, rvID: ack.RvID}
 			delete(ps.myETrackers, eID)
 		}
+		ps.ackUpLock.Unlock()
+
 	}
 
 	return &pb.Ack{State: true, Info: ""}, nil
