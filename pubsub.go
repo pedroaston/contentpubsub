@@ -229,16 +229,11 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 		aux = append(aux, addr)
 	}
 
-	// DEBUG >> Catch the guy
-	if ps.currentFilterTable == nil {
-		fmt.Println("Puum!")
-	} else if sub == nil {
-		fmt.Println("Boom!")
-	} else if sub.PeerID == "" {
-		fmt.Println("Badum!")
-	} else if ps.currentFilterTable.routes[sub.PeerID] == nil {
-		fmt.Printf("Connected to %d peers\n", len(ps.currentFilterTable.routes))
-		fmt.Println("Plock!")
+	if ps.currentFilterTable.routes[sub.PeerID] == nil {
+		ps.tablesLock.Lock()
+		ps.currentFilterTable.routes[sub.PeerID] = NewRouteStats()
+		ps.nextFilterTable.routes[sub.PeerID] = NewRouteStats()
+		ps.tablesLock.Unlock()
 	}
 
 	ps.tablesLock.RLock()
