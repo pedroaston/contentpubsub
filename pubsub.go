@@ -238,6 +238,13 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 		aux = append(aux, addr)
 	}
 
+	if ps.currentFilterTable.routes[sub.PeerID] == nil {
+		ps.tablesLock.Lock()
+		ps.currentFilterTable.routes[sub.PeerID] = NewRouteStats()
+		ps.nextFilterTable.routes[sub.PeerID] = NewRouteStats()
+		ps.tablesLock.Unlock()
+	}
+
 	ps.tablesLock.RLock()
 	if sub.Shortcut == "!" {
 		ps.currentFilterTable.turnOffRedirect(sub.PeerID, sub.RvId)
