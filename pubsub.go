@@ -1376,7 +1376,7 @@ func (ps *PubSub) BackupRefresh(stream pb.ScoutHub_BackupRefreshServer) error {
 
 	var i = 0
 	ps.upBackLock.Lock()
-	defer ps.upBackLock.RUnlock()
+	defer ps.upBackLock.Unlock()
 
 	for {
 		update, err := stream.Recv()
