@@ -156,26 +156,28 @@ func (t *Tracker) returnUnAckedEvents() {
 }
 
 type EventLedger struct {
-	eventID      string
-	event        *pb.Event
-	eventLog     map[string]bool
-	expectedAcks int
-	receivedAcks int
-	old          bool
-	addrToAck    string
+	eventID             string
+	event               *pb.Event
+	eventLog            map[string]bool
+	expectedAcks        int
+	receivedAcks        int
+	old                 bool
+	addrToAck           string
+	originalDestination string
 }
 
 // NewEventLedger
-func NewEventLedger(eID string, log map[string]bool, addr string, e *pb.Event) *EventLedger {
+func NewEventLedger(eID string, log map[string]bool, addr string, e *pb.Event, dest string) *EventLedger {
 
 	eL := &EventLedger{
-		eventID:      eID,
-		event:        e,
-		eventLog:     log,
-		expectedAcks: len(log),
-		receivedAcks: 0,
-		old:          false,
-		addrToAck:    addr,
+		eventID:             eID,
+		event:               e,
+		eventLog:            log,
+		expectedAcks:        len(log),
+		receivedAcks:        0,
+		old:                 false,
+		addrToAck:           addr,
+		originalDestination: dest,
 	}
 
 	return eL

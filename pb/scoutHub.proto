@@ -54,9 +54,10 @@ message Event {
     string event = 4;
     string lastHop = 5;
     string ackAddr = 6;
-    string backup = 7;
-    string birthTime = 8;
-    string pubAddr = 9;
+    bool backup = 7;
+    string originalRoute = 8;
+    string birthTime = 9;
+    string pubAddr = 10;
 }
 
 message EventID {
