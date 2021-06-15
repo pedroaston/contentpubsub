@@ -378,7 +378,7 @@ func (ps *PubSub) forwardSub(dialAddr string, sub *pb.Subscription) {
 
 			client := pb.NewScoutHubClient(conn)
 			ack, err := client.Subscribe(ctx, sub)
-			if ack.State && err == nil {
+			if err == nil && ack.State {
 				break
 			}
 		}
@@ -930,7 +930,7 @@ func (ps *PubSub) forwardEventUp(dialAddr string, event *pb.Event) {
 
 			client := pb.NewScoutHubClient(conn)
 			ack, err := client.Publish(ctx, event)
-			if ack.State && err == nil {
+			if err == nil && ack.State {
 				break
 			}
 		}
@@ -1079,7 +1079,7 @@ func (ps *PubSub) forwardEventDown(dialAddr string, event *pb.Event, originalRou
 
 			client := pb.NewScoutHubClient(conn)
 			ack, err := client.Notify(ctx, event)
-			if ack.State && err == nil {
+			if err == nil && ack.State {
 				break
 			}
 		}
