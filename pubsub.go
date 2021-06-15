@@ -234,6 +234,10 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 		ps.currentFilterTable.routes[sub.PeerID] = NewRouteStats()
 		ps.nextFilterTable.routes[sub.PeerID] = NewRouteStats()
 		ps.tablesLock.Unlock()
+	} else if ps.nextFilterTable.routes[sub.PeerID] == nil {
+		ps.tablesLock.Lock()
+		ps.nextFilterTable.routes[sub.PeerID] = NewRouteStats()
+		ps.tablesLock.Unlock()
 	}
 
 	ps.tablesLock.RLock()
