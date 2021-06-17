@@ -1218,6 +1218,14 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 
 	} else {
 		ps.upBackLock.RLock()
+		fmt.Println("Start")
+		for lol, route := range ps.myBackupsFilters {
+			fmt.Println(lol)
+			fmt.Println(route.routes)
+		}
+		fmt.Println(event.OriginalRoute)
+		fmt.Println("End")
+
 		for next, route := range ps.myBackupsFilters[event.OriginalRoute].routes {
 			if route.IsInterested(p) {
 				event.Backup = false
