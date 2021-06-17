@@ -1071,7 +1071,7 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 		}
 		ps.upBackLock.RUnlock()
 
-		if len(eL) > 0 && ps.myETrackers[eID] == nil {
+		if len(eL) > 0 && ps.myEBackTrackers[eID] == nil {
 			ps.myEBackTrackers[eID] = NewEventLedger(eID, eL, ackAddr, event, originalDestination)
 		} else {
 			ps.ackToSendUp <- &AckUp{dialAddr: ackAddr, eventID: event.EventID, peerID: originalDestination, rvID: event.RvId}
