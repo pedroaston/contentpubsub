@@ -176,14 +176,13 @@ func TestSimpleFaultTolerance(t *testing.T) {
 	}
 
 	pubsubs[0].MySubscribe("portugal T")
-	time.Sleep(time.Second)
+	time.Sleep(250 * time.Millisecond)
 
 	pubsubs[1].TerminateService()
-	time.Sleep(time.Second)
+	time.Sleep(250 * time.Millisecond)
 
 	pubsubs[4].MyPublish("valmitão tem as melhores marolas do mundo!", "portugal T")
-	time.Sleep(time.Second)
-
+	time.Sleep(11500 * time.Millisecond)
 }
 
 // TestBackupReplacement shows the scoutsubs overlay reation
