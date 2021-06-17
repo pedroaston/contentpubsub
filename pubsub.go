@@ -48,8 +48,9 @@ type PubSub struct {
 	myBackupsFilters map[string]*FilterTable
 	mapBackupAddr    map[string]string
 
-	myTrackers  map[string]*Tracker
-	myETrackers map[string]*EventLedger
+	myTrackers      map[string]*Tracker
+	myETrackers     map[string]*EventLedger
+	myEBackTrackers map[string]*EventLedger
 
 	interestingEvents   chan *pb.Event
 	subsToForward       chan *ForwardSubRequest
@@ -108,6 +109,7 @@ func NewPubSub(dht *kaddht.IpfsDHT, cfg *SetupPubSub) *PubSub {
 		mapBackupAddr:             make(map[string]string),
 		myTrackers:                make(map[string]*Tracker),
 		myETrackers:               make(map[string]*EventLedger),
+		myEBackTrackers:           make(map[string]*EventLedger),
 		unconfirmedEvents:         make(map[string]*PubEventState),
 		unconfirmedSubs:           make(map[string]*SubState),
 		interestingEvents:         make(chan *pb.Event, cfg.ConcurrentProcessingFactor),
@@ -703,17 +705,22 @@ func (ps *PubSub) sendAckUp(ack *AckUp) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	conn, err := grpc.Dial(ack.dialAddr, grpc.WithInsecure())
-	if err != nil {
-		log.Fatalf("fail to dial: %v", err)
-	}
-	defer conn.Close()
-
 	eAck := &pb.EventAck{
 		EventID: ack.eventID,
 		PeerID:  ack.peerID,
 		RvID:    ack.rvID,
 	}
+
+	if ack.dialAddr == ps.serverAddr {
+		ps.AckUp(ctx, eAck)
+		return
+	}
+
+	conn, err := grpc.Dial(ack.dialAddr, grpc.WithInsecure())
+	if err != nil {
+		log.Fatalf("fail to dial: %v", err)
+	}
+	defer conn.Close()
 
 	client := pb.NewScoutHubClient(conn)
 	client.AckUp(ctx, eAck)
@@ -791,12 +798,27 @@ func (ps *PubSub) sendAckToTrackers(ack *pb.EventAck) {
 func (ps *PubSub) AckUp(ctx context.Context, ack *pb.EventAck) (*pb.Ack, error) {
 	fmt.Println("AckUp: " + ps.serverAddr)
 
+	eID := fmt.Sprintf("%s%d%d%s", ack.EventID.PublisherID, ack.EventID.SessionNumber, ack.EventID.SeqID, ack.RvID)
 	isRv, _ := ps.rendezvousSelfCheck(ack.RvID)
-	if isRv {
+
+	if ps.myEBackTrackers[eID] != nil {
+		ps.ackUpLock.Lock()
+		if ps.myEBackTrackers[eID] == nil {
+			return &pb.Ack{State: true, Info: "Event Tracker already closed"}, nil
+		}
+
+		ps.myEBackTrackers[eID].eventLog[ack.PeerID] = true
+		ps.myEBackTrackers[eID].receivedAcks++
+
+		if ps.myEBackTrackers[eID].receivedAcks == ps.myEBackTrackers[eID].expectedAcks {
+			ps.ackToSendUp <- &AckUp{dialAddr: ps.myEBackTrackers[eID].addrToAck, eventID: ack.EventID,
+				peerID: ps.myEBackTrackers[eID].originalDestination, rvID: ack.RvID}
+			delete(ps.myEBackTrackers, eID)
+		}
+		ps.ackUpLock.Unlock()
+	} else if isRv {
 		ps.sendAckToTrackers(ack)
 	} else {
-		eID := fmt.Sprintf("%s%d%d%s", ack.EventID.PublisherID, ack.EventID.SessionNumber, ack.EventID.SeqID, ack.RvID)
-
 		ps.ackUpLock.Lock()
 		if ps.myETrackers[eID] == nil {
 			return &pb.Ack{State: true, Info: "Event Tracker already closed"}, nil
@@ -1064,10 +1086,12 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 		return &pb.Ack{State: false, Info: err.Error()}, err
 	}
 
-	for _, attr := range p.attributes {
-		isRv, _ := ps.rendezvousSelfCheck(attr.name)
-		if isRv {
-			return &pb.Ack{State: true, Info: ""}, nil
+	if !event.Backup {
+		for _, attr := range p.attributes {
+			isRv, _ := ps.rendezvousSelfCheck(attr.name)
+			if isRv {
+				return &pb.Ack{State: true, Info: ""}, nil
+			}
 		}
 	}
 
@@ -1118,16 +1142,17 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 		return &pb.Ack{State: true, Info: ""}, nil
 	}
 
-	if ps.myFilters.IsInterested(p) {
-		ps.interestingEvents <- event
-	}
-
 	ackAddr := event.AckAddr
 	event.AckAddr = ps.serverAddr
 	eL := make(map[string]bool)
 
 	ps.tablesLock.RLock()
 	if !event.Backup {
+
+		if ps.myFilters.IsInterested(p) {
+			ps.interestingEvents <- event
+		}
+
 		for next, route := range ps.currentFilterTable.routes {
 			if route.IsInterested(p) {
 
@@ -1184,6 +1209,13 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 				ps.nextFilterTable.redirectLock.Unlock()
 			}
 		}
+
+		if len(eL) > 0 && ps.myETrackers[eID] == nil {
+			ps.myETrackers[eID] = NewEventLedger(eID, eL, ackAddr, event, originalDestination)
+		} else {
+			ps.ackToSendUp <- &AckUp{dialAddr: ackAddr, eventID: event.EventID, peerID: originalDestination, rvID: event.RvId}
+		}
+
 	} else {
 		ps.upBackLock.RLock()
 		for next, route := range ps.myBackupsFilters[event.OriginalRoute].routes {
@@ -1197,14 +1229,14 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 			}
 		}
 		ps.upBackLock.RUnlock()
+
+		if len(eL) > 0 && ps.myEBackTrackers[eID] == nil {
+			ps.myEBackTrackers[eID] = NewEventLedger(eID, eL, ackAddr, event, originalDestination)
+		} else {
+			ps.ackToSendUp <- &AckUp{dialAddr: ackAddr, eventID: event.EventID, peerID: originalDestination, rvID: event.RvId}
+		}
 	}
 	ps.tablesLock.RUnlock()
-
-	if len(eL) > 0 {
-		ps.myETrackers[eID] = NewEventLedger(eID, eL, ackAddr, event, originalDestination)
-	} else {
-		ps.ackToSendUp <- &AckUp{dialAddr: ackAddr, eventID: event.EventID, peerID: originalDestination, rvID: event.RvId}
-	}
 
 	return &pb.Ack{State: true, Info: ""}, nil
 }
@@ -1213,11 +1245,12 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 // until it finds all subscribers by calling a notify operation towards them
 func (ps *PubSub) forwardEventDown(dialAddr string, event *pb.Event, originalRoute string, redirect string) {
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	if dialAddr == ps.serverAddr {
 		ps.Notify(ctx, event)
+		return
 	}
 
 	if redirect != "" && ps.tryRedirect(ctx, redirect, event) {
@@ -1237,6 +1270,12 @@ func (ps *PubSub) forwardEventDown(dialAddr string, event *pb.Event, originalRou
 	if err != nil || !ack.State {
 		event.Backup = true
 		for _, backup := range ps.currentFilterTable.routes[originalRoute].backups {
+
+			if backup == ps.serverAddr {
+				ps.Notify(ctx, event)
+				return
+			}
+
 			conn, err := grpc.Dial(backup, grpc.WithInsecure())
 			if err != nil {
 				log.Fatalf("fail to dial: %v", err)
