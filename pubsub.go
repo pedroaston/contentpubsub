@@ -24,6 +24,8 @@ import (
 )
 
 type PubSub struct {
+	backupIDs []string
+
 	maxSubsPerRegion          int
 	powerSubsPoolSize         int
 	maxAttributesPerPredicate int
@@ -1398,6 +1400,8 @@ func (ps *PubSub) getBackups() []string {
 			continue
 		}
 
+		ps.backupIDs = append(ps.backupIDs, peer.Encode(backup))
+
 		dialAddr = addrForPubSubServer(backupAddr)
 		backups = append(backups, dialAddr)
 	}
@@ -1598,6 +1602,10 @@ func (ps *PubSub) alternativesToRv(rvID string) []string {
 
 // terminateService closes the PubSub service
 func (ps *PubSub) TerminateService() {
+	fmt.Println("Terminate >> " + peer.Encode(ps.ipfsDHT.PeerID()))
+	for _, b := range ps.backupIDs {
+		fmt.Println("backUp # " + b)
+	}
 	ps.terminate <- "end"
 	ps.server.Stop()
 	ps.ipfsDHT.Close()
