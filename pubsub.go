@@ -1323,6 +1323,7 @@ func (ps *PubSub) UpdateBackup(ctx context.Context, update *pb.Update) (*pb.Ack,
 	}
 
 	fmt.Println("Trying # " + update.Sender)
+	fmt.Println("At # " + peer.Encode(ps.ipfsDHT.PeerID()))
 
 	ps.upBackLock.Lock()
 	if _, ok := ps.myBackupsFilters[update.Sender]; !ok {
