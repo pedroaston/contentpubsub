@@ -1143,8 +1143,19 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 		for next, route := range ps.currentFilterTable.routes {
 			if route.IsInterested(p) {
 
+				newE := &pb.Event{
+					Event:         event.Event,
+					OriginalRoute: next,
+					Predicate:     event.Predicate,
+					RvId:          event.RvId,
+					AckAddr:       event.AckAddr,
+					PubAddr:       event.PubAddr,
+					EventID:       event.EventID,
+					BirthTime:     event.BirthTime,
+					LastHop:       event.LastHop,
+				}
+
 				eL[next] = false
-				event.OriginalRoute = next
 				dialAddr := route.addr
 
 				ps.currentFilterTable.redirectLock.Lock()
@@ -1158,19 +1169,19 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 
 					ps.eventsToForwardDown <- &ForwardEvent{
 						dialAddr:       dialAddr,
-						event:          event,
+						event:          newE,
 						redirectOption: "",
 					}
 				} else if ps.currentFilterTable.redirectTable[next][event.RvId] == "" {
 					ps.eventsToForwardDown <- &ForwardEvent{
 						dialAddr:       dialAddr,
-						event:          event,
+						event:          newE,
 						redirectOption: "",
 					}
 				} else {
 					ps.eventsToForwardDown <- &ForwardEvent{
 						dialAddr:       dialAddr,
-						event:          event,
+						event:          newE,
 						redirectOption: ps.currentFilterTable.redirectTable[next][event.RvId],
 					}
 				}
