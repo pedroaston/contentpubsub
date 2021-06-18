@@ -9,7 +9,7 @@ import (
 
 // Initializes a RouteStats for simple testing
 func InitializeRouteStats() *RouteStats {
-	r := NewRouteStats()
+	r := NewRouteStats("10.10.10.10:1234")
 
 	p1, err1 := NewPredicate("portugal T", 5)
 	p2, err2 := NewPredicate("soccer T/goals R 2 5", 5)

@@ -93,7 +93,7 @@ func NewPubSub(dht *kaddht.IpfsDHT, cfg *SetupPubSub) *PubSub {
 
 	filterTable := NewFilterTable(dht)
 	auxFilterTable := NewFilterTable(dht)
-	mySubs := NewRouteStats()
+	mySubs := NewRouteStats("no need")
 
 	ps := &PubSub{
 		maxSubsPerRegion:          cfg.MaxSubsPerRegion,
@@ -240,6 +240,7 @@ func (ps *PubSub) MySubscribe(info string) error {
 		RvId:      minAttr,
 		Shortcut:  "!",
 		SubAddr:   ps.serverAddr,
+		IntAddr:   ps.serverAddr,
 	}
 
 	ps.unconfirmedSubs[sub.Predicate] = &SubState{
@@ -310,12 +311,12 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 
 	if ps.currentFilterTable.routes[sub.PeerID] == nil {
 		ps.tablesLock.Lock()
-		ps.currentFilterTable.routes[sub.PeerID] = NewRouteStats()
-		ps.nextFilterTable.routes[sub.PeerID] = NewRouteStats()
+		ps.currentFilterTable.routes[sub.PeerID] = NewRouteStats(sub.IntAddr)
+		ps.nextFilterTable.routes[sub.PeerID] = NewRouteStats(sub.IntAddr)
 		ps.tablesLock.Unlock()
 	} else if ps.nextFilterTable.routes[sub.PeerID] == nil {
 		ps.tablesLock.Lock()
-		ps.nextFilterTable.routes[sub.PeerID] = NewRouteStats()
+		ps.nextFilterTable.routes[sub.PeerID] = NewRouteStats(sub.IntAddr)
 		ps.tablesLock.Unlock()
 	}
 
@@ -367,6 +368,7 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 			RvId:      sub.RvId,
 			Backups:   backups,
 			SubAddr:   sub.SubAddr,
+			IntAddr:   ps.serverAddr,
 		}
 
 		ps.tablesLock.RLock()
@@ -612,20 +614,7 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 				eL[next] = false
 				event.OriginalRoute = next
 
-				var dialAddr string
-				nextID, err := peer.Decode(next)
-				if err != nil {
-					ps.tablesLock.RUnlock()
-					return &pb.Ack{State: false, Info: "decoding failed"}, err
-				}
-
-				nextAddr := ps.ipfsDHT.FindLocal(nextID).Addrs[0]
-				if nextAddr == nil {
-					ps.tablesLock.RUnlock()
-					return &pb.Ack{State: false, Info: "No address for next hop peer"}, nil
-				} else {
-					dialAddr = addrForPubSubServer(nextAddr)
-				}
+				dialAddr := route.addr
 
 				ps.currentFilterTable.redirectLock.Lock()
 				ps.nextFilterTable.redirectLock.Lock()
@@ -1156,21 +1145,7 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 
 				eL[next] = false
 				event.OriginalRoute = next
-
-				var dialAddr string
-				nextID, err := peer.Decode(next)
-				if err != nil {
-					ps.tablesLock.RUnlock()
-					return &pb.Ack{State: false, Info: "decoding failed"}, err
-				}
-
-				nextAddr := ps.ipfsDHT.FindLocal(nextID).Addrs[0]
-				if nextAddr == nil {
-					ps.tablesLock.RUnlock()
-					return &pb.Ack{State: false, Info: "No address for next hop peer"}, nil
-				} else {
-					dialAddr = addrForPubSubServer(nextAddr)
-				}
+				dialAddr := route.addr
 
 				ps.currentFilterTable.redirectLock.Lock()
 				ps.nextFilterTable.redirectLock.Lock()
@@ -1229,7 +1204,7 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 				event.OriginalRoute = next
 				eL[next] = false
 
-				nextAddr := ps.mapBackupAddr[next]
+				nextAddr := route.addr
 				ps.eventsToForwardDown <- &ForwardEvent{dialAddr: nextAddr, event: event}
 			}
 		}
@@ -1332,7 +1307,7 @@ func (ps *PubSub) UpdateBackup(ctx context.Context, update *pb.Update) (*pb.Ack,
 	}
 
 	if _, ok := ps.myBackupsFilters[update.Sender].routes[update.Route]; !ok {
-		ps.myBackupsFilters[update.Sender].routes[update.Route] = NewRouteStats()
+		ps.myBackupsFilters[update.Sender].routes[update.Route] = NewRouteStats(update.RouteAddr)
 	}
 
 	ps.myBackupsFilters[update.Sender].routes[update.Route].SimpleAddSummarizedFilter(p)
@@ -1470,7 +1445,7 @@ func (ps *PubSub) BackupRefresh(stream pb.ScoutHub_BackupRefreshServer) error {
 		}
 
 		if _, ok := ps.myBackupsFilters[update.Sender].routes[update.Route]; !ok {
-			ps.myBackupsFilters[update.Sender].routes[update.Route] = NewRouteStats()
+			ps.myBackupsFilters[update.Sender].routes[update.Route] = NewRouteStats(update.RouteAddr)
 		}
 
 		ps.myBackupsFilters[update.Sender].routes[update.Route].SimpleAddSummarizedFilter(p)
@@ -1480,7 +1455,7 @@ func (ps *PubSub) BackupRefresh(stream pb.ScoutHub_BackupRefreshServer) error {
 }
 
 // refreashBackups sends a BackupRefresh
-// to  all backup nodes
+// to all backup nodes
 func (ps *PubSub) refreshAllBackups() error {
 
 	updates, err := ps.filtersForBackupRefresh()
