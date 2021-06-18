@@ -1219,6 +1219,7 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 	} else {
 		ps.upBackLock.RLock()
 		if _, ok := ps.myBackupsFilters[event.OriginalRoute]; !ok {
+			fmt.Println("Why # " + event.OriginalRoute)
 			return &pb.Ack{State: false, Info: "cannot backup"}, nil
 		}
 		for next, route := range ps.myBackupsFilters[event.OriginalRoute].routes {
@@ -1321,6 +1322,8 @@ func (ps *PubSub) UpdateBackup(ctx context.Context, update *pb.Update) (*pb.Ack,
 		return &pb.Ack{State: false, Info: err.Error()}, err
 	}
 
+	fmt.Println("Trying # " + update.Sender)
+
 	ps.upBackLock.Lock()
 	if _, ok := ps.myBackupsFilters[update.Sender]; !ok {
 		ps.myBackupsFilters[update.Sender] = &FilterTable{routes: make(map[string]*RouteStats)}
@@ -1331,6 +1334,7 @@ func (ps *PubSub) UpdateBackup(ctx context.Context, update *pb.Update) (*pb.Ack,
 	}
 
 	ps.myBackupsFilters[update.Sender].routes[update.Route].SimpleAddSummarizedFilter(p)
+	fmt.Println("Putting # " + update.Sender)
 	ps.mapBackupAddr[update.Route] = update.RouteAddr
 	ps.upBackLock.Unlock()
 
