@@ -1249,6 +1249,8 @@ func (ps *PubSub) forwardEventDown(dialAddr string, event *pb.Event, redirect st
 
 	if err != nil || !ack.State {
 		event.Backup = true
+		fmt.Println("Dead body # " + event.OriginalRoute)
+		fmt.Println("At # " + peer.Encode(ps.ipfsDHT.PeerID()))
 		for _, backup := range ps.currentFilterTable.routes[event.OriginalRoute].backups {
 
 			if backup == ps.serverAddr {
@@ -1298,9 +1300,6 @@ func (ps *PubSub) UpdateBackup(ctx context.Context, update *pb.Update) (*pb.Ack,
 		return &pb.Ack{State: false, Info: err.Error()}, err
 	}
 
-	fmt.Println("Trying # " + update.Sender)
-	fmt.Println("At # " + peer.Encode(ps.ipfsDHT.PeerID()))
-
 	ps.upBackLock.Lock()
 	if _, ok := ps.myBackupsFilters[update.Sender]; !ok {
 		ps.myBackupsFilters[update.Sender] = &FilterTable{routes: make(map[string]*RouteStats)}
@@ -1311,8 +1310,6 @@ func (ps *PubSub) UpdateBackup(ctx context.Context, update *pb.Update) (*pb.Ack,
 	}
 
 	ps.myBackupsFilters[update.Sender].routes[update.Route].SimpleAddSummarizedFilter(p)
-	fmt.Println("Putting # " + update.Sender)
-	ps.mapBackupAddr[update.Route] = update.RouteAddr
 	ps.upBackLock.Unlock()
 
 	return &pb.Ack{State: true, Info: ""}, nil
