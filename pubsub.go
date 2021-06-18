@@ -179,7 +179,6 @@ type ForwardSubRequest struct {
 
 type ForwardEvent struct {
 	redirectOption string
-	originalRoute  string
 	dialAddr       string
 	event          *pb.Event
 }
@@ -641,21 +640,18 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 						dialAddr:       dialAddr,
 						event:          event,
 						redirectOption: "",
-						originalRoute:  next,
 					}
 				} else if ps.currentFilterTable.redirectTable[next][event.RvId] == "" {
 					ps.eventsToForwardDown <- &ForwardEvent{
 						dialAddr:       dialAddr,
 						event:          event,
 						redirectOption: "",
-						originalRoute:  next,
 					}
 				} else {
 					ps.eventsToForwardDown <- &ForwardEvent{
 						dialAddr:       dialAddr,
 						event:          event,
 						redirectOption: ps.currentFilterTable.redirectTable[next][event.RvId],
-						originalRoute:  next,
 					}
 				}
 
@@ -1019,6 +1015,8 @@ func (ps *PubSub) ResendEvent(stream pb.ScoutHub_ResendEventServer) error {
 				dialAddr = addrForPubSubServer(peerAddr)
 			}
 
+			eLog.Event.OriginalRoute = p
+
 			ps.currentFilterTable.redirectLock.Lock()
 			ps.nextFilterTable.redirectLock.Lock()
 
@@ -1027,14 +1025,12 @@ func (ps *PubSub) ResendEvent(stream pb.ScoutHub_ResendEventServer) error {
 					dialAddr:       dialAddr,
 					event:          eLog.Event,
 					redirectOption: ps.currentFilterTable.redirectTable[p][eLog.Event.RvId],
-					originalRoute:  p,
 				}
 			} else {
 				ps.eventsToForwardDown <- &ForwardEvent{
 					dialAddr:       dialAddr,
 					event:          eLog.Event,
 					redirectOption: "",
-					originalRoute:  p,
 				}
 			}
 
@@ -1117,6 +1113,8 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 					dialAddr = addrForPubSubServer(peerAddr)
 				}
 
+				event.OriginalRoute = node
+
 				ps.currentFilterTable.redirectLock.Lock()
 				ps.nextFilterTable.redirectLock.Lock()
 
@@ -1125,14 +1123,12 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 						dialAddr:       dialAddr,
 						event:          event,
 						redirectOption: ps.currentFilterTable.redirectTable[node][event.RvId],
-						originalRoute:  node,
 					}
 				} else {
 					ps.eventsToForwardDown <- &ForwardEvent{
 						dialAddr:       dialAddr,
 						event:          event,
 						redirectOption: "",
-						originalRoute:  node,
 					}
 				}
 
@@ -1189,21 +1185,18 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 						dialAddr:       dialAddr,
 						event:          event,
 						redirectOption: "",
-						originalRoute:  next,
 					}
 				} else if ps.currentFilterTable.redirectTable[next][event.RvId] == "" {
 					ps.eventsToForwardDown <- &ForwardEvent{
 						dialAddr:       dialAddr,
 						event:          event,
 						redirectOption: "",
-						originalRoute:  next,
 					}
 				} else {
 					ps.eventsToForwardDown <- &ForwardEvent{
 						dialAddr:       dialAddr,
 						event:          event,
 						redirectOption: ps.currentFilterTable.redirectTable[next][event.RvId],
-						originalRoute:  next,
 					}
 				}
 
@@ -1249,7 +1242,7 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 
 // forwardEventDown is called upon receiving the request to keep forward a event downwards
 // until it finds all subscribers by calling a notify operation towards them
-func (ps *PubSub) forwardEventDown(dialAddr string, event *pb.Event, originalRoute string, redirect string) {
+func (ps *PubSub) forwardEventDown(dialAddr string, event *pb.Event, redirect string) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -1275,7 +1268,7 @@ func (ps *PubSub) forwardEventDown(dialAddr string, event *pb.Event, originalRou
 
 	if err != nil || !ack.State {
 		event.Backup = true
-		for _, backup := range ps.currentFilterTable.routes[originalRoute].backups {
+		for _, backup := range ps.currentFilterTable.routes[event.OriginalRoute].backups {
 
 			if backup == ps.serverAddr {
 				ps.Notify(ctx, event)
@@ -1621,7 +1614,7 @@ func (ps *PubSub) processLoop() {
 		case pid := <-ps.eventsToForwardUp:
 			go ps.forwardEventUp(pid.dialAddr, pid.event)
 		case pid := <-ps.eventsToForwardDown:
-			go ps.forwardEventDown(pid.dialAddr, pid.event, pid.originalRoute, pid.redirectOption)
+			go ps.forwardEventDown(pid.dialAddr, pid.event, pid.redirectOption)
 		case pid := <-ps.interestingEvents:
 			ps.record.SaveReceivedEvent(pid.EventID.PublisherID, pid.BirthTime, pid.Event)
 			fmt.Printf("Received Event at: %s\n", ps.serverAddr)
