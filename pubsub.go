@@ -1216,6 +1216,9 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 		if _, ok := ps.myBackupsFilters[event.OriginalRoute]; !ok {
 			fmt.Println("Why # " + event.OriginalRoute)
 			fmt.Println("At # " + peer.Encode(ps.ipfsDHT.PeerID()))
+			for y := range ps.myBackupsFilters {
+				fmt.Println("Have - " + y)
+			}
 			return &pb.Ack{State: false, Info: "cannot backup"}, nil
 		}
 
