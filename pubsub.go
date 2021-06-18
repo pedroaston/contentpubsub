@@ -612,8 +612,17 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 			if route.IsInterested(p) {
 
 				eL[next] = false
-				event.OriginalRoute = next
-
+				newE := &pb.Event{
+					Event:         event.Event,
+					OriginalRoute: next,
+					Predicate:     event.Predicate,
+					RvId:          event.RvId,
+					AckAddr:       event.AckAddr,
+					PubAddr:       event.PubAddr,
+					EventID:       event.EventID,
+					BirthTime:     event.BirthTime,
+					LastHop:       event.LastHop,
+				}
 				dialAddr := route.addr
 
 				ps.currentFilterTable.redirectLock.Lock()
@@ -627,19 +636,19 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 
 					ps.eventsToForwardDown <- &ForwardEvent{
 						dialAddr:       dialAddr,
-						event:          event,
+						event:          newE,
 						redirectOption: "",
 					}
 				} else if ps.currentFilterTable.redirectTable[next][event.RvId] == "" {
 					ps.eventsToForwardDown <- &ForwardEvent{
 						dialAddr:       dialAddr,
-						event:          event,
+						event:          newE,
 						redirectOption: "",
 					}
 				} else {
 					ps.eventsToForwardDown <- &ForwardEvent{
 						dialAddr:       dialAddr,
-						event:          event,
+						event:          newE,
 						redirectOption: ps.currentFilterTable.redirectTable[next][event.RvId],
 					}
 				}
