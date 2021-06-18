@@ -1359,8 +1359,7 @@ func (ps *PubSub) updateMyBackups(route string, info string) error {
 		var routeAddr string
 		addr := ps.ipfsDHT.FindLocal(routeID).Addrs[0]
 		if addr != nil {
-			aux := strings.Split(addr.String(), "/")
-			routeAddr = aux[2] + ":4" + aux[4][1:]
+			routeAddr = addrForPubSubServer(addr)
 		}
 
 		client := pb.NewScoutHubClient(conn)
