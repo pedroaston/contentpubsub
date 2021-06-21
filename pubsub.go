@@ -46,7 +46,6 @@ type PubSub struct {
 
 	myBackups        []string
 	myBackupsFilters map[string]*FilterTable
-	mapBackupAddr    map[string]string
 
 	myTrackers      map[string]*Tracker
 	myETrackers     map[string]*EventLedger
@@ -90,7 +89,7 @@ func NewPubSub(dht *kaddht.IpfsDHT, cfg *SetupPubSub) *PubSub {
 
 	filterTable := NewFilterTable(dht)
 	auxFilterTable := NewFilterTable(dht)
-	mySubs := NewRouteStats()
+	mySubs := NewRouteStats("no need")
 
 	ps := &PubSub{
 		maxSubsPerRegion:          cfg.MaxSubsPerRegion,
@@ -104,7 +103,6 @@ func NewPubSub(dht *kaddht.IpfsDHT, cfg *SetupPubSub) *PubSub {
 		nextFilterTable:           auxFilterTable,
 		myFilters:                 mySubs,
 		myBackupsFilters:          make(map[string]*FilterTable),
-		mapBackupAddr:             make(map[string]string),
 		myTrackers:                make(map[string]*Tracker),
 		myETrackers:               make(map[string]*EventLedger),
 		myEBackTrackers:           make(map[string]*EventLedger),
@@ -174,9 +172,8 @@ type ForwardSubRequest struct {
 }
 
 type ForwardEvent struct {
-	originalRoute string
-	dialAddr      string
-	event         *pb.Event
+	dialAddr string
+	event    *pb.Event
 }
 
 type AckUp struct {
@@ -228,6 +225,7 @@ func (ps *PubSub) MySubscribe(info string) error {
 		Predicate: info,
 		RvId:      minAttr,
 		SubAddr:   ps.serverAddr,
+		IntAddr:   ps.serverAddr,
 	}
 
 	ps.unconfirmedSubs[sub.Predicate] = &SubState{
@@ -298,12 +296,12 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 
 	if ps.currentFilterTable.routes[sub.PeerID] == nil {
 		ps.tablesLock.Lock()
-		ps.currentFilterTable.routes[sub.PeerID] = NewRouteStats()
-		ps.nextFilterTable.routes[sub.PeerID] = NewRouteStats()
+		ps.currentFilterTable.routes[sub.PeerID] = NewRouteStats(sub.IntAddr)
+		ps.nextFilterTable.routes[sub.PeerID] = NewRouteStats(sub.IntAddr)
 		ps.tablesLock.Unlock()
 	} else if ps.nextFilterTable.routes[sub.PeerID] == nil {
 		ps.tablesLock.Lock()
-		ps.nextFilterTable.routes[sub.PeerID] = NewRouteStats()
+		ps.nextFilterTable.routes[sub.PeerID] = NewRouteStats(sub.IntAddr)
 		ps.tablesLock.Unlock()
 	}
 
@@ -344,6 +342,7 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 			RvId:      sub.RvId,
 			Backups:   backups,
 			SubAddr:   sub.SubAddr,
+			IntAddr:   ps.serverAddr,
 		}
 
 		ps.subsToForward <- &ForwardSubRequest{dialAddr: dialAddr, sub: subForward}
@@ -452,23 +451,24 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 			ps.tablesLock.RLock()
 			for next, route := range ps.currentFilterTable.routes {
 				if route.IsInterested(p) {
-					var dialAddr string
-					nextID, err := peer.Decode(next)
-					if err != nil {
-						return err
-					}
 
-					event.OriginalRoute = next
 					eLog[next] = false
+					dialAddr := route.addr
 
-					nextAddr := ps.ipfsDHT.FindLocal(nextID).Addrs[0]
-					if nextAddr == nil {
-						return errors.New("no address to send")
-					} else {
-						dialAddr = addrForPubSubServer(nextAddr)
+					newE := &pb.Event{
+						Event:         event.Event,
+						OriginalRoute: next,
+						Backup:        event.Backup,
+						Predicate:     event.Predicate,
+						RvId:          event.RvId,
+						AckAddr:       event.AckAddr,
+						PubAddr:       event.PubAddr,
+						EventID:       event.EventID,
+						BirthTime:     event.BirthTime,
+						LastHop:       event.LastHop,
 					}
 
-					ps.eventsToForwardDown <- &ForwardEvent{dialAddr: dialAddr, event: event}
+					ps.eventsToForwardDown <- &ForwardEvent{dialAddr: dialAddr, event: newE}
 				}
 			}
 			ps.tablesLock.RUnlock()
@@ -540,28 +540,25 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 		for next, route := range ps.currentFilterTable.routes {
 			if route.IsInterested(p) {
 
-				event.OriginalRoute = next
 				eL[next] = false
+				dialAddr := route.addr
 
-				var dialAddr string
-				nextID, err := peer.Decode(next)
-				if err != nil {
-					ps.tablesLock.RUnlock()
-					return &pb.Ack{State: false, Info: "decoding failed"}, err
-				}
-
-				nextAddr := ps.ipfsDHT.FindLocal(nextID).Addrs[0]
-				if nextAddr == nil {
-					ps.tablesLock.RUnlock()
-					return &pb.Ack{State: false, Info: "No address for next hop peer"}, nil
-				} else {
-					dialAddr = addrForPubSubServer(nextAddr)
+				newE := &pb.Event{
+					Event:         event.Event,
+					OriginalRoute: next,
+					Backup:        event.Backup,
+					Predicate:     event.Predicate,
+					RvId:          event.RvId,
+					AckAddr:       event.AckAddr,
+					PubAddr:       event.PubAddr,
+					EventID:       event.EventID,
+					BirthTime:     event.BirthTime,
+					LastHop:       event.LastHop,
 				}
 
 				ps.eventsToForwardDown <- &ForwardEvent{
-					dialAddr:      dialAddr,
-					event:         event,
-					originalRoute: next,
+					dialAddr: dialAddr,
+					event:    newE,
 				}
 			}
 		}
@@ -896,6 +893,9 @@ func (ps *PubSub) TrackerRefresh(ctx context.Context, req *pb.RecruitTrackerMess
 func (ps *PubSub) ResendEvent(stream pb.ScoutHub_ResendEventServer) error {
 	fmt.Println("ResendEvent >> " + ps.serverAddr)
 
+	ps.tablesLock.RLock()
+	defer ps.tablesLock.RUnlock()
+
 	for {
 		eLog, err := stream.Recv()
 		if err == io.EOF {
@@ -907,23 +907,33 @@ func (ps *PubSub) ResendEvent(stream pb.ScoutHub_ResendEventServer) error {
 		for p := range eLog.Log {
 			peerID, err := peer.Decode(p)
 			if err != nil {
-				ps.tablesLock.RUnlock()
 				return err
 			}
 
 			peerAddr := ps.ipfsDHT.FindLocal(peerID).Addrs[0]
 			var dialAddr string
 			if peerAddr == nil {
-				ps.tablesLock.RUnlock()
 				return nil
 			} else {
 				dialAddr = addrForPubSubServer(peerAddr)
 			}
 
+			newE := &pb.Event{
+				Event:         eLog.Event.Event,
+				OriginalRoute: p,
+				Backup:        eLog.Event.Backup,
+				Predicate:     eLog.Event.Predicate,
+				RvId:          eLog.Event.RvId,
+				AckAddr:       eLog.Event.AckAddr,
+				PubAddr:       eLog.Event.PubAddr,
+				EventID:       eLog.Event.EventID,
+				BirthTime:     eLog.Event.BirthTime,
+				LastHop:       eLog.Event.LastHop,
+			}
+
 			ps.eventsToForwardDown <- &ForwardEvent{
-				dialAddr:      dialAddr,
-				event:         eLog.Event,
-				originalRoute: p,
+				dialAddr: dialAddr,
+				event:    newE,
 			}
 		}
 	}
@@ -1002,10 +1012,22 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 					dialAddr = addrForPubSubServer(peerAddr)
 				}
 
+				newE := &pb.Event{
+					Event:         event.Event,
+					Backup:        event.Backup,
+					OriginalRoute: node,
+					Predicate:     event.Predicate,
+					RvId:          event.RvId,
+					AckAddr:       event.AckAddr,
+					PubAddr:       event.PubAddr,
+					EventID:       event.EventID,
+					BirthTime:     event.BirthTime,
+					LastHop:       event.LastHop,
+				}
+
 				ps.eventsToForwardDown <- &ForwardEvent{
-					dialAddr:      dialAddr,
-					event:         event,
-					originalRoute: node,
+					dialAddr: dialAddr,
+					event:    newE,
 				}
 			}
 		}
@@ -1027,27 +1049,24 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 			if route.IsInterested(p) {
 
 				eL[next] = false
-				event.OriginalRoute = next
+				dialAddr := route.addr
 
-				var dialAddr string
-				nextID, err := peer.Decode(next)
-				if err != nil {
-					ps.tablesLock.RUnlock()
-					return &pb.Ack{State: false, Info: "decoding failed"}, err
-				}
-
-				nextAddr := ps.ipfsDHT.FindLocal(nextID).Addrs[0]
-				if nextAddr == nil {
-					ps.tablesLock.RUnlock()
-					return &pb.Ack{State: false, Info: "No address for next hop peer"}, nil
-				} else {
-					dialAddr = addrForPubSubServer(nextAddr)
+				newE := &pb.Event{
+					Event:         event.Event,
+					Backup:        event.Backup,
+					OriginalRoute: next,
+					Predicate:     event.Predicate,
+					RvId:          event.RvId,
+					AckAddr:       event.AckAddr,
+					PubAddr:       event.PubAddr,
+					EventID:       event.EventID,
+					BirthTime:     event.BirthTime,
+					LastHop:       event.LastHop,
 				}
 
 				ps.eventsToForwardDown <- &ForwardEvent{
-					dialAddr:      dialAddr,
-					event:         event,
-					originalRoute: next,
+					dialAddr: dialAddr,
+					event:    newE,
 				}
 			}
 		}
@@ -1061,12 +1080,23 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 		ps.upBackLock.RLock()
 		for next, route := range ps.myBackupsFilters[event.OriginalRoute].routes {
 			if route.IsInterested(p) {
-				event.Backup = false
-				event.OriginalRoute = next
-				eL[next] = false
 
-				nextAddr := ps.mapBackupAddr[next]
-				ps.eventsToForwardDown <- &ForwardEvent{dialAddr: nextAddr, event: event}
+				eL[next] = false
+				newE := &pb.Event{
+					Event:         event.Event,
+					Backup:        false,
+					OriginalRoute: next,
+					Predicate:     event.Predicate,
+					RvId:          event.RvId,
+					AckAddr:       event.AckAddr,
+					PubAddr:       event.PubAddr,
+					EventID:       event.EventID,
+					BirthTime:     event.BirthTime,
+					LastHop:       event.LastHop,
+				}
+
+				dialAddr := route.addr
+				ps.eventsToForwardDown <- &ForwardEvent{dialAddr: dialAddr, event: newE}
 			}
 		}
 		ps.upBackLock.RUnlock()
@@ -1084,7 +1114,7 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 
 // forwardEventDown is called upon receiving the request to keep forward a event downwards
 // until it finds all subscribers by calling a notify operation towards them
-func (ps *PubSub) forwardEventDown(dialAddr string, event *pb.Event, originalRoute string) {
+func (ps *PubSub) forwardEventDown(dialAddr string, event *pb.Event) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -1105,7 +1135,7 @@ func (ps *PubSub) forwardEventDown(dialAddr string, event *pb.Event, originalRou
 	ack, errReq := client.Notify(ctx, event)
 	if errReq != nil || !ack.State {
 		event.Backup = true
-		for _, backup := range ps.currentFilterTable.routes[originalRoute].backups {
+		for _, backup := range ps.currentFilterTable.routes[event.OriginalRoute].backups {
 
 			if backup == ps.serverAddr {
 				ps.Notify(ctx, event)
@@ -1142,12 +1172,10 @@ func (ps *PubSub) UpdateBackup(ctx context.Context, update *pb.Update) (*pb.Ack,
 	}
 
 	if _, ok := ps.myBackupsFilters[update.Sender].routes[update.Route]; !ok {
-		ps.myBackupsFilters[update.Sender].routes[update.Route] = NewRouteStats()
+		ps.myBackupsFilters[update.Sender].routes[update.Route] = NewRouteStats(update.RouteAddr)
 	}
 
 	ps.myBackupsFilters[update.Sender].routes[update.Route].SimpleAddSummarizedFilter(p)
-	ps.mapBackupAddr[update.Route] = update.RouteAddr
-
 	ps.upBackLock.Unlock()
 
 	return &pb.Ack{State: true, Info: ""}, nil
@@ -1175,8 +1203,7 @@ func (ps *PubSub) updateMyBackups(route string, info string) error {
 		var routeAddr string
 		addr := ps.ipfsDHT.FindLocal(routeID).Addrs[0]
 		if addr != nil {
-			aux := strings.Split(addr.String(), "/")
-			routeAddr = aux[2] + ":4" + aux[4][1:]
+			routeAddr = addrForPubSubServer(addr)
 		}
 
 		client := pb.NewScoutHubClient(conn)
@@ -1279,11 +1306,10 @@ func (ps *PubSub) BackupRefresh(stream pb.ScoutHub_BackupRefreshServer) error {
 		}
 
 		if _, ok := ps.myBackupsFilters[update.Sender].routes[update.Route]; !ok {
-			ps.myBackupsFilters[update.Sender].routes[update.Route] = NewRouteStats()
+			ps.myBackupsFilters[update.Sender].routes[update.Route] = NewRouteStats(update.RouteAddr)
 		}
 
 		ps.myBackupsFilters[update.Sender].routes[update.Route].SimpleAddSummarizedFilter(p)
-		ps.mapBackupAddr[update.Route] = update.RouteAddr
 		i = 1
 	}
 }
@@ -1425,7 +1451,7 @@ func (ps *PubSub) processLoop() {
 		case pid := <-ps.eventsToForwardUp:
 			go ps.forwardEventUp(pid.dialAddr, pid.event)
 		case pid := <-ps.eventsToForwardDown:
-			go ps.forwardEventDown(pid.dialAddr, pid.event, pid.originalRoute)
+			go ps.forwardEventDown(pid.dialAddr, pid.event)
 		case pid := <-ps.interestingEvents:
 			ps.record.SaveReceivedEvent(pid.EventID.PublisherID, pid.BirthTime, pid.Event)
 			fmt.Printf("Received Event at: %s\n", ps.serverAddr)
