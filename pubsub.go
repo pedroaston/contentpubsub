@@ -508,61 +508,61 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 
 	} else if !isRv {
 		return &pb.Ack{State: false, Info: "rendezvous check failed"}, nil
-	} else {
-		ps.tablesLock.RLock()
-		for next, route := range ps.currentFilterTable.routes {
-			if next == event.LastHop {
-				continue
-			}
-
-			if route.IsInterested(p) {
-
-				dialAddr := route.addr
-				newE := &pb.Event{
-					Event:         event.Event,
-					OriginalRoute: next,
-					Backup:        event.Backup,
-					Predicate:     event.Predicate,
-					RvId:          event.RvId,
-					EventID:       event.EventID,
-					BirthTime:     event.BirthTime,
-					LastHop:       event.LastHop,
-				}
-
-				ps.currentFilterTable.redirectLock.Lock()
-				ps.nextFilterTable.redirectLock.Lock()
-
-				if ps.currentFilterTable.redirectTable[next] == nil {
-					ps.currentFilterTable.redirectTable[next] = make(map[string]string)
-					ps.currentFilterTable.redirectTable[next][event.RvId] = ""
-					ps.nextFilterTable.redirectTable[next] = make(map[string]string)
-					ps.nextFilterTable.redirectTable[next][event.RvId] = ""
-
-					ps.eventsToForwardDown <- &ForwardEvent{
-						dialAddr:       dialAddr,
-						event:          newE,
-						redirectOption: "",
-					}
-				} else if ps.currentFilterTable.redirectTable[next][event.RvId] == "" {
-					ps.eventsToForwardDown <- &ForwardEvent{
-						dialAddr:       dialAddr,
-						event:          newE,
-						redirectOption: "",
-					}
-				} else {
-					ps.eventsToForwardDown <- &ForwardEvent{
-						dialAddr:       dialAddr,
-						event:          newE,
-						redirectOption: ps.currentFilterTable.redirectTable[next][event.RvId],
-					}
-				}
-
-				ps.currentFilterTable.redirectLock.Unlock()
-				ps.nextFilterTable.redirectLock.Unlock()
-			}
-		}
-		ps.tablesLock.RUnlock()
 	}
+
+	ps.tablesLock.RLock()
+	for next, route := range ps.currentFilterTable.routes {
+		if next == event.LastHop {
+			continue
+		}
+
+		if route.IsInterested(p) {
+
+			dialAddr := route.addr
+			newE := &pb.Event{
+				Event:         event.Event,
+				OriginalRoute: next,
+				Backup:        event.Backup,
+				Predicate:     event.Predicate,
+				RvId:          event.RvId,
+				EventID:       event.EventID,
+				BirthTime:     event.BirthTime,
+				LastHop:       event.LastHop,
+			}
+
+			ps.currentFilterTable.redirectLock.Lock()
+			ps.nextFilterTable.redirectLock.Lock()
+
+			if ps.currentFilterTable.redirectTable[next] == nil {
+				ps.currentFilterTable.redirectTable[next] = make(map[string]string)
+				ps.currentFilterTable.redirectTable[next][event.RvId] = ""
+				ps.nextFilterTable.redirectTable[next] = make(map[string]string)
+				ps.nextFilterTable.redirectTable[next][event.RvId] = ""
+
+				ps.eventsToForwardDown <- &ForwardEvent{
+					dialAddr:       dialAddr,
+					event:          newE,
+					redirectOption: "",
+				}
+			} else if ps.currentFilterTable.redirectTable[next][event.RvId] == "" {
+				ps.eventsToForwardDown <- &ForwardEvent{
+					dialAddr:       dialAddr,
+					event:          newE,
+					redirectOption: "",
+				}
+			} else {
+				ps.eventsToForwardDown <- &ForwardEvent{
+					dialAddr:       dialAddr,
+					event:          newE,
+					redirectOption: ps.currentFilterTable.redirectTable[next][event.RvId],
+				}
+			}
+
+			ps.currentFilterTable.redirectLock.Unlock()
+			ps.nextFilterTable.redirectLock.Unlock()
+		}
+	}
+	ps.tablesLock.RUnlock()
 
 	return &pb.Ack{State: true, Info: ""}, nil
 }
@@ -711,6 +711,7 @@ func (ps *PubSub) forwardEventDown(dialAddr string, event *pb.Event, redirect st
 
 	if dialAddr == ps.serverAddr {
 		ps.Notify(ctx, event)
+		return
 	}
 
 	if redirect != "" && ps.tryRedirect(ctx, redirect, event) {
@@ -876,8 +877,7 @@ func (ps *PubSub) eraseOldFetchNewBackup(oldAddr string) {
 	if backupAddr == nil {
 		return
 	}
-	aux := strings.Split(backupAddr.String(), "/")
-	newAddr := aux[2] + ":4" + aux[4][1:]
+	newAddr := addrForPubSubServer(backupAddr)
 	ps.myBackups[refIndex] = newAddr
 
 	updates, err := ps.filtersForBackupRefresh()
