@@ -612,9 +612,9 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 	} else if !isRv {
 		return &pb.Ack{State: false, Info: "rendezvous check failed"}, nil
 	} else if isRv {
-
+		fmt.Println("Quero entrar >> " + ps.serverAddr)
 		ps.tablesLock.RLock()
-
+		fmt.Println("Entrei >> " + ps.serverAddr)
 		eIDRv := fmt.Sprintf("%s%d%d", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID)
 		for _, cached := range ps.rvCache {
 			if eIDRv == cached {
