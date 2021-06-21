@@ -687,7 +687,7 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 			ps.interestingEvents <- event
 		}
 	}
-
+	fmt.Println("Acabei >> " + ps.serverAddr)
 	return &pb.Ack{State: true, Info: ""}, nil
 }
 
@@ -1689,6 +1689,7 @@ func (ps *PubSub) processLoop() {
 				ps.myAdvertiseGroup(g.predicate)
 			}
 		case <-ps.refreshTicker.C:
+			fmt.Println("Ola")
 			ps.tablesLock.Lock()
 			ps.currentFilterTable = ps.nextFilterTable
 			ps.nextFilterTable = NewFilterTable(ps.ipfsDHT)
@@ -1696,6 +1697,7 @@ func (ps *PubSub) processLoop() {
 			ps.nextAdvertiseBoard = nil
 			ps.refreshAllBackups()
 			ps.tablesLock.Unlock()
+			fmt.Println("Adeus")
 		case <-ps.terminate:
 			return
 		}
