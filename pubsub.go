@@ -585,6 +585,7 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 		}
 	}
 
+	ps.eventSeq++
 	return nil
 }
 
@@ -614,8 +615,8 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 	} else if isRv {
 
 		ps.tablesLock.RLock()
-
 		eIDRv := fmt.Sprintf("%s%d%d", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID)
+
 		for _, cached := range ps.rvCache {
 			if eIDRv == cached {
 				ps.record.AddOperationStat("Publish")
@@ -626,6 +627,7 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 		ps.rvCache = append(ps.rvCache, eIDRv)
 		eL := make(map[string]bool)
 		event.AckAddr = ps.serverAddr
+
 		for next, route := range ps.currentFilterTable.routes {
 			if route.IsInterested(p) {
 
@@ -1018,19 +1020,8 @@ func (ps *PubSub) ResendEvent(stream pb.ScoutHub_ResendEventServer) error {
 		}
 
 		for p := range eLog.Log {
-			peerID, err := peer.Decode(p)
-			if err != nil {
-				return err
-			}
 
-			peerAddr := ps.ipfsDHT.FindLocal(peerID).Addrs[0]
-			var dialAddr string
-			if peerAddr == nil {
-				return nil
-			} else {
-				dialAddr = addrForPubSubServer(peerAddr)
-			}
-
+			dialAddr := ps.currentFilterTable.routes[p].addr
 			newE := &pb.Event{
 				Event:         eLog.Event.Event,
 				OriginalRoute: p,
