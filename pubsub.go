@@ -405,6 +405,7 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 		ps.eventsToForwardUp <- &ForwardEvent{dialAddr: dialAddr, event: event}
 	}
 
+	ps.eventSeq++
 	return nil
 }
 
