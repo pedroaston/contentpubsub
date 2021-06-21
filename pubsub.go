@@ -43,6 +43,8 @@ type PubSub struct {
 	myBackups        []string
 	myBackupsFilters map[string]*FilterTable
 
+	rvCache []string
+
 	interestingEvents   chan *pb.Event
 	subsToForward       chan *ForwardSubRequest
 	eventsToForwardUp   chan *ForwardEvent
@@ -437,6 +439,16 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 	} else if !isRv {
 		return &pb.Ack{State: false, Info: "rendezvous check failed"}, nil
 	}
+
+	eIDRv := fmt.Sprintf("%s%d%d", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID)
+	for _, cached := range ps.rvCache {
+		if eIDRv == cached {
+			ps.record.AddOperationStat("Publish")
+			return &pb.Ack{State: true, Info: ""}, nil
+		}
+	}
+
+	ps.rvCache = append(ps.rvCache, eIDRv)
 
 	ps.tablesLock.RLock()
 	for next, route := range ps.currentFilterTable.routes {
