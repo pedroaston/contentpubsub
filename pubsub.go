@@ -618,6 +618,7 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 		eIDRv := fmt.Sprintf("%s%d%d", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID)
 		for _, cached := range ps.rvCache {
 			if eIDRv == cached {
+				fmt.Println("Forgot to increment seqID >> " + ps.serverAddr)
 				ps.record.AddOperationStat("Publish")
 				return &pb.Ack{State: true, Info: ""}, nil
 			}
@@ -626,6 +627,7 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 		ps.rvCache = append(ps.rvCache, eIDRv)
 		eL := make(map[string]bool)
 		event.AckAddr = ps.serverAddr
+		fmt.Println("Phase 1 >> " + ps.serverAddr)
 		for next, route := range ps.currentFilterTable.routes {
 			if route.IsInterested(p) {
 
@@ -675,6 +677,7 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 			}
 		}
 		ps.tablesLock.RUnlock()
+		fmt.Println("Phase 2 >> " + ps.serverAddr)
 
 		eID := fmt.Sprintf("%s%d%d%s", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID, event.RvId)
 		if len(eL) > 0 {
@@ -683,6 +686,7 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 
 		ps.sendAckOp(event.PubAddr, "Publish", eID)
 
+		fmt.Println("Phase 3 >> " + ps.serverAddr)
 		if ps.myFilters.IsInterested(p) {
 			ps.interestingEvents <- event
 		}
@@ -1689,7 +1693,6 @@ func (ps *PubSub) processLoop() {
 				ps.myAdvertiseGroup(g.predicate)
 			}
 		case <-ps.refreshTicker.C:
-			fmt.Println("Ola")
 			ps.tablesLock.Lock()
 			ps.currentFilterTable = ps.nextFilterTable
 			ps.nextFilterTable = NewFilterTable(ps.ipfsDHT)
@@ -1697,7 +1700,6 @@ func (ps *PubSub) processLoop() {
 			ps.nextAdvertiseBoard = nil
 			ps.refreshAllBackups()
 			ps.tablesLock.Unlock()
-			fmt.Println("Adeus")
 		case <-ps.terminate:
 			return
 		}
