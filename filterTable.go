@@ -13,14 +13,16 @@ import (
 type RouteStats struct {
 	filters   map[int][]*Predicate
 	backups   []string
+	addr      string
 	routeLock *sync.RWMutex
 }
 
 // NewRouteStats initializes a routestat
-func NewRouteStats() *RouteStats {
+func NewRouteStats(addr string) *RouteStats {
 	r := &RouteStats{
 		filters:   make(map[int][]*Predicate),
 		routeLock: &sync.RWMutex{},
+		addr:      addr,
 	}
 
 	return r
@@ -47,7 +49,11 @@ func NewFilterTable(dht *dht.IpfsDHT) *FilterTable {
 	}
 
 	for _, peerStat := range peers {
-		ft.routes[peer.Encode(peerStat.Id)] = NewRouteStats()
+		addr := dht.FindLocal(peerStat.Id).Addrs[0]
+		if addr != nil {
+			dialAddr := addrForPubSubServer(addr)
+			ft.routes[peer.Encode(peerStat.Id)] = NewRouteStats(dialAddr)
+		}
 	}
 
 	return ft

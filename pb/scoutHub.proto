@@ -36,6 +36,7 @@ message Subscription {
     string rvId = 3;
     string shortcut = 4;
     map<int32, string> backups = 5;
+    string intAddr = 6;
 }
 
 message Event { 
@@ -44,8 +45,9 @@ message Event {
     string rvId = 3;
     string event = 4;
     string lastHop = 5;
-    string backup = 6;
+    bool backup = 6;
     string birthTime = 7;
+    string originalRoute = 8;
 }
 
 message EventID {
