@@ -1461,8 +1461,7 @@ func (ps *PubSub) eraseOldFetchNewBackup(oldAddr string) {
 	if backupAddr == nil {
 		return
 	}
-	aux := strings.Split(backupAddr.String(), "/")
-	newAddr := aux[2] + ":4" + aux[4][1:]
+	newAddr := addrForPubSubServer(backupAddr)
 	ps.myBackups[refIndex] = newAddr
 
 	updates, err := ps.filtersForBackupRefresh()
@@ -1544,8 +1543,7 @@ func (ps *PubSub) filtersForBackupRefresh() ([]*pb.Update, error) {
 		var routeAddr string
 		addr := ps.ipfsDHT.FindLocal(routeID).Addrs[0]
 		if addr != nil {
-			aux := strings.Split(addr.String(), "/")
-			routeAddr = aux[2] + ":4" + aux[4][1:]
+			routeAddr = addrForPubSubServer(addr)
 		}
 
 		for _, filters := range routeS.filters {
