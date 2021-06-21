@@ -1020,19 +1020,8 @@ func (ps *PubSub) ResendEvent(stream pb.ScoutHub_ResendEventServer) error {
 		}
 
 		for p := range eLog.Log {
-			peerID, err := peer.Decode(p)
-			if err != nil {
-				return err
-			}
 
-			peerAddr := ps.ipfsDHT.FindLocal(peerID).Addrs[0]
-			var dialAddr string
-			if peerAddr == nil {
-				return nil
-			} else {
-				dialAddr = addrForPubSubServer(peerAddr)
-			}
-
+			dialAddr := ps.currentFilterTable.routes[p].addr
 			newE := &pb.Event{
 				Event:         eLog.Event.Event,
 				OriginalRoute: p,
