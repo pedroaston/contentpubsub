@@ -12,8 +12,8 @@
 ### Active
 - v0.0.13 >> Base-Unreliable
 - v0.1.17 >> Redirect-Unreliable
-- v0.4.7  >> Base-Rv-Reliable
-- v0.5.11 >> Redirect-Rv-Reliable and latest FastDelivery
+- v0.4.9  >> Base-Rv-Reliable
+- v0.5.12 >> Redirect-Rv-Reliable and latest FastDelivery
 
 ### Abandoned
 - v0.2.13 >> Redirect-Reliable and latest FastDelivery

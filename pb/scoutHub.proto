@@ -45,6 +45,7 @@ message Subscription {
     string shortcut = 4;
     map<int32, string> backups = 5;
     string subAddr = 6;
+    string intAddr = 7;
 }
 
 message Event { 
