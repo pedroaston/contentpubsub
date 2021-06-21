@@ -585,6 +585,7 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 		}
 	}
 
+	ps.eventSeq++
 	return nil
 }
 
@@ -612,13 +613,12 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 	} else if !isRv {
 		return &pb.Ack{State: false, Info: "rendezvous check failed"}, nil
 	} else if isRv {
-		fmt.Println("Quero entrar >> " + ps.serverAddr)
+
 		ps.tablesLock.RLock()
-		fmt.Println("Entrei >> " + ps.serverAddr)
 		eIDRv := fmt.Sprintf("%s%d%d", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID)
+
 		for _, cached := range ps.rvCache {
 			if eIDRv == cached {
-				fmt.Println("Forgot to increment seqID >> " + ps.serverAddr)
 				ps.record.AddOperationStat("Publish")
 				return &pb.Ack{State: true, Info: ""}, nil
 			}
@@ -627,7 +627,7 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 		ps.rvCache = append(ps.rvCache, eIDRv)
 		eL := make(map[string]bool)
 		event.AckAddr = ps.serverAddr
-		fmt.Println("Phase 1 >> " + ps.serverAddr)
+
 		for next, route := range ps.currentFilterTable.routes {
 			if route.IsInterested(p) {
 
@@ -677,7 +677,6 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 			}
 		}
 		ps.tablesLock.RUnlock()
-		fmt.Println("Phase 2 >> " + ps.serverAddr)
 
 		eID := fmt.Sprintf("%s%d%d%s", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID, event.RvId)
 		if len(eL) > 0 {
@@ -686,12 +685,11 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 
 		ps.sendAckOp(event.PubAddr, "Publish", eID)
 
-		fmt.Println("Phase 3 >> " + ps.serverAddr)
 		if ps.myFilters.IsInterested(p) {
 			ps.interestingEvents <- event
 		}
 	}
-	fmt.Println("Acabei >> " + ps.serverAddr)
+
 	return &pb.Ack{State: true, Info: ""}, nil
 }
 
