@@ -1,7 +1,5 @@
 package contentpubsub
 
-import "fmt"
-
 type Node struct {
 	subs       []*SubData
 	upperLimit int
@@ -10,7 +8,6 @@ type Node struct {
 	right      *Node
 }
 
-// NewNode creates a node on the attributeTree with a certain range
 func NewNode(upperLimit int, lowerLimit int) *Node {
 
 	n := &Node{
@@ -29,8 +26,8 @@ func NewNode(upperLimit int, lowerLimit int) *Node {
 	return n
 }
 
-// InsertSub inserts a sub to all the nodes that he should be
-// recursively throught the tree
+// InsertSub inserts a sub to all the nodes that he should
+// be at, by recursively place it throught the tree
 func (n *Node) InsertSub(upper int, lower int, sub *SubData) {
 
 	localCap := n.upperLimit - n.lowerLimit + 1
@@ -46,7 +43,8 @@ func (n *Node) InsertSub(upper int, lower int, sub *SubData) {
 	}
 }
 
-// GetSubsOfEvent returns all subs by calling recursivelly the function
+// GetSubsOfEvent returns all subs interested in a certain
+// specific value by calling recursivelly the function
 func (n *Node) GetSubsOfEvent(value int) []*SubData {
 
 	localCap := n.upperLimit - n.lowerLimit + 1
@@ -57,11 +55,11 @@ func (n *Node) GetSubsOfEvent(value int) []*SubData {
 	} else {
 		return append(n.subs, n.right.GetSubsOfEvent(value)...)
 	}
-
 }
 
 // DeleteSubsFromNode recursively called to delete a node throught a tree
 func (n *Node) DeleteSubFromNode(upper int, lower int, sub *SubData) {
+
 	localCap := n.upperLimit - n.lowerLimit + 1
 	if upper >= n.upperLimit && lower <= n.lowerLimit {
 		for i := 0; i < len(n.subs); i++ {
@@ -88,6 +86,9 @@ func (n *Node) DeleteSubFromNode(upper int, lower int, sub *SubData) {
 	}
 }
 
+// RangeAttributeTree is a structure that organizes the subscribers
+// by their interest in a specific value of an attribute for
+// then faster/efficient subscriber diffusion
 type RangeAttributeTree struct {
 	root       *Node
 	attrname   string
@@ -95,7 +96,6 @@ type RangeAttributeTree struct {
 	lowerValue int
 }
 
-// NewRangeAttributeTree creates a range attribute tree with a certain range
 func NewRangeAttributeTree(attr *Attribute) *RangeAttributeTree {
 
 	size := attr.rangeQuery[1] - attr.rangeQuery[0] + 1
@@ -127,6 +127,7 @@ func (rt *RangeAttributeTree) AddSubToTreeRoot(sub *SubData) {
 
 // RemoveSubFromTreeRoot removes a sub from the tree root
 func (rt *RangeAttributeTree) RemoveSubFromTreeRoot(sub *SubData) {
+
 	for i := 0; i < len(rt.root.subs); i++ {
 		if rt.root.subs[i].addr == sub.addr {
 			if i == 0 && len(rt.root.subs) == 1 {
@@ -148,7 +149,6 @@ func (rt *RangeAttributeTree) RemoveSubFromTreeRoot(sub *SubData) {
 func (rt *RangeAttributeTree) AddSubToTree(sub *SubData) {
 
 	var upper, lower int
-
 	if sub.pred.attributes[rt.attrname].rangeQuery[1] >= rt.upperValue {
 		upper = rt.upperValue
 	} else {
@@ -175,7 +175,6 @@ func (rt *RangeAttributeTree) GetInterestedSubs(value int) []*SubData {
 func (rt *RangeAttributeTree) DeleteSubFromTree(sub *SubData) {
 
 	var upper, lower int
-
 	if sub.pred.attributes[rt.attrname].rangeQuery[1] >= rt.upperValue {
 		upper = rt.upperValue
 	} else {
@@ -189,17 +188,4 @@ func (rt *RangeAttributeTree) DeleteSubFromTree(sub *SubData) {
 	}
 
 	rt.root.DeleteSubFromNode(upper, lower, sub)
-}
-
-// PrintRT is used to print the contents of a rangeTree
-func PrintRT(n *Node) {
-
-	fmt.Printf("Node >> Lower %d and Upper: %d\n", n.lowerLimit, n.upperLimit)
-	for _, sub := range n.subs {
-		fmt.Println(sub.addr)
-	}
-	if n.left != nil {
-		PrintRT(n.left)
-		PrintRT(n.right)
-	}
 }

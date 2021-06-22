@@ -23,9 +23,8 @@ import (
 	"google.golang.org/grpc"
 )
 
+// PubSub supports all the middleware logic
 type PubSub struct {
-	backupIDs []string
-
 	maxSubsPerRegion          int
 	powerSubsPoolSize         int
 	maxAttributesPerPredicate int
@@ -86,8 +85,6 @@ type PubSub struct {
 	eventSeq int
 }
 
-// NewPubSub initializes the PubSub's data structure
-// sets up the server and starts processloop
 func NewPubSub(dht *kaddht.IpfsDHT, cfg *SetupPubSub) *PubSub {
 
 	filterTable := NewFilterTable(dht)
@@ -259,47 +256,14 @@ func (ps *PubSub) MySubscribe(info string) error {
 	return nil
 }
 
-// closerAttrRvToSelf returns the closest ID node from all the Rv nodes
-// of each of a subscription predicate attributes, so that the subscriber
-// will send the subscription on the minimal number of hops
-func (ps *PubSub) closerAttrRvToSelf(p *Predicate) (peer.ID, string, error) {
-
-	marshalSelf, err := ps.ipfsDHT.Host().ID().MarshalBinary()
-	if err != nil {
-		return "", "", err
-	}
-
-	selfKey := key.XORKeySpace.Key(marshalSelf)
-	var minAttr string
-	var minID peer.ID
-	var minDist *big.Int = nil
-
-	for _, attr := range p.attributes {
-		candidateID := peer.ID(kb.ConvertKey(attr.name))
-		aux, err := candidateID.MarshalBinary()
-		if err != nil {
-			return "", "", err
-		}
-
-		candidateDist := key.XORKeySpace.Distance(selfKey, key.XORKeySpace.Key(aux))
-		if minDist == nil || candidateDist.Cmp(minDist) == -1 {
-			minAttr = attr.name
-			minID = candidateID
-			minDist = candidateDist
-		}
-	}
-
-	return minID, minAttr, nil
-}
-
-// Subscribe is a remote function called by a external peer to send
-// subscriptions towards the rendezvous node
+// Subscribe is a remote function called by a external peer
+// to send subscriptions towards the rendezvous node
 func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack, error) {
-	fmt.Println("Subscribe: " + ps.serverAddr)
+	fmt.Println("Subscribe >> " + ps.serverAddr)
 
 	p, err := NewPredicate(sub.Predicate, ps.maxAttributesPerPredicate)
 	if err != nil {
-		return &pb.Ack{State: false, Info: err.Error()}, err
+		return &pb.Ack{State: false, Info: "error creating predicate"}, err
 	}
 
 	var aux []string
@@ -347,19 +311,15 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 
 	isRv, nextHop := ps.rendezvousSelfCheck(sub.RvId)
 	if !isRv && nextHop != "" {
-		var dialAddr string
-		closestAddr := ps.ipfsDHT.FindLocal(nextHop).Addrs[0]
-		if closestAddr == nil {
-			return &pb.Ack{State: false, Info: "No address for next hop peer"}, nil
-		} else {
-			dialAddr = addrForPubSubServer(closestAddr)
-		}
 
 		var backups map[int32]string = make(map[int32]string)
 		for i, backup := range ps.myBackups {
 			backups[int32(i)] = backup
 		}
 
+		ps.tablesLock.RLock()
+		dialAddr := ps.currentFilterTable.routes[peer.Encode(nextHop)].addr
+		ps.tablesLock.RUnlock()
 		subForward := &pb.Subscription{
 			PeerID:    peer.Encode(ps.ipfsDHT.PeerID()),
 			Predicate: sub.Predicate,
@@ -381,21 +341,10 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 			subForward.Shortcut = sub.Shortcut
 			ps.subsToForward <- &ForwardSubRequest{dialAddr: dialAddr, sub: subForward}
 		} else {
-			var redirectAddr string
-			auxID, err := peer.Decode(sub.PeerID)
-			if err != nil {
-				return nil, err
-			}
+			ps.tablesLock.RLock()
+			subForward.Shortcut = ps.currentFilterTable.routes[sub.PeerID].addr
+			ps.tablesLock.RUnlock()
 
-			fetchAddr := ps.ipfsDHT.FindLocal(auxID).Addrs[0]
-			if fetchAddr == nil {
-				return &pb.Ack{State: false, Info: "No address for next hop peer"}, nil
-			} else {
-				aux := strings.Split(fetchAddr.String(), "/")
-				redirectAddr = aux[2] + ":4" + aux[4][1:]
-			}
-
-			subForward.Shortcut = redirectAddr
 			ps.subsToForward <- &ForwardSubRequest{dialAddr: dialAddr, sub: subForward}
 		}
 	} else if !isRv {
@@ -422,7 +371,6 @@ func (ps *PubSub) forwardSub(dialAddr string, sub *pb.Subscription) {
 
 	client := pb.NewScoutHubClient(conn)
 	ack, err := client.Subscribe(ctx, sub)
-
 	if err != nil || !ack.State {
 		alternatives := ps.alternativesToRv(sub.RvId)
 		for _, addr := range alternatives {
@@ -462,17 +410,14 @@ func (ps *PubSub) MyUnsubscribe(info string) error {
 // predicate of that event data. The publish operation is made towards all
 // attributes rendezvous in order find the way to all subscribers
 func (ps *PubSub) MyPublish(data string, info string) error {
-	fmt.Printf("MyPublish: %s\n", ps.serverAddr)
+	fmt.Println("MyPublish: " + ps.serverAddr)
 
 	p, err := NewPredicate(info, ps.maxAttributesPerPredicate)
 	if err != nil {
 		return err
 	}
 
-	// prevents multiple attribute forwarding
 	notSent := true
-
-	var dialAddr string
 	for _, attr := range p.attributes {
 
 		eventID := &pb.EventID{
@@ -502,12 +447,9 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 			ps.tablesLock.RLock()
 			for next, route := range ps.currentFilterTable.routes {
 				if route.IsInterested(p) {
-					var dialAddr string
-					nextID, err := peer.Decode(next)
-					if err != nil {
-						return err
-					}
 
+					eLog[next] = false
+					dialAddr := route.addr
 					newE := &pb.Event{
 						Event:         event.Event,
 						OriginalRoute: next,
@@ -519,15 +461,6 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 						EventID:       event.EventID,
 						BirthTime:     event.BirthTime,
 						LastHop:       event.LastHop,
-					}
-
-					eLog[next] = false
-
-					nextAddr := ps.ipfsDHT.FindLocal(nextID).Addrs[0]
-					if nextAddr == nil {
-						return errors.New("no address to send")
-					} else {
-						dialAddr = addrForPubSubServer(nextAddr)
 					}
 
 					ps.currentFilterTable.redirectLock.Lock()
@@ -566,12 +499,9 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 				ps.sendLogToTracker(attr.name, eventID, eLog, event)
 			}
 		} else {
-			attrAddr := ps.ipfsDHT.FindLocal(nextRvHop).Addrs[0]
-			if attrAddr == nil {
-				return errors.New("no address for closest peer")
-			} else {
-				dialAddr = addrForPubSubServer(attrAddr)
-			}
+			ps.tablesLock.RLock()
+			dialAddr := ps.currentFilterTable.routes[peer.Encode(nextRvHop)].addr
+			ps.tablesLock.RUnlock()
 
 			eID := fmt.Sprintf("%s%d%d%s", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID, event.RvId)
 			ps.unconfirmedEvents[eID] = &PubEventState{event: event, aged: false, dialAddr: dialAddr}
@@ -591,7 +521,7 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 
 // Publish is a remote function called by a external peer to send an Event upstream
 func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error) {
-	fmt.Println("Publish: " + ps.serverAddr)
+	fmt.Println("Publish >> " + ps.serverAddr)
 
 	p, err := NewPredicate(event.Predicate, ps.maxAttributesPerPredicate)
 	if err != nil {
@@ -600,13 +530,10 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 
 	isRv, nextRvHop := ps.rendezvousSelfCheck(event.RvId)
 	if !isRv && nextRvHop != "" {
-		var dialAddr string
-		nextAddr := ps.ipfsDHT.FindLocal(nextRvHop).Addrs[0]
-		if nextAddr == nil {
-			return &pb.Ack{State: false, Info: "No address for next hop peer"}, nil
-		} else {
-			dialAddr = addrForPubSubServer(nextAddr)
-		}
+
+		ps.tablesLock.RLock()
+		dialAddr := ps.currentFilterTable.routes[peer.Encode(nextRvHop)].addr
+		ps.tablesLock.RUnlock()
 
 		ps.eventsToForwardUp <- &ForwardEvent{dialAddr: dialAddr, event: event}
 
@@ -616,10 +543,8 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 
 		ps.tablesLock.RLock()
 		eIDRv := fmt.Sprintf("%s%d%d", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID)
-
 		for _, cached := range ps.rvCache {
 			if eIDRv == cached {
-				ps.record.AddOperationStat("Publish")
 				return &pb.Ack{State: true, Info: ""}, nil
 			}
 		}
@@ -717,7 +642,7 @@ func (ps *PubSub) sendAckOp(dialAddr string, Op string, info string) {
 // sendAckUp sends an ack upstream to confirm event delivery
 func (ps *PubSub) sendAckUp(ack *AckUp) {
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	eAck := &pb.EventAck{
@@ -745,11 +670,11 @@ func (ps *PubSub) sendAckUp(ack *AckUp) {
 // pathways have confirmed to have received the event
 func (ps *PubSub) sendLogToTracker(attr string, eID *pb.EventID, eLog map[string]bool, e *pb.Event) {
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
 	needLeader := true
 	for _, addr := range ps.alternativesToRv(attr) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
 		conn, err := grpc.Dial(addr, grpc.WithInsecure())
 		if err != nil {
 			log.Fatalf("fail to dial: %v", err)
@@ -781,11 +706,11 @@ func (ps *PubSub) sendLogToTracker(attr string, eID *pb.EventID, eLog map[string
 // sendAckToTracker sends an acknowledge from event delivery at the Rv to the tracker
 func (ps *PubSub) sendAckToTrackers(ack *pb.EventAck) {
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
 	needLeader := true
 	for _, addr := range ps.alternativesToRv(ack.RvID) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
 		conn, err := grpc.Dial(addr, grpc.WithInsecure())
 		if err != nil {
 			log.Fatalf("fail to dial: %v", err)
@@ -811,12 +736,12 @@ func (ps *PubSub) sendAckToTrackers(ack *pb.EventAck) {
 // AckUp processes an event ackknowledge and if it was the last
 // missing ack returns its own acknowledge upstream
 func (ps *PubSub) AckUp(ctx context.Context, ack *pb.EventAck) (*pb.Ack, error) {
-	fmt.Println("AckUp: " + ps.serverAddr)
+	fmt.Println("AckUp >> " + ps.serverAddr)
 
 	eID := fmt.Sprintf("%s%d%d%s", ack.EventID.PublisherID, ack.EventID.SessionNumber, ack.EventID.SeqID, ack.RvID)
 	isRv, _ := ps.rendezvousSelfCheck(ack.RvID)
-
 	if ps.myEBackTrackers[eID] != nil {
+
 		ps.ackUpLock.Lock()
 		if ps.myEBackTrackers[eID] == nil {
 			return &pb.Ack{State: true, Info: "Event Tracker already closed"}, nil
@@ -831,9 +756,11 @@ func (ps *PubSub) AckUp(ctx context.Context, ack *pb.EventAck) (*pb.Ack, error) 
 			delete(ps.myEBackTrackers, eID)
 		}
 		ps.ackUpLock.Unlock()
+
 	} else if isRv {
 		ps.sendAckToTrackers(ack)
 	} else {
+
 		ps.ackUpLock.Lock()
 		if ps.myETrackers[eID] == nil {
 			return &pb.Ack{State: true, Info: "Event Tracker already closed"}, nil
@@ -886,10 +813,10 @@ func (ps *PubSub) AckOp(ctx context.Context, ack *pb.Ack) (*pb.Ack, error) {
 	return &pb.Ack{State: true, Info: ""}, nil
 }
 
-// LogToTracker is the remote call a tracker receives from the
-// Rv node with a event log for him to start tracking
+// LogToTracker is the remote call a tracker receives from
+// the Rv node with a event log for him to start tracking
 func (ps *PubSub) LogToTracker(ctx context.Context, log *pb.EventLog) (*pb.Ack, error) {
-	fmt.Println("LogTracker: " + ps.serverAddr)
+	fmt.Println("LogTracker >> " + ps.serverAddr)
 
 	if ps.myTrackers[log.RecruitMessage.RvID] != nil {
 		ps.myTrackers[log.RecruitMessage.RvID].leader = log.RecruitMessage.Leader
@@ -916,13 +843,10 @@ func (ps *PubSub) LogToTracker(ctx context.Context, log *pb.EventLog) (*pb.Ack, 
 				break
 			}
 		}
-
 	}
 
 	eID := fmt.Sprintf("%s%d%d", log.EventID.PublisherID, log.EventID.SessionNumber, log.EventID.SeqID)
 	ps.myTrackers[log.RvID].newEventToCheck(NewEventLedger(eID, log.Log, "", log.Event, ""))
-
-	ps.myTrackers[log.RvID].checkForAcks <- "do it"
 
 	return &pb.Ack{State: true, Info: ""}, nil
 }
@@ -930,7 +854,7 @@ func (ps *PubSub) LogToTracker(ctx context.Context, log *pb.EventLog) (*pb.Ack, 
 // AckToTracker is the remote call the Rv node uses to communicate
 // received event acknowledges to the tracker
 func (ps *PubSub) AckToTracker(ctx context.Context, ack *pb.EventAck) (*pb.Ack, error) {
-	fmt.Println("AckToTracker: " + ps.serverAddr)
+	fmt.Println("AckToTracker >> " + ps.serverAddr)
 
 	if ps.myTrackers[ack.RecruitMessage.RvID] != nil {
 		ps.myTrackers[ack.RecruitMessage.RvID].leader = ack.RecruitMessage.Leader
@@ -957,21 +881,19 @@ func (ps *PubSub) AckToTracker(ctx context.Context, ack *pb.EventAck) (*pb.Ack, 
 				break
 			}
 		}
-
 	}
 
 	if ps.myTrackers[ack.RvID] != nil {
 		ps.myTrackers[ack.RvID].addEventAck <- ack
 	}
 
-	ps.myTrackers[ack.RvID].checkForAcks <- "do it"
-
 	return &pb.Ack{State: true, Info: ""}, nil
 }
 
-// TrackerRefresh
+// TrackerRefresh is a rpc that is requested by a new tracker to the rv
+// neighbourhood in order to refresh himself with their event ledgers
 func (ps *PubSub) TrackerRefresh(ctx context.Context, req *pb.RecruitTrackerMessage) (*pb.Ack, error) {
-	fmt.Println("TrackerRefresh: " + ps.serverAddr)
+	fmt.Println("TrackerRefresh >> " + ps.serverAddr)
 
 	if ps.myTrackers[req.RvID] != nil && len(ps.myTrackers[req.RvID].eventStats) > 0 {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -1072,7 +994,6 @@ func (ps *PubSub) forwardEventUp(dialAddr string, event *pb.Event) {
 	client := pb.NewScoutHubClient(conn)
 	event.LastHop = peer.Encode(ps.ipfsDHT.PeerID())
 	ack, err := client.Publish(ctx, event)
-
 	if err != nil || !ack.State {
 		alternatives := ps.alternativesToRv(event.RvId)
 		for _, addr := range alternatives {
@@ -1093,7 +1014,7 @@ func (ps *PubSub) forwardEventUp(dialAddr string, event *pb.Event) {
 
 // Notify is a remote function called by a external peer to send an Event downstream
 func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) {
-	fmt.Println("Notify: " + ps.serverAddr)
+	fmt.Println("Notify >> " + ps.serverAddr)
 
 	p, err := NewPredicate(event.Predicate, ps.maxAttributesPerPredicate)
 	if err != nil {
@@ -1116,19 +1037,8 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 
 		for node, received := range ps.myETrackers[eID].eventLog {
 			if !received {
-				peerID, err := peer.Decode(node)
-				if err != nil {
-					return &pb.Ack{State: false, Info: ""}, err
-				}
 
-				peerAddr := ps.ipfsDHT.FindLocal(peerID).Addrs[0]
-				var dialAddr string
-				if peerAddr == nil {
-					return &pb.Ack{State: false, Info: ""}, nil
-				} else {
-					dialAddr = addrForPubSubServer(peerAddr)
-				}
-
+				dialAddr := ps.currentFilterTable.routes[node].addr
 				newE := &pb.Event{
 					Event:         event.Event,
 					OriginalRoute: node,
@@ -1300,7 +1210,6 @@ func (ps *PubSub) forwardEventDown(dialAddr string, event *pb.Event, redirect st
 	client := pb.NewScoutHubClient(conn)
 	event.LastHop = peer.Encode(ps.ipfsDHT.PeerID())
 	ack, err := client.Notify(ctx, event)
-
 	if err != nil || !ack.State {
 		event.Backup = true
 		for _, backup := range ps.currentFilterTable.routes[event.OriginalRoute].backups {
@@ -1325,7 +1234,7 @@ func (ps *PubSub) forwardEventDown(dialAddr string, event *pb.Event, redirect st
 	}
 }
 
-// tryRedirect
+// tryRedirect tries to use the redirect option to evade unnecessary downstream hops
 func (ps *PubSub) tryRedirect(ctx context.Context, redirect string, event *pb.Event) bool {
 
 	conn, err := grpc.Dial(redirect, grpc.WithInsecure())
@@ -1371,26 +1280,19 @@ func (ps *PubSub) UpdateBackup(ctx context.Context, update *pb.Update) (*pb.Ack,
 // to update their versions of his filter table
 func (ps *PubSub) updateMyBackups(route string, info string) error {
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
+	ps.tablesLock.RLock()
+	routeAddr := ps.currentFilterTable.routes[route].addr
+	ps.tablesLock.RUnlock()
 
 	for _, addrB := range ps.myBackups {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
 		conn, err := grpc.Dial(addrB, grpc.WithInsecure())
 		if err != nil {
 			log.Fatalf("fail to dial: %v", err)
 		}
 		defer conn.Close()
-
-		routeID, err := peer.Decode(route)
-		if err != nil {
-			return err
-		}
-
-		var routeAddr string
-		addr := ps.ipfsDHT.FindLocal(routeID).Addrs[0]
-		if addr != nil {
-			routeAddr = addrForPubSubServer(addr)
-		}
 
 		client := pb.NewScoutHubClient(conn)
 		update := &pb.Update{
@@ -1415,15 +1317,12 @@ func (ps *PubSub) updateMyBackups(route string, info string) error {
 func (ps *PubSub) getBackups() []string {
 
 	var backups []string
-
 	var dialAddr string
 	for _, backup := range ps.ipfsDHT.RoutingTable().NearestPeers(kb.ConvertPeerID(ps.ipfsDHT.PeerID()), ps.faultToleranceFactor) {
 		backupAddr := ps.ipfsDHT.FindLocal(backup).Addrs[0]
 		if backupAddr == nil {
 			continue
 		}
-
-		ps.backupIDs = append(ps.backupIDs, peer.Encode(backup))
 
 		dialAddr = addrForPubSubServer(backupAddr)
 		backups = append(backups, dialAddr)
@@ -1432,8 +1331,8 @@ func (ps *PubSub) getBackups() []string {
 	return backups
 }
 
-// eraseOldFetchNewBackup rases a old backup and recruits
-// and updates another to replace him
+// eraseOldFetchNewBackup rases a old backup and
+// recruits and updates another to replace it
 func (ps *PubSub) eraseOldFetchNewBackup(oldAddr string) {
 
 	var refIndex int
@@ -1525,18 +1424,10 @@ func (ps *PubSub) refreshAllBackups() error {
 func (ps *PubSub) filtersForBackupRefresh() ([]*pb.Update, error) {
 
 	var updates []*pb.Update
+	ps.tablesLock.RLock()
 	for route, routeS := range ps.currentFilterTable.routes {
-		routeID, err := peer.Decode(route)
-		if err != nil {
-			return nil, err
-		}
 
-		var routeAddr string
-		addr := ps.ipfsDHT.FindLocal(routeID).Addrs[0]
-		if addr != nil {
-			routeAddr = addrForPubSubServer(addr)
-		}
-
+		routeAddr := routeS.addr
 		for _, filters := range routeS.filters {
 			for _, filter := range filters {
 				u := &pb.Update{
@@ -1548,6 +1439,7 @@ func (ps *PubSub) filtersForBackupRefresh() ([]*pb.Update, error) {
 			}
 		}
 	}
+	ps.tablesLock.RUnlock()
 
 	return updates, nil
 }
@@ -1620,15 +1512,44 @@ func (ps *PubSub) alternativesToRv(rvID string) []string {
 	return validAlt
 }
 
-// terminateService closes the PubSub service
-func (ps *PubSub) TerminateService() {
-	fmt.Println("Terminate >> " + peer.Encode(ps.ipfsDHT.PeerID()))
-	for _, b := range ps.backupIDs {
-		fmt.Println("backUp # " + b)
+// closerAttrRvToSelf returns the closest ID node from all the Rv nodes
+// of each of a subscription predicate attributes, so that the subscriber
+// will send the subscription on the minimal number of hops
+func (ps *PubSub) closerAttrRvToSelf(p *Predicate) (peer.ID, string, error) {
+
+	marshalSelf, err := ps.ipfsDHT.Host().ID().MarshalBinary()
+	if err != nil {
+		return "", "", err
 	}
+
+	selfKey := key.XORKeySpace.Key(marshalSelf)
+	var minAttr string
+	var minID peer.ID
+	var minDist *big.Int = nil
+
+	for _, attr := range p.attributes {
+		candidateID := peer.ID(kb.ConvertKey(attr.name))
+		aux, err := candidateID.MarshalBinary()
+		if err != nil {
+			return "", "", err
+		}
+
+		candidateDist := key.XORKeySpace.Distance(selfKey, key.XORKeySpace.Key(aux))
+		if minDist == nil || candidateDist.Cmp(minDist) == -1 {
+			minAttr = attr.name
+			minID = candidateID
+			minDist = candidateDist
+		}
+	}
+
+	return minID, minAttr, nil
+}
+
+// TerminateService closes the PubSub service
+func (ps *PubSub) TerminateService() {
+	fmt.Println("Terminate: " + ps.serverAddr)
 	ps.terminate <- "end"
 	ps.server.Stop()
-	ps.ipfsDHT.Close()
 }
 
 // processLopp processes async operations and proceeds
@@ -1685,8 +1606,8 @@ func (ps *PubSub) processLoop() {
 			ps.nextFilterTable = NewFilterTable(ps.ipfsDHT)
 			ps.currentAdvertiseBoard = ps.nextAdvertiseBoard
 			ps.nextAdvertiseBoard = nil
-			ps.refreshAllBackups()
 			ps.tablesLock.Unlock()
+			ps.refreshAllBackups()
 		case <-ps.terminate:
 			return
 		}
@@ -1700,8 +1621,6 @@ type ForwardAdvert struct {
 	adv      *pb.AdvertRequest
 }
 
-// CreateMulticastGroup is used by a premium
-// publisher to create a MulticastGroup
 func (ps *PubSub) CreateMulticastGroup(pred string) error {
 
 	p, err := NewPredicate(pred, ps.maxAttributesPerPredicate)
@@ -1716,12 +1635,11 @@ func (ps *PubSub) CreateMulticastGroup(pred string) error {
 }
 
 // myAdvertiseGroup advertise towards the overlay the
-// existing of a new multicastGroup by sharing it
-// with rendezvous nodes of the Group Predicate
+// existence of a new multicastGroup by sharing it
+// with the rendezvous nodes of the Group Predicate
 func (ps *PubSub) myAdvertiseGroup(pred *Predicate) error {
-	fmt.Printf("myAdvertiseGroup: %s\n", ps.serverAddr)
+	fmt.Println("myAdvertiseGroup >>" + ps.serverAddr)
 
-	var dialAddr string
 	for _, attr := range pred.attributes {
 
 		groupID := &pb.MulticastGroupID{
@@ -1740,13 +1658,9 @@ func (ps *PubSub) myAdvertiseGroup(pred *Predicate) error {
 			continue
 		}
 
-		attrAddr := ps.ipfsDHT.FindLocal(nextHop).Addrs[0]
-		if attrAddr == nil {
-			return errors.New("no address for closest peer")
-		} else {
-			dialAddr = addrForPubSubServer(attrAddr)
-		}
-
+		ps.tablesLock.RLock()
+		dialAddr := ps.currentFilterTable.routes[peer.Encode(nextHop)].addr
+		ps.tablesLock.RUnlock()
 		ps.advToForward <- &ForwardAdvert{
 			dialAddr: dialAddr,
 			adv:      advReq,
@@ -1756,25 +1670,19 @@ func (ps *PubSub) myAdvertiseGroup(pred *Predicate) error {
 	return nil
 }
 
-// AdvertiseGroup remote call used to propagate the advertisement to the rendezvous
+// AdvertiseGroup remote call used to propagate a advertisement to the rendezvous
 func (ps *PubSub) AdvertiseGroup(ctx context.Context, adv *pb.AdvertRequest) (*pb.Ack, error) {
-	fmt.Printf("AdvertiseGroup: %s\n", ps.serverAddr)
+	fmt.Println("AdvertiseGroup >> " + ps.serverAddr)
 
-	res, nextHop := ps.rendezvousSelfCheck(adv.RvId)
-	if res {
+	isRv, nextHop := ps.rendezvousSelfCheck(adv.RvId)
+	if isRv {
 		ps.addAdvertToBoards(adv)
 		return &pb.Ack{State: true, Info: ""}, nil
 	}
 
-	attrAddr := ps.ipfsDHT.FindLocal(nextHop).Addrs[0]
-
-	var dialAddr string
-	if attrAddr == nil {
-		return nil, errors.New("no address for closest peer")
-	} else {
-		dialAddr = addrForPubSubServer(attrAddr)
-	}
-
+	ps.tablesLock.RLock()
+	dialAddr := ps.currentFilterTable.routes[peer.Encode(nextHop)].addr
+	ps.tablesLock.RUnlock()
 	ps.advToForward <- &ForwardAdvert{
 		dialAddr: dialAddr,
 		adv:      adv,
@@ -1783,7 +1691,7 @@ func (ps *PubSub) AdvertiseGroup(ctx context.Context, adv *pb.AdvertRequest) (*p
 	return &pb.Ack{State: true, Info: ""}, nil
 }
 
-// forwardAdvertising forwards the advertisement asynchronously to the rendezvous
+// forwardAdvertising forwards a advertisement asynchronously to the rendezvous
 func (ps *PubSub) forwardAdvertising(dialAddr string, adv *pb.AdvertRequest) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -1797,7 +1705,6 @@ func (ps *PubSub) forwardAdvertising(dialAddr string, adv *pb.AdvertRequest) {
 
 	client := pb.NewScoutHubClient(conn)
 	ack, err := client.AdvertiseGroup(ctx, adv)
-
 	if err != nil || !ack.State {
 		alternatives := ps.alternativesToRv(adv.RvId)
 		for _, addr := range alternatives {
@@ -1809,7 +1716,7 @@ func (ps *PubSub) forwardAdvertising(dialAddr string, adv *pb.AdvertRequest) {
 
 			client := pb.NewScoutHubClient(conn)
 			ack, err := client.AdvertiseGroup(ctx, adv)
-			if ack.State && err == nil {
+			if err == nil && ack.State {
 				break
 			}
 		}
@@ -1871,8 +1778,8 @@ func (ps *PubSub) MySearchAndPremiumSub(pred string) error {
 		return errors.New("failed to find the closest attribute Rv")
 	}
 
-	res, _ := ps.rendezvousSelfCheck(minAttr)
-	if res {
+	isRv, _ := ps.rendezvousSelfCheck(minAttr)
+	if isRv {
 		for _, g := range ps.returnGroupsOfInterest(p) {
 			err := ps.MyPremiumSubscribe(pred, g.OwnerAddr, g.Predicate)
 			if err == nil {
@@ -1917,7 +1824,6 @@ func (ps *PubSub) MySearchAndPremiumSub(pred string) error {
 			reply, err := client.GroupSearchRequest(ctx, req)
 			if err == nil {
 				for _, g := range reply.Groups {
-					ps.record.SaveTimeToSub(start)
 					err := ps.MyPremiumSubscribe(pred, g.OwnerAddr, g.Predicate)
 					if err == nil {
 						ps.record.SaveTimeToSub(start)
@@ -1938,10 +1844,10 @@ func (ps *PubSub) MySearchAndPremiumSub(pred string) error {
 	return nil
 }
 
-// GroupSearchRequest is a piggybacked remote call that deliveres to the myGroupSerchRequest caller
+// GroupSearchRequest is a piggybacked remote call that deliveres to the myGroupSearchRequest caller
 // all the multicastGroups he has in his AdvertiseBoard that comply with his search predicate
 func (ps *PubSub) GroupSearchRequest(ctx context.Context, req *pb.SearchRequest) (*pb.SearchReply, error) {
-	fmt.Println("GroupSearchRequest: " + ps.serverAddr)
+	fmt.Println("GroupSearchRequest >> " + ps.serverAddr)
 
 	p, err := NewPredicate(req.Predicate, ps.maxAttributesPerPredicate)
 	if err != nil {
@@ -1953,8 +1859,8 @@ func (ps *PubSub) GroupSearchRequest(ctx context.Context, req *pb.SearchRequest)
 		return nil, errors.New("failed to find the closest attribute Rv")
 	}
 
-	res, _ := ps.rendezvousSelfCheck(minAttr)
-	if res {
+	isRv, _ := ps.rendezvousSelfCheck(minAttr)
+	if isRv {
 		var groups map[int32]*pb.MulticastGroupID = make(map[int32]*pb.MulticastGroupID)
 		for i, g := range ps.returnGroupsOfInterest(p) {
 			groups[int32(i)] = g
@@ -2015,15 +1921,15 @@ func (ps *PubSub) returnGroupsOfInterest(p *Predicate) []*pb.MulticastGroupID {
 			interestGs = append(interestGs, g)
 		}
 	}
-
 	ps.tablesLock.RUnlock()
+
 	return interestGs
 }
 
 // MyPremiumSubscribe is the operation a subscriber performs in order to belong to
 // a certain MulticastGroup of a certain premium publisher and predicate
 func (ps *PubSub) MyPremiumSubscribe(info string, pubAddr string, pubPredicate string) error {
-	fmt.Printf("myPremiumSubscribe: %s\n", ps.serverAddr)
+	fmt.Println("MyPremiumSubscribe: " + ps.serverAddr)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -2062,15 +1968,15 @@ func (ps *PubSub) MyPremiumSubscribe(info string, pubAddr string, pubPredicate s
 		ps.capacity = ps.capacity / 2
 
 		return nil
-	} else {
-		return errors.New("failed my premium subscribe")
 	}
+
+	return errors.New("failed my premium subscribe")
 }
 
 // PremiumSubscribe remote call used by the myPremiumSubscribe to delegate
 // the premium subscription to the premium publisher to process it
 func (ps *PubSub) PremiumSubscribe(ctx context.Context, sub *pb.PremiumSubscription) (*pb.Ack, error) {
-	fmt.Printf("PremiumSubscribe: %s\n", ps.serverAddr)
+	fmt.Printf("PremiumSubscribe >> " + ps.serverAddr)
 
 	pubP, err1 := NewPredicate(sub.PubPredicate, ps.maxAttributesPerPredicate)
 	if err1 != nil {
@@ -2094,7 +2000,7 @@ func (ps *PubSub) PremiumSubscribe(ctx context.Context, sub *pb.PremiumSubscript
 // myPremiumUnsubscribe is the operation a premium subscriber performes
 // once it wants to get out of a multicastGroup
 func (ps *PubSub) MyPremiumUnsubscribe(pubPred string, pubAddr string) error {
-	fmt.Printf("MyPremiumUnsubscribe: %s\n", ps.serverAddr)
+	fmt.Println("MyPremiumUnsubscribe: " + ps.serverAddr)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -2142,11 +2048,11 @@ func (ps *PubSub) MyPremiumUnsubscribe(pubPred string, pubAddr string) error {
 // PremiumUnsubscribe remote call used by the subscriber to communicate is insterest
 // to unsubscribe to a multicastGroup to the premium publisher
 func (ps *PubSub) PremiumUnsubscribe(ctx context.Context, sub *pb.PremiumSubscription) (*pb.Ack, error) {
-	fmt.Printf("PremiumUnsubscribe: %s\n", ps.serverAddr)
+	fmt.Println("PremiumUnsubscribe >> " + ps.serverAddr)
 
-	pubP, err1 := NewPredicate(sub.PubPredicate, ps.maxAttributesPerPredicate)
-	if err1 != nil {
-		return &pb.Ack{State: false, Info: ""}, err1
+	pubP, err := NewPredicate(sub.PubPredicate, ps.maxAttributesPerPredicate)
+	if err != nil {
+		return &pb.Ack{State: false, Info: ""}, err
 	}
 
 	for _, mg := range ps.managedGroups {
@@ -2167,9 +2073,9 @@ func (ps *PubSub) PremiumUnsubscribe(ctx context.Context, sub *pb.PremiumSubscri
 }
 
 // MyPremiumPublish is the operation a premium publisher runs
-// when he wants to publish in one of its MultiastGroups
+// when he wants to publish in one of its MulticastGroups
 func (ps *PubSub) MyPremiumPublish(grpPred string, event string, eventInfo string) error {
-	fmt.Printf("MyPremiumPublish: %s\n", ps.serverAddr)
+	fmt.Println("MyPremiumPublish: " + ps.serverAddr)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -2244,6 +2150,7 @@ func (ps *PubSub) MyPremiumPublish(grpPred string, event string, eventInfo strin
 	return nil
 }
 
+// sendEventToHelper delegates an event to the helper
 func sendEventToHelper(ctx context.Context, tracker *HelperTracker, mGrp *MulticastGroup, premiumE *pb.PremiumEvent) {
 	conn, err := grpc.Dial(tracker.helper.addr, grpc.WithInsecure())
 	if err != nil {
@@ -2264,7 +2171,7 @@ func sendEventToHelper(ctx context.Context, tracker *HelperTracker, mGrp *Multic
 // PremiumPublish remote call used not only by the premium publisher to forward its events to
 // the helpers and interested subs but also by the helpers to forward to their delegated subs
 func (ps *PubSub) PremiumPublish(ctx context.Context, event *pb.PremiumEvent) (*pb.Ack, error) {
-	fmt.Printf("PremiumPublish: %s\n", ps.serverAddr)
+	fmt.Println("PremiumPublish >> " + ps.serverAddr)
 
 	pubP, err := NewPredicate(event.GroupID.Predicate, ps.maxAttributesPerPredicate)
 	if err != nil {
@@ -2307,7 +2214,7 @@ func (ps *PubSub) PremiumPublish(ctx context.Context, event *pb.PremiumEvent) (*
 // RequestHelp is the remote call the premium publisher of a MulticastGroup
 // uses to a sub of his to recruit him as a helper
 func (ps *PubSub) RequestHelp(ctx context.Context, req *pb.HelpRequest) (*pb.Ack, error) {
-	fmt.Printf("RequestHelp: %s\n", ps.serverAddr)
+	fmt.Println("RequestHelp >> " + ps.serverAddr)
 
 	p, err := NewPredicate(req.GroupID.Predicate, ps.maxAttributesPerPredicate)
 	if err != nil {
@@ -2354,19 +2261,21 @@ func (ps *PubSub) DelegateSubToHelper(ctx context.Context, sub *pb.DelegateSub) 
 
 // ++++++++++++++++++++++ Metrics Fetching ++++++++++++++++++++++
 
-// ReturnEventStats
+// ReturnEventStats returns the time
+// it took to receive each event
 func (ps *PubSub) ReturnEventStats() []int {
 
 	return ps.record.EventStats()
 }
 
-// ReturnSubsStats
+// ReturnSubsStats returns the time it took to receive
+// confirmation of subscription completion
 func (ps *PubSub) ReturnSubStats() []int {
 
 	return ps.record.timeToSub
 }
 
-// ReturnCorrectnessStats
+// ReturnCorrectnessStats returns the number of events missing and duplicated
 func (ps *PubSub) ReturnCorrectnessStats(expected []string) (int, int) {
 
 	return ps.record.CorrectnessStats(expected)

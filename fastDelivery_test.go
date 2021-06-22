@@ -7,6 +7,12 @@ import (
 	"time"
 )
 
+// #################################################################
+// ## DISCLAMER: these tests can only be confired by checking     ##
+// ##            their output and they should be run individually ##
+// ##            for reasons of port and ID assigning             ##
+// #################################################################
+
 // TestSimpleFastDeliveryWithSearch tests subscription, publishing
 // and advertising of the FastDelivery protocol
 // Test composition: 5 nodes

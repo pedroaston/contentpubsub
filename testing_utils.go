@@ -112,32 +112,3 @@ func connect(t *testing.T, ctx context.Context, a, b *dht.IpfsDHT) {
 	wait(t, ctx, a, b)
 	wait(t, ctx, b, a)
 }
-
-/* Not being used now
-func bootstrapDhts(t *testing.T, ctx context.Context, dhts []*dht.IpfsDHT) {
-	connectionMap := make(map[int][]int)
-	totalDHT := len(dhts) - 1
-	var random int
-	var connected bool
-
-	for i, dht := range dhts {
-		for len(connectionMap[i]) < totalDHT/4 {
-			random = rand.Intn(totalDHT)
-			connected = false
-
-			for _, value := range connectionMap[i] {
-				if value == random || i == random {
-					connected = true
-					break
-				}
-			}
-
-			if !connected {
-				connect(t, ctx, dht, dhts[random])
-				connectionMap[i] = append(connectionMap[i], random)
-				connectionMap[random] = append(connectionMap[i], i)
-			}
-		}
-	}
-}
-*/

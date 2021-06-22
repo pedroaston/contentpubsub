@@ -7,24 +7,22 @@ import (
 	"strings"
 )
 
-// AttributeType can be Topic or Range
 type AttributeType int
 
-// Topic >> name: portugal
-// Range >> name: price, rangeQuery: [120,140]
 const (
 	Topic AttributeType = iota
 	Range
 )
 
-// Attribute is the minimal unit of a Predicate and can be:
+// AttributeType can be Topic or Range
+// Topic >> name: oil
+// Range >> name: price, rangeQuery: [120,140]
 type Attribute struct {
 	name       string
 	attrType   AttributeType
 	rangeQuery [2]int
 }
 
-// String returns representation of an Attribute
 func (a *Attribute) String() string {
 
 	switch a.attrType {
@@ -37,8 +35,14 @@ func (a *Attribute) String() string {
 	}
 }
 
-// ToString return the initial representation of an
-// attribute to send it in grpc messages
+// Predicate is expression that categorizes
+// an event or subscription, composed of one
+// or more attributes
+type Predicate struct {
+	attributes map[string]*Attribute
+}
+
+// ToString returns the input representation of a predicate
 func (p *Predicate) ToString() string {
 
 	res := ""
@@ -55,13 +59,6 @@ func (p *Predicate) ToString() string {
 	return res[:len(res)-1]
 }
 
-// Predicate is expression that categorizes
-// an event or subscription
-type Predicate struct {
-	attributes map[string]*Attribute
-}
-
-// String returns representation of a Predicate
 func (p *Predicate) String() string {
 	res := ""
 
@@ -72,12 +69,12 @@ func (p *Predicate) String() string {
 	return res
 }
 
-// NewPredicate creates a predicate. Example of info string:
-// laptop T/RAM R 16 32/price R 0 1000
-func NewPredicate(info string, maxAttr int) (*Predicate, error) {
+// NewPredicate creates a predicate. Example of a rawPredicate:
+// "laptop T/RAM R 16 32/price R 0 1000"
+func NewPredicate(rawPredicate string, maxAttr int) (*Predicate, error) {
 
 	attrs := make(map[string]*Attribute)
-	firstParse := strings.Split(info, "/")
+	firstParse := strings.Split(rawPredicate, "/")
 	var limit int
 	if len(firstParse) > maxAttr {
 		limit = maxAttr
@@ -124,8 +121,8 @@ func NewPredicate(info string, maxAttr int) (*Predicate, error) {
 
 // SimplePredicateMatch evaluates if an event predicate matches a sub predicate
 // or also to know if a predicate encompasses other
-// Special Note >> events range is seen as a single value for now for simplicity
-// and lack of reason to support a range
+// Special Note >> events range is seen as a single value, this means that
+// a event will have equal values of the range attribute (Ex:"price R 15 15")
 func (p *Predicate) SimplePredicateMatch(pEvent *Predicate) bool {
 
 	for _, attr := range p.attributes {
@@ -142,10 +139,8 @@ func (p *Predicate) SimplePredicateMatch(pEvent *Predicate) bool {
 	return true
 }
 
-// SimplePredicateMatch evaluates if an event predicate matches a sub predicate
-// or also to know if a predicate encompasses other
-// Special Note >> events range is seen as a single value for now for simplicity
-// and lack of reason to support a range
+// SimpleAdvMatch is used to check if a Premium Publisher advertisement
+// is of the interest of a Premium Subscriber
 func (p *Predicate) SimpleAdvMatch(pAdv *Predicate) bool {
 
 	for _, attr := range p.attributes {
@@ -191,7 +186,6 @@ func (p *Predicate) TryMergePredicates(pOther *Predicate) (bool, *Predicate) {
 	return false, nil
 }
 
-// Equal
 func (p *Predicate) Equal(pred *Predicate) bool {
 	for _, attr := range p.attributes {
 		if _, ok := pred.attributes[attr.name]; !ok {

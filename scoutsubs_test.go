@@ -7,8 +7,11 @@ import (
 	"time"
 )
 
-// ++++++++++++++ READ THIS ++++++++++++++
-// These tests should be run individually
+// #################################################################
+// ## DISCLAMER: these tests can only be confired by checking     ##
+// ##            their output and they should be run individually ##
+// ##            for reasons of port and ID assigning             ##
+// #################################################################
 
 // TestSimpleUnsubscribing just subscribes to certain
 // events and then unsubscribes to them
@@ -78,7 +81,7 @@ func TestSimplePublish(t *testing.T) {
 	pubsubs[0].MySubscribe("portugal T")
 	pubsubs[1].MySubscribe("portugal T")
 
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(250 * time.Millisecond)
 
 	err := pubsubs[2].MyPublish("Portugal is beautifull!", "portugal T")
 	if err != nil {
@@ -119,27 +122,23 @@ func TestSubscriptionForwarding(t *testing.T) {
 		pubsubs[i] = NewPubSub(dht, DefaultConfig("PT", 10))
 	}
 
-	err1 := pubsubs[0].MySubscribe("chocolate T")
-	if err1 != nil {
+	if pubsubs[0].MySubscribe("chocolate T") != nil {
 		t.Fatal("Failed 1st Subscription")
 	}
 
-	err2 := pubsubs[0].MySubscribe("soccer T/goals R 2 5")
-	if err2 != nil {
+	if pubsubs[0].MySubscribe("soccer T/goals R 2 5") != nil {
 		t.Fatal("Failed 2nd Subscription")
 	}
 
-	err3 := pubsubs[0].MySubscribe("portugal T")
-	if err3 != nil {
+	if pubsubs[0].MySubscribe("portugal T") != nil {
 		t.Fatal("Failed 3rd Subscription")
 	}
 
-	err4 := pubsubs[4].MySubscribe("portugal T")
-	if err4 != nil {
+	if pubsubs[4].MySubscribe("portugal T") != nil {
 		t.Fatal("Failed 4th Subscription")
 	}
 
-	time.Sleep(time.Second)
+	time.Sleep(250 * time.Millisecond)
 }
 
 // TestSimpleFaultTolerance just tries to show the system
@@ -312,11 +311,11 @@ func TestRedirectMechanism(t *testing.T) {
 
 	pubsubs[0].MySubscribe("portugal T")
 
-	time.Sleep(time.Second)
+	time.Sleep(250 * time.Millisecond)
 
 	pubsubs[3].MyPublish("Portugal sometime can be the best!", "portugal T")
 
-	time.Sleep(time.Second)
+	time.Sleep(250 * time.Millisecond)
 }
 
 // TestReliableEventDelivery proves that the rv tracker leader
@@ -366,102 +365,4 @@ func TestReliableEventDelivery(t *testing.T) {
 
 	time.Sleep(7 * time.Second)
 
-}
-
-// TestReliableEventDeliveryBetweenRvAndPub assures that no node
-// between the publisher and the Rv receives duplicated events
-// Test composition: 10 nodes
-// >> 1 Publisher that publishes a event
-// >> 3 Subscriber that subscribe to a event and artificially
-// don't ackUp for 6 seconds
-// Special conditions
-// >> secondsToCheckEventDelivery = 5
-func TestReliableEventDeliveryBetweenRvAndPub(t *testing.T) {
-	fmt.Printf("\n$$$ TestReliableEventDeliveryBetweenRvAndPub $$$\n")
-
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
-	defer cancel()
-
-	dhts := setupDHTS(t, ctx, 10)
-	defer func() {
-		for _, dht := range dhts {
-			dht.Close()
-			defer dht.Host().Close()
-		}
-	}()
-
-	connect(t, ctx, dhts[0], dhts[5])
-	connect(t, ctx, dhts[1], dhts[2])
-	connect(t, ctx, dhts[1], dhts[5])
-	connect(t, ctx, dhts[3], dhts[2])
-
-	var pubsubs [10]*PubSub
-	for i, dht := range dhts {
-		pubsubs[i] = NewPubSub(dht, DefaultConfig("PT", 10))
-	}
-
-	pubsubs[0].MySubscribe("portugal T")
-	time.Sleep(100 * time.Millisecond)
-	pubsubs[3].MySubscribe("portugal T")
-	time.Sleep(100 * time.Millisecond)
-
-	pubsubs[5].MyPublish("Ronaldo Rocks!", "portugal T")
-	time.Sleep(1 * time.Second)
-}
-
-// TestMultipleAttributeEvent tries to provide debug help to
-// solve the duplicated event problem
-// Test composition: 6 nodes
-// Solved missing and now have duplicates
-// >> 1 Publisher that publishes a event
-// >> 3 Subscriber that subscribe to a event and artificially
-// don't ackUp for 6 seconds
-func TestMultipleAttributeEvent(t *testing.T) {
-	fmt.Printf("\n$$$ TestMultipleAttributeEvent $$$\n")
-
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
-	defer cancel()
-
-	dhts := setupDHTS(t, ctx, 6)
-	defer func() {
-		for _, dht := range dhts {
-			dht.Close()
-			defer dht.Host().Close()
-		}
-	}()
-
-	connect(t, ctx, dhts[0], dhts[1])
-	connect(t, ctx, dhts[0], dhts[2])
-	connect(t, ctx, dhts[0], dhts[3])
-	connect(t, ctx, dhts[0], dhts[4])
-	connect(t, ctx, dhts[0], dhts[5])
-
-	connect(t, ctx, dhts[1], dhts[2])
-	connect(t, ctx, dhts[1], dhts[3])
-	connect(t, ctx, dhts[1], dhts[4])
-	connect(t, ctx, dhts[1], dhts[5])
-
-	connect(t, ctx, dhts[2], dhts[3])
-	connect(t, ctx, dhts[2], dhts[4])
-	connect(t, ctx, dhts[2], dhts[5])
-
-	connect(t, ctx, dhts[3], dhts[4])
-	connect(t, ctx, dhts[3], dhts[5])
-
-	connect(t, ctx, dhts[4], dhts[5])
-
-	var pubsubs [6]*PubSub
-	for i, dht := range dhts {
-		pubsubs[i] = NewPubSub(dht, DefaultConfig("PT", 10))
-	}
-
-	pubsubs[0].MySubscribe("portugal T")
-	pubsubs[1].MySubscribe("portugal T/trip T")
-	pubsubs[2].MySubscribe("portugal T/trip T/surf T")
-	pubsubs[3].MySubscribe("portugal T/trip T/surf T/price R 1000 1500")
-	pubsubs[4].MySubscribe("trip T/surf T/price R 1000 1500")
-	time.Sleep(200 * time.Millisecond)
-
-	pubsubs[5].MyPublish("Scam message :)", "portugal T/trip T/surf T/price R 1200 1200")
-	time.Sleep(200 * time.Millisecond)
 }
