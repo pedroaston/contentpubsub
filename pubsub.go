@@ -9,7 +9,6 @@ import (
 	"math/big"
 	"math/rand"
 	"net"
-	"strings"
 	"sync"
 	"time"
 
@@ -360,7 +359,7 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 // still needs to be forward towards the rendevous
 func (ps *PubSub) forwardSub(dialAddr string, sub *pb.Subscription) {
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	conn, err := grpc.Dial(dialAddr, grpc.WithInsecure())
@@ -374,6 +373,14 @@ func (ps *PubSub) forwardSub(dialAddr string, sub *pb.Subscription) {
 	if err != nil || !ack.State {
 		alternatives := ps.alternativesToRv(sub.RvId)
 		for _, addr := range alternatives {
+
+			if addr == ps.serverAddr {
+				return
+			}
+
+			ctxBackup, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
 			conn, err := grpc.Dial(addr, grpc.WithInsecure())
 			if err != nil {
 				log.Fatalf("fail to dial: %v", err)
@@ -381,7 +388,7 @@ func (ps *PubSub) forwardSub(dialAddr string, sub *pb.Subscription) {
 			defer conn.Close()
 
 			client := pb.NewScoutHubClient(conn)
-			ack, err := client.Subscribe(ctx, sub)
+			ack, err := client.Subscribe(ctxBackup, sub)
 			if err == nil && ack.State {
 				break
 			}
@@ -541,81 +548,90 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 		return &pb.Ack{State: false, Info: "rendezvous check failed"}, nil
 	} else if isRv {
 
-		ps.tablesLock.RLock()
-		eIDRv := fmt.Sprintf("%s%d%d", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID)
-		for _, cached := range ps.rvCache {
-			if eIDRv == cached {
-				return &pb.Ack{State: true, Info: ""}, nil
-			}
-		}
-
-		ps.rvCache = append(ps.rvCache, eIDRv)
-		eL := make(map[string]bool)
-		event.AckAddr = ps.serverAddr
-
-		for next, route := range ps.currentFilterTable.routes {
-			if route.IsInterested(p) {
-
-				eL[next] = false
-				dialAddr := route.addr
-				newE := &pb.Event{
-					Event:         event.Event,
-					OriginalRoute: next,
-					Backup:        event.Backup,
-					Predicate:     event.Predicate,
-					RvId:          event.RvId,
-					AckAddr:       event.AckAddr,
-					PubAddr:       event.PubAddr,
-					EventID:       event.EventID,
-					BirthTime:     event.BirthTime,
-					LastHop:       event.LastHop,
-				}
-
-				ps.currentFilterTable.redirectLock.Lock()
-				ps.nextFilterTable.redirectLock.Lock()
-				if ps.currentFilterTable.redirectTable[next] == nil {
-					ps.currentFilterTable.redirectTable[next] = make(map[string]string)
-					ps.currentFilterTable.redirectTable[next][event.RvId] = ""
-					ps.nextFilterTable.redirectTable[next] = make(map[string]string)
-					ps.nextFilterTable.redirectTable[next][event.RvId] = ""
-
-					ps.eventsToForwardDown <- &ForwardEvent{
-						dialAddr:       dialAddr,
-						event:          newE,
-						redirectOption: "",
-					}
-				} else if ps.currentFilterTable.redirectTable[next][event.RvId] == "" {
-					ps.eventsToForwardDown <- &ForwardEvent{
-						dialAddr:       dialAddr,
-						event:          newE,
-						redirectOption: "",
-					}
-				} else {
-					ps.eventsToForwardDown <- &ForwardEvent{
-						dialAddr:       dialAddr,
-						event:          newE,
-						redirectOption: ps.currentFilterTable.redirectTable[next][event.RvId],
-					}
-				}
-				ps.currentFilterTable.redirectLock.Unlock()
-				ps.nextFilterTable.redirectLock.Unlock()
-			}
-		}
-		ps.tablesLock.RUnlock()
-
-		eID := fmt.Sprintf("%s%d%d%s", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID, event.RvId)
-		if len(eL) > 0 {
-			ps.sendLogToTracker(event.RvId, event.EventID, eL, event)
-		}
-
-		ps.sendAckOp(event.PubAddr, "Publish", eID)
-
-		if ps.myFilters.IsInterested(p) {
-			ps.interestingEvents <- event
+		if ps.iAmRVPublish(p, event) != nil {
+			return &pb.Ack{State: false, Info: "rendezvous role failed"}, nil
 		}
 	}
 
 	return &pb.Ack{State: true, Info: ""}, nil
+}
+
+func (ps *PubSub) iAmRVPublish(p *Predicate, event *pb.Event) error {
+
+	ps.tablesLock.RLock()
+	eIDRv := fmt.Sprintf("%s%d%d", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID)
+	for _, cached := range ps.rvCache {
+		if eIDRv == cached {
+			return nil
+		}
+	}
+
+	ps.rvCache = append(ps.rvCache, eIDRv)
+	eL := make(map[string]bool)
+	event.AckAddr = ps.serverAddr
+
+	for next, route := range ps.currentFilterTable.routes {
+		if route.IsInterested(p) {
+
+			eL[next] = false
+			dialAddr := route.addr
+			newE := &pb.Event{
+				Event:         event.Event,
+				OriginalRoute: next,
+				Backup:        event.Backup,
+				Predicate:     event.Predicate,
+				RvId:          event.RvId,
+				AckAddr:       event.AckAddr,
+				PubAddr:       event.PubAddr,
+				EventID:       event.EventID,
+				BirthTime:     event.BirthTime,
+				LastHop:       event.LastHop,
+			}
+
+			ps.currentFilterTable.redirectLock.Lock()
+			ps.nextFilterTable.redirectLock.Lock()
+			if ps.currentFilterTable.redirectTable[next] == nil {
+				ps.currentFilterTable.redirectTable[next] = make(map[string]string)
+				ps.currentFilterTable.redirectTable[next][event.RvId] = ""
+				ps.nextFilterTable.redirectTable[next] = make(map[string]string)
+				ps.nextFilterTable.redirectTable[next][event.RvId] = ""
+
+				ps.eventsToForwardDown <- &ForwardEvent{
+					dialAddr:       dialAddr,
+					event:          newE,
+					redirectOption: "",
+				}
+			} else if ps.currentFilterTable.redirectTable[next][event.RvId] == "" {
+				ps.eventsToForwardDown <- &ForwardEvent{
+					dialAddr:       dialAddr,
+					event:          newE,
+					redirectOption: "",
+				}
+			} else {
+				ps.eventsToForwardDown <- &ForwardEvent{
+					dialAddr:       dialAddr,
+					event:          newE,
+					redirectOption: ps.currentFilterTable.redirectTable[next][event.RvId],
+				}
+			}
+			ps.currentFilterTable.redirectLock.Unlock()
+			ps.nextFilterTable.redirectLock.Unlock()
+		}
+	}
+	ps.tablesLock.RUnlock()
+
+	eID := fmt.Sprintf("%s%d%d%s", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID, event.RvId)
+	if len(eL) > 0 {
+		ps.sendLogToTracker(event.RvId, event.EventID, eL, event)
+	}
+
+	ps.sendAckOp(event.PubAddr, "Publish", eID)
+
+	if ps.myFilters.IsInterested(p) {
+		ps.interestingEvents <- event
+	}
+
+	return nil
 }
 
 // sendAckOp just sends an ack to the operation initiator to confirm completion
@@ -672,7 +688,12 @@ func (ps *PubSub) sendLogToTracker(attr string, eID *pb.EventID, eLog map[string
 
 	needLeader := true
 	for _, addr := range ps.alternativesToRv(attr) {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+
+		if addr == ps.serverAddr {
+			continue
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
 		conn, err := grpc.Dial(addr, grpc.WithInsecure())
@@ -708,6 +729,11 @@ func (ps *PubSub) sendAckToTrackers(ack *pb.EventAck) {
 
 	needLeader := true
 	for _, addr := range ps.alternativesToRv(ack.RvID) {
+
+		if addr == ps.serverAddr {
+			continue
+		}
+
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
@@ -825,10 +851,15 @@ func (ps *PubSub) LogToTracker(ctx context.Context, log *pb.EventLog) (*pb.Ack, 
 		ps.myTrackers[log.RecruitMessage.RvID] = NewTracker(log.RecruitMessage.Leader, log.RecruitMessage.RvID,
 			log.RecruitMessage.RvAddr, ps.timeToCheckDelivery)
 
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-
 		for _, addr := range ps.alternativesToRv(log.RvID) {
+
+			if addr == ps.serverAddr {
+				continue
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
 			conn, err := grpc.Dial(addr, grpc.WithInsecure())
 			if err != nil {
 				return &pb.Ack{State: false, Info: ""}, err
@@ -863,10 +894,15 @@ func (ps *PubSub) AckToTracker(ctx context.Context, ack *pb.EventAck) (*pb.Ack, 
 		ps.myTrackers[ack.RecruitMessage.RvID] = NewTracker(ack.RecruitMessage.Leader, ack.RecruitMessage.RvID,
 			ack.RecruitMessage.RvAddr, ps.timeToCheckDelivery)
 
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-
 		for _, addr := range ps.alternativesToRv(ack.RecruitMessage.RvID) {
+
+			if addr == ps.serverAddr {
+				continue
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
 			conn, err := grpc.Dial(addr, grpc.WithInsecure())
 			if err != nil {
 				return &pb.Ack{State: false, Info: ""}, err
@@ -896,8 +932,6 @@ func (ps *PubSub) TrackerRefresh(ctx context.Context, req *pb.RecruitTrackerMess
 	fmt.Println("TrackerRefresh >> " + ps.serverAddr)
 
 	if ps.myTrackers[req.RvID] != nil && len(ps.myTrackers[req.RvID].eventStats) > 0 {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
 
 		conn, err := grpc.Dial(req.RvAddr, grpc.WithInsecure())
 		if err != nil {
@@ -913,6 +947,9 @@ func (ps *PubSub) TrackerRefresh(ctx context.Context, req *pb.RecruitTrackerMess
 				Event:          l.event,
 				Log:            l.eventLog,
 			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
 
 			client := pb.NewScoutHubClient(conn)
 			client.LogToTracker(ctx, eL)
@@ -982,7 +1019,7 @@ func (ps *PubSub) ResendEvent(stream pb.ScoutHub_ResendEventServer) error {
 // towards a rendezvous by calling another publish operation towards it
 func (ps *PubSub) forwardEventUp(dialAddr string, event *pb.Event) {
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	conn, err := grpc.Dial(dialAddr, grpc.WithInsecure())
@@ -997,6 +1034,16 @@ func (ps *PubSub) forwardEventUp(dialAddr string, event *pb.Event) {
 	if err != nil || !ack.State {
 		alternatives := ps.alternativesToRv(event.RvId)
 		for _, addr := range alternatives {
+
+			if addr == ps.serverAddr {
+				p, _ := NewPredicate(event.Predicate, ps.maxAttributesPerPredicate)
+				ps.iAmRVPublish(p, event)
+				return
+			}
+
+			ctxBackup, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
 			conn, err := grpc.Dial(addr, grpc.WithInsecure())
 			if err != nil {
 				log.Fatalf("fail to dial: %v", err)
@@ -1004,7 +1051,7 @@ func (ps *PubSub) forwardEventUp(dialAddr string, event *pb.Event) {
 			defer conn.Close()
 
 			client := pb.NewScoutHubClient(conn)
-			ack, err := client.Publish(ctx, event)
+			ack, err := client.Publish(ctxBackup, event)
 			if err == nil && ack.State {
 				break
 			}
@@ -1219,6 +1266,9 @@ func (ps *PubSub) forwardEventDown(dialAddr string, event *pb.Event, redirect st
 				return
 			}
 
+			ctxBackup, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
 			conn, err := grpc.Dial(backup, grpc.WithInsecure())
 			if err != nil {
 				log.Fatalf("fail to dial: %v", err)
@@ -1226,7 +1276,7 @@ func (ps *PubSub) forwardEventDown(dialAddr string, event *pb.Event, redirect st
 			defer conn.Close()
 
 			client := pb.NewScoutHubClient(conn)
-			ack, err := client.Notify(ctx, event)
+			ack, err := client.Notify(ctxBackup, event)
 			if err == nil && ack.State {
 				break
 			}
@@ -1502,10 +1552,10 @@ func (ps *PubSub) alternativesToRv(rvID string) []string {
 		if kb.Closer(selfID, ID, rvID) {
 			attrAddr := ps.ipfsDHT.FindLocal(ID).Addrs[0]
 			if attrAddr != nil {
-				aux := strings.Split(attrAddr.String(), "/")
-				addr := aux[2] + ":4" + aux[4][1:]
-				validAlt = append(validAlt, addr)
+				validAlt = append(validAlt, addrForPubSubServer(attrAddr))
 			}
+		} else {
+			validAlt = append(validAlt, ps.serverAddr)
 		}
 	}
 
@@ -1694,7 +1744,7 @@ func (ps *PubSub) AdvertiseGroup(ctx context.Context, adv *pb.AdvertRequest) (*p
 // forwardAdvertising forwards a advertisement asynchronously to the rendezvous
 func (ps *PubSub) forwardAdvertising(dialAddr string, adv *pb.AdvertRequest) {
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	conn, err := grpc.Dial(dialAddr, grpc.WithInsecure())
@@ -1708,14 +1758,23 @@ func (ps *PubSub) forwardAdvertising(dialAddr string, adv *pb.AdvertRequest) {
 	if err != nil || !ack.State {
 		alternatives := ps.alternativesToRv(adv.RvId)
 		for _, addr := range alternatives {
+
+			if addr == ps.serverAddr {
+				client.AdvertiseGroup(ctx, adv)
+				return
+			}
+
 			conn, err := grpc.Dial(addr, grpc.WithInsecure())
 			if err != nil {
 				log.Fatalf("fail to dial: %v", err)
 			}
 			defer conn.Close()
 
+			ctxBackup, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
 			client := pb.NewScoutHubClient(conn)
-			ack, err := client.AdvertiseGroup(ctx, adv)
+			ack, err := client.AdvertiseGroup(ctxBackup, adv)
 			if err == nil && ack.State {
 				break
 			}
@@ -1814,6 +1873,17 @@ func (ps *PubSub) MySearchAndPremiumSub(pred string) error {
 	if err != nil {
 		alternatives := ps.alternativesToRv(req.RvID)
 		for _, addr := range alternatives {
+
+			if addr == ps.serverAddr {
+				for _, g := range ps.returnGroupsOfInterest(p) {
+					err := ps.MyPremiumSubscribe(pred, g.OwnerAddr, g.Predicate)
+					if err == nil {
+						ps.record.SaveTimeToSub(start)
+					}
+				}
+				return nil
+			}
+
 			conn, err := grpc.Dial(addr, grpc.WithInsecure())
 			if err != nil {
 				log.Fatalf("fail to dial: %v", err)
@@ -1889,6 +1959,16 @@ func (ps *PubSub) GroupSearchRequest(ctx context.Context, req *pb.SearchRequest)
 	if err != nil {
 		alternatives := ps.alternativesToRv(req.RvID)
 		for _, addr := range alternatives {
+
+			if addr == ps.serverAddr {
+				var groups map[int32]*pb.MulticastGroupID = make(map[int32]*pb.MulticastGroupID)
+				for i, g := range ps.returnGroupsOfInterest(p) {
+					groups[int32(i)] = g
+				}
+
+				return &pb.SearchReply{Groups: groups}, nil
+			}
+
 			conn, err := grpc.Dial(addr, grpc.WithInsecure())
 			if err != nil {
 				log.Fatalf("fail to dial: %v", err)
