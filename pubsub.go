@@ -1439,7 +1439,9 @@ func (ps *PubSub) getBackups() []string {
 
 	var backups []string
 	var dialAddr string
-	for _, backup := range kb.SortClosestPeers(ps.ipfsDHT.RoutingTable().ListPeers(), kb.ConvertPeerID(ps.ipfsDHT.PeerID()))[:ps.faultToleranceFactor] {
+
+	// TODO need to redo this
+	for _, backup := range ps.ipfsDHT.RoutingTable().NearestPeers(kb.ConvertPeerID(ps.ipfsDHT.PeerID()), ps.faultToleranceFactor) {
 		backupAddr := ps.ipfsDHT.FindLocal(backup).Addrs[0]
 		if backupAddr == nil {
 			continue
@@ -1617,7 +1619,7 @@ func (ps *PubSub) alternativesToRv(rvID string) []string {
 
 	var validAlt []string
 	selfID := ps.ipfsDHT.PeerID()
-	closestIDs := ps.ipfsDHT.RoutingTable().NearestPeers(kb.ID(kb.ConvertKey(rvID)), ps.faultToleranceFactor)
+	closestIDs := ps.ipfsDHT.RoutingTable().NearestPeers(kb.ConvertKey(rvID), ps.faultToleranceFactor)
 
 	for _, ID := range closestIDs {
 		if kb.Closer(selfID, ID, rvID) {
@@ -1627,6 +1629,7 @@ func (ps *PubSub) alternativesToRv(rvID string) []string {
 			}
 		} else {
 			validAlt = append(validAlt, ps.serverAddr)
+			break
 		}
 	}
 
