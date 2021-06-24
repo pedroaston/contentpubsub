@@ -1441,7 +1441,7 @@ func (ps *PubSub) getBackups() []string {
 	var dialAddr string
 
 	// TODO need to redo this
-	for _, backup := range ps.ipfsDHT.RoutingTable().NearestPeers(kb.ConvertPeerID(ps.ipfsDHT.PeerID()), ps.faultToleranceFactor) {
+	for _, backup := range ps.ipfsDHT.RoutingTable().NearestPeers(ps.ipfsDHT.PeerKey(), ps.faultToleranceFactor) {
 		backupAddr := ps.ipfsDHT.FindLocal(backup).Addrs[0]
 		if backupAddr == nil {
 			continue
@@ -1604,7 +1604,7 @@ func (ps *PubSub) refreshOneBackup(backup string, updates []*pb.Update) error {
 func (ps *PubSub) rendezvousSelfCheck(rvID string) (bool, peer.ID) {
 
 	selfID := ps.ipfsDHT.PeerID()
-	closestID := ps.ipfsDHT.RoutingTable().NearestPeer(kb.ID(kb.ConvertKey(rvID)))
+	closestID := ps.ipfsDHT.RoutingTable().NearestPeer(kb.ConvertKey(rvID))
 
 	if kb.Closer(selfID, closestID, rvID) {
 		return true, ""
