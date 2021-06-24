@@ -65,6 +65,7 @@ type PubSub struct {
 	terminate           chan string
 	unconfirmedEvents   map[string]*PubEventState
 	unconfirmedSubs     map[string]*SubState
+	lives               int
 
 	tablesLock *sync.RWMutex
 	upBackLock *sync.RWMutex
@@ -127,6 +128,7 @@ func NewPubSub(dht *kaddht.IpfsDHT, cfg *SetupPubSub) *PubSub {
 		record:                    NewHistoryRecord(),
 		session:                   rand.Intn(9999),
 		eventSeq:                  0,
+		lives:                     0,
 	}
 
 	ps.ipfsDHT = dht
@@ -547,8 +549,7 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 	} else if !isRv {
 		return &pb.Ack{State: false, Info: "rendezvous check failed"}, nil
 	} else if isRv {
-
-		if ps.iAmRVPublish(p, event) != nil {
+		if ps.iAmRVPublish(p, event, false) != nil {
 			return &pb.Ack{State: false, Info: "rendezvous role failed"}, nil
 		}
 	}
@@ -556,7 +557,82 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 	return &pb.Ack{State: true, Info: ""}, nil
 }
 
-func (ps *PubSub) iAmRVPublish(p *Predicate, event *pb.Event) error {
+func (ps *PubSub) iAmRVPublish(p *Predicate, event *pb.Event, failedRv bool) error {
+
+	eL := make(map[string]bool)
+
+	if failedRv {
+		closestID := peer.Encode(ps.ipfsDHT.RoutingTable().NearestPeer(kb.ID(kb.ConvertKey(event.RvId))))
+		if _, ok := ps.myBackupsFilters[closestID]; ok {
+
+			ps.tablesLock.RLock()
+			dialAddr := ps.currentFilterTable.routes[closestID].addr
+			ps.tablesLock.RUnlock()
+			newE := &pb.Event{
+				Event:         event.Event,
+				OriginalRoute: closestID,
+				Backup:        true,
+				Predicate:     event.Predicate,
+				RvId:          event.RvId,
+				AckAddr:       event.AckAddr,
+				PubAddr:       event.PubAddr,
+				EventID:       event.EventID,
+				BirthTime:     event.BirthTime,
+				LastHop:       event.LastHop,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			conn, err := grpc.Dial(dialAddr, grpc.WithInsecure())
+			if err != nil {
+				log.Fatalf("fail to dial: %v", err)
+			}
+			defer conn.Close()
+
+			client := pb.NewScoutHubClient(conn)
+			event.LastHop = peer.Encode(ps.ipfsDHT.PeerID())
+			ack, err := client.Notify(ctx, newE)
+			if err == nil && ack.State {
+				eL[closestID] = false
+			}
+		}
+	} else if ps.lives < 2 {
+		closestID := peer.Encode(ps.ipfsDHT.RoutingTable().NearestPeer(kb.ID(kb.ConvertKey(event.RvId))))
+
+		ps.tablesLock.RLock()
+		dialAddr := ps.currentFilterTable.routes[closestID].addr
+		ps.tablesLock.RUnlock()
+		newE := &pb.Event{
+			Event:         event.Event,
+			OriginalRoute: closestID,
+			Backup:        event.Backup,
+			Predicate:     event.Predicate,
+			RvId:          event.RvId,
+			AckAddr:       event.AckAddr,
+			PubAddr:       event.PubAddr,
+			EventID:       event.EventID,
+			BirthTime:     event.BirthTime,
+			LastHop:       event.LastHop,
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		conn, err := grpc.Dial(dialAddr, grpc.WithInsecure())
+		if err != nil {
+			log.Fatalf("fail to dial: %v", err)
+		}
+		defer conn.Close()
+
+		client := pb.NewScoutHubClient(conn)
+		event.LastHop = peer.Encode(ps.ipfsDHT.PeerID())
+		ack, err := client.Notify(ctx, newE)
+		if err == nil && ack.State {
+			eL[closestID] = false
+		}
+		// send a notify here
+	}
 
 	ps.tablesLock.RLock()
 	eIDRv := fmt.Sprintf("%s%d%d", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID)
@@ -567,7 +643,6 @@ func (ps *PubSub) iAmRVPublish(p *Predicate, event *pb.Event) error {
 	}
 
 	ps.rvCache = append(ps.rvCache, eIDRv)
-	eL := make(map[string]bool)
 	event.AckAddr = ps.serverAddr
 
 	for next, route := range ps.currentFilterTable.routes {
@@ -1037,7 +1112,7 @@ func (ps *PubSub) forwardEventUp(dialAddr string, event *pb.Event) {
 
 			if addr == ps.serverAddr {
 				p, _ := NewPredicate(event.Predicate, ps.maxAttributesPerPredicate)
-				ps.iAmRVPublish(p, event)
+				ps.iAmRVPublish(p, event, true)
 				return
 			}
 
@@ -1658,6 +1733,7 @@ func (ps *PubSub) processLoop() {
 			ps.nextAdvertiseBoard = nil
 			ps.tablesLock.Unlock()
 			ps.refreshAllBackups()
+			ps.lives++
 		case <-ps.terminate:
 			return
 		}
@@ -2339,7 +2415,7 @@ func (ps *PubSub) DelegateSubToHelper(ctx context.Context, sub *pb.DelegateSub) 
 	return &pb.Ack{State: true, Info: ""}, nil
 }
 
-// ++++++++++++++++++++++ Metrics Fetching ++++++++++++++++++++++
+// ++++++++++++++++++++++ Metrics Fetching plus Testing Functions ++++++++++++++++++++++
 
 // ReturnEventStats returns the time
 // it took to receive each event
@@ -2359,4 +2435,10 @@ func (ps *PubSub) ReturnSubStats() []int {
 func (ps *PubSub) ReturnCorrectnessStats(expected []string) (int, int) {
 
 	return ps.record.CorrectnessStats(expected)
+}
+
+// SetHasOldPeer only goal is to set peer as old in testing scenario
+func (ps *PubSub) SetHasOldPeer() {
+
+	ps.lives = 100
 }
