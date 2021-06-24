@@ -308,8 +308,6 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 		sub.Predicate = pNew.ToString()
 	}
 
-	ps.updateMyBackups(sub.PeerID, sub.Predicate)
-
 	isRv, nextHop := ps.rendezvousSelfCheck(sub.RvId)
 	if !isRv && nextHop != "" {
 
@@ -348,10 +346,13 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 
 			ps.subsToForward <- &ForwardSubRequest{dialAddr: dialAddr, sub: subForward}
 		}
+
+		ps.updateMyBackups(sub.PeerID, sub.Predicate)
 	} else if !isRv {
 		return &pb.Ack{State: false, Info: "rendezvous check failed"}, nil
 	} else {
 		ps.sendAckOp(sub.SubAddr, "Subscribe", sub.Predicate)
+		ps.updateRvRegion(sub.PeerID, sub.Predicate, sub.RvId)
 	}
 
 	return &pb.Ack{State: true, Info: ""}, nil
@@ -1433,15 +1434,53 @@ func (ps *PubSub) updateMyBackups(route string, info string) error {
 	return nil
 }
 
+// updateRvRegion basically sends updates rpcs
+// to the closest nodes to the attribute
+func (ps *PubSub) updateRvRegion(route string, info string, rvID string) error {
+
+	ps.tablesLock.RLock()
+	routeAddr := ps.currentFilterTable.routes[route].addr
+	ps.tablesLock.RUnlock()
+
+	for _, alt := range ps.ipfsDHT.RoutingTable().NearestPeers(kb.ConvertKey(rvID), ps.faultToleranceFactor) {
+
+		backupAddr := ps.ipfsDHT.FindLocal(alt).Addrs[0]
+		if backupAddr == nil {
+			continue
+		}
+
+		altAddr := addrForPubSubServer(backupAddr)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		conn, err := grpc.Dial(altAddr, grpc.WithInsecure())
+		if err != nil {
+			log.Fatalf("fail to dial: %v", err)
+		}
+		defer conn.Close()
+
+		client := pb.NewScoutHubClient(conn)
+		update := &pb.Update{
+			Sender:    peer.Encode(ps.ipfsDHT.PeerID()),
+			Route:     route,
+			RouteAddr: routeAddr,
+			Predicate: info,
+		}
+
+		client.UpdateBackup(ctx, update)
+	}
+
+	return nil
+}
+
 // getBackups selects f backup peers for the node,
 // which are the ones closer to him by ID
 func (ps *PubSub) getBackups() []string {
 
 	var backups []string
 	var dialAddr string
-
-	// TODO need to redo this
-	for _, backup := range ps.ipfsDHT.RoutingTable().NearestPeers(ps.ipfsDHT.PeerKey(), ps.faultToleranceFactor) {
+	for _, backup := range ps.ipfsDHT.RoutingTable().NearestPeers(kb.ConvertPeerID(ps.ipfsDHT.PeerID()), ps.faultToleranceFactor) {
 		backupAddr := ps.ipfsDHT.FindLocal(backup).Addrs[0]
 		if backupAddr == nil {
 			continue
