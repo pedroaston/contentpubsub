@@ -564,6 +564,7 @@ func (ps *PubSub) iAmRVPublish(p *Predicate, event *pb.Event, failedRv bool) err
 	if failedRv {
 		for backup := range ps.myBackupsFilters {
 
+			fmt.Println("PLZ >> " + backup)
 			backupID, _ := peer.Decode(backup)
 			if kb.Closer(backupID, ps.ipfsDHT.PeerID(), event.RvId) {
 
@@ -583,7 +584,7 @@ func (ps *PubSub) iAmRVPublish(p *Predicate, event *pb.Event, failedRv bool) err
 				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer cancel()
 
-				fmt.Println("Valeu!")
+				fmt.Println("VALEU!")
 				ack, err := ps.Notify(ctx, newE)
 				if err == nil && ack.State {
 					eL[backup] = false
@@ -1667,7 +1668,7 @@ func (ps *PubSub) closerAttrRvToSelf(p *Predicate) (peer.ID, string, error) {
 
 // TerminateService closes the PubSub service
 func (ps *PubSub) TerminateService() {
-	fmt.Println("Terminate: " + ps.serverAddr)
+	fmt.Println("Terminate: " + ps.serverAddr + " | " + peer.Encode(ps.ipfsDHT.PeerID()))
 	ps.terminate <- "end"
 	ps.server.Stop()
 }
