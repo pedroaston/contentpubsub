@@ -12,6 +12,8 @@ import (
 	"google.golang.org/grpc"
 )
 
+// MulticastGroup contains all suport metadata for a
+// Premium publisher proper functioning
 type MulticastGroup struct {
 	maxSubReg int
 	powerSubs int
@@ -27,8 +29,6 @@ type MulticastGroup struct {
 	failedDelivery chan []*SubData
 }
 
-// NewMulticastGroup returns an instance of a multicastGroup with as
-// much rangeAttributeTrees as range attribute its predicate has
 func NewMulticastGroup(p *Predicate, addr string, maxSubReg int, powerSubs int) *MulticastGroup {
 
 	mg := &MulticastGroup{
@@ -82,8 +82,7 @@ type HelperTracker struct {
 // of the Group and decides if the publisher should simply add the sub to his infrastructure, recruit
 // a sub to help him and delegate the sub and others to that new helper or simply delegate the sub
 // to a node that is already helping him and still can receive more. To utilize helpers properly the
-// subs are oredered in geografical regions to minimize latency between helper nodes and its delegated
-// nodes by only delegating to the helper nodes that are geo-close to him and so minimizing redundant hops
+// subs are oredered in geografical regions to minimize latency between helper nodes and its delegated nodes
 func (mg *MulticastGroup) AddSubToGroup(addr string, cap int, region string, pred *Predicate) error {
 
 	newSub := &SubData{
@@ -160,7 +159,7 @@ func (mg *MulticastGroup) AddSubToGroup(addr string, cap int, region string, pre
 	return nil
 }
 
-// RemoveSubFromGroup removes a sub from the multicastGroup wether it is delegated
+// RemoveSubFromGroup removes a sub from the multicastGroup whether it is delegated
 // to a helper, a helper or a node of its responsability. In the helper case the
 // subs delegated to him must be supported by the publisher, a new helper or a
 // existing one. On the case of a sub unsubscribing that was delegated to a helper
@@ -227,7 +226,7 @@ func (mg *MulticastGroup) RemoveSubFromGroup(sub *pb.PremiumSubscription) error 
 
 				client := pb.NewScoutHubClient(conn)
 				ack, err := client.PremiumUnsubscribe(ctx, sub)
-				if !ack.State && err != nil {
+				if err != nil || !ack.State {
 					return errors.New("failed to unsubscribe from helper")
 				}
 
@@ -251,7 +250,7 @@ func (mg *MulticastGroup) RemoveSubFromGroup(sub *pb.PremiumSubscription) error 
 	return nil
 }
 
-// RecruitHelper requests a helper to provide support to some subs of a group
+// RecruitHelper requests a helper to provide support to some subs of the group
 func (mg *MulticastGroup) RecruitHelper(helper *SubData, subs []*SubData) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
@@ -329,7 +328,7 @@ func (mg *MulticastGroup) AddSubToHelper(sub *SubData, addr string) error {
 
 	client := pb.NewScoutHubClient(conn)
 	ack, err := client.DelegateSubToHelper(ctx, help)
-	if !ack.State && err != nil {
+	if err != nil || !ack.State {
 		return err
 	}
 
@@ -351,7 +350,7 @@ func (mg *MulticastGroup) AddToRangeTrees(sub *SubData) {
 	}
 }
 
-// RemoveFromRangeTrees subs from the multicast fetching-structure
+// RemoveFromRangeTrees removes subs from the multicast fetching-structure
 func (mg *MulticastGroup) RemoveFromRangeTrees(sub *SubData) {
 	for attr, tree := range mg.attrTrees {
 		if _, ok := sub.pred.attributes[attr]; !ok {
@@ -438,6 +437,8 @@ func (mg *MulticastGroup) StopDelegating(tracker *HelperTracker, add bool) {
 	}
 }
 
+// SubGroupView is where helper keeps
+// track of its delegated peers
 type SubGroupView struct {
 	maxAttr    int
 	pubAddr    string

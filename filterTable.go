@@ -9,7 +9,7 @@ import (
 )
 
 // RouteStats keeps filters for each pubsub peer it is
-// connected and its backups in case of failure
+// connected and its backups in case of his failure
 type RouteStats struct {
 	filters   map[int][]*Predicate
 	backups   []string
@@ -17,7 +17,6 @@ type RouteStats struct {
 	routeLock *sync.RWMutex
 }
 
-// NewRouteStats initializes a routestat
 func NewRouteStats(addr string) *RouteStats {
 	r := &RouteStats{
 		filters:   make(map[int][]*Predicate),
@@ -28,7 +27,8 @@ func NewRouteStats(addr string) *RouteStats {
 	return r
 }
 
-// FilterTable keeps filter information of all peers
+// FilterTable keeps filter information of all peers by
+// keeping its peers' routeStats and redirect support
 type FilterTable struct {
 	routes        map[string]*RouteStats
 	redirectTable map[string]map[string]string
@@ -36,7 +36,6 @@ type FilterTable struct {
 	redirectLock  *sync.Mutex
 }
 
-// NewFilterTable initializes a FilterTable
 func NewFilterTable(dht *dht.IpfsDHT) *FilterTable {
 
 	peers := dht.RoutingTable().GetPeerInfos()
@@ -59,7 +58,8 @@ func NewFilterTable(dht *dht.IpfsDHT) *FilterTable {
 	return ft
 }
 
-// addRedirect
+// addRedirect just adds a shortcut address for a specific set
+// of events to the peer's redirect support
 func (ft *FilterTable) addRedirect(route string, rvID string, addr string) {
 
 	ft.redirectLock.Lock()
@@ -72,7 +72,7 @@ func (ft *FilterTable) addRedirect(route string, rvID string, addr string) {
 	ft.redirectTable[route][rvID] = addr
 }
 
-// turnOffRedirect
+// turnOffRedirect disallows a specific redirect from use
 func (ft *FilterTable) turnOffRedirect(route string, rvID string) {
 
 	ft.redirectLock.Lock()
@@ -85,7 +85,7 @@ func (ft *FilterTable) turnOffRedirect(route string, rvID string) {
 	ft.redirectTable[route][rvID] = "!"
 }
 
-// addToRouteTracker
+// addToRouteTracker updates the route tracking mechanism
 func (ft *FilterTable) addToRouteTracker(rvID string, peer string) {
 
 	ft.redirectLock.Lock()
@@ -114,8 +114,8 @@ func (ft *FilterTable) PrintFilterTable() {
 }
 
 // SimpleAddSummarizedFilter is called upon receiving a subscription
-// filter to see if it should be added if exclusive, merge
-// with others or encompass or be encompassed by others
+// filter to see if it should be added if exclusive, merged
+// with others, or encompass or be encompassed by others
 func (rs *RouteStats) SimpleAddSummarizedFilter(p *Predicate) (bool, *Predicate) {
 
 	rs.routeLock.Lock()
@@ -192,6 +192,7 @@ func (rs *RouteStats) SimpleAddSummarizedFilter(p *Predicate) (bool, *Predicate)
 // SimpleSubtractFilter removes all the emcompassed filters by the
 // info string predicate ignoring partial encompassing for now
 func (rs *RouteStats) SimpleSubtractFilter(p *Predicate) {
+
 	for i := range rs.filters {
 		if len(p.attributes) <= i {
 			for j := 0; j < len(rs.filters[i]); j++ {
@@ -213,8 +214,8 @@ func (rs *RouteStats) SimpleSubtractFilter(p *Predicate) {
 	}
 }
 
-// IsInterested checks if inside that routeState there are any filters
-// compatible to a specific predicate and returns true if there are
+// IsInterested checks if there are any filters compatible to a specific
+// predicate inside a routeStat and returns true if there are
 func (rs *RouteStats) IsInterested(p *Predicate) bool {
 
 	rs.routeLock.RLock()
