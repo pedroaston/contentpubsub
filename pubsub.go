@@ -562,30 +562,35 @@ func (ps *PubSub) iAmRVPublish(p *Predicate, event *pb.Event, failedRv bool) err
 	eL := make(map[string]bool)
 
 	if failedRv {
-		closestID := peer.Encode(ps.ipfsDHT.RoutingTable().NearestPeer(kb.ID(kb.ConvertKey(event.RvId))))
-		if _, ok := ps.myBackupsFilters[closestID]; ok {
-			newE := &pb.Event{
-				Event:         event.Event,
-				OriginalRoute: closestID,
-				Backup:        true,
-				Predicate:     event.Predicate,
-				RvId:          event.RvId,
-				AckAddr:       event.AckAddr,
-				PubAddr:       event.PubAddr,
-				EventID:       event.EventID,
-				BirthTime:     event.BirthTime,
-				LastHop:       event.LastHop,
-			}
+		for backup := range ps.myBackupsFilters {
 
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
+			backupID, _ := peer.Decode(backup)
+			if kb.Closer(backupID, ps.ipfsDHT.PeerID(), event.RvId) {
 
-			fmt.Println("Valeu!")
-			ack, err := ps.Notify(ctx, newE)
-			if err == nil && ack.State {
-				eL[closestID] = false
+				newE := &pb.Event{
+					Event:         event.Event,
+					OriginalRoute: backup,
+					Backup:        true,
+					Predicate:     event.Predicate,
+					RvId:          event.RvId,
+					AckAddr:       ps.serverAddr,
+					PubAddr:       event.PubAddr,
+					EventID:       event.EventID,
+					BirthTime:     event.BirthTime,
+					LastHop:       event.LastHop,
+				}
+
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+
+				fmt.Println("Valeu!")
+				ack, err := ps.Notify(ctx, newE)
+				if err == nil && ack.State {
+					eL[backup] = false
+				}
 			}
 		}
+
 	} else if ps.lives < 2 {
 		closestID := peer.Encode(ps.ipfsDHT.RoutingTable().NearestPeer(kb.ID(kb.ConvertKey(event.RvId))))
 
@@ -598,7 +603,7 @@ func (ps *PubSub) iAmRVPublish(p *Predicate, event *pb.Event, failedRv bool) err
 			Backup:        event.Backup,
 			Predicate:     event.Predicate,
 			RvId:          event.RvId,
-			AckAddr:       event.AckAddr,
+			AckAddr:       ps.serverAddr,
 			PubAddr:       event.PubAddr,
 			EventID:       event.EventID,
 			BirthTime:     event.BirthTime,
