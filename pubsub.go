@@ -564,10 +564,6 @@ func (ps *PubSub) iAmRVPublish(p *Predicate, event *pb.Event, failedRv bool) err
 	if failedRv {
 		closestID := peer.Encode(ps.ipfsDHT.RoutingTable().NearestPeer(kb.ID(kb.ConvertKey(event.RvId))))
 		if _, ok := ps.myBackupsFilters[closestID]; ok {
-
-			ps.tablesLock.RLock()
-			dialAddr := ps.currentFilterTable.routes[closestID].addr
-			ps.tablesLock.RUnlock()
 			newE := &pb.Event{
 				Event:         event.Event,
 				OriginalRoute: closestID,
@@ -584,15 +580,8 @@ func (ps *PubSub) iAmRVPublish(p *Predicate, event *pb.Event, failedRv bool) err
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 
-			conn, err := grpc.Dial(dialAddr, grpc.WithInsecure())
-			if err != nil {
-				log.Fatalf("fail to dial: %v", err)
-			}
-			defer conn.Close()
-
-			client := pb.NewScoutHubClient(conn)
-			event.LastHop = peer.Encode(ps.ipfsDHT.PeerID())
-			ack, err := client.Notify(ctx, newE)
+			fmt.Println("Valeu!")
+			ack, err := ps.Notify(ctx, newE)
 			if err == nil && ack.State {
 				eL[closestID] = false
 			}
@@ -1111,6 +1100,7 @@ func (ps *PubSub) forwardEventUp(dialAddr string, event *pb.Event) {
 		for _, addr := range alternatives {
 
 			if addr == ps.serverAddr {
+				fmt.Println("OLA!")
 				p, _ := NewPredicate(event.Predicate, ps.maxAttributesPerPredicate)
 				ps.iAmRVPublish(p, event, true)
 				return
