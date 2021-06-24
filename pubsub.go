@@ -1439,7 +1439,7 @@ func (ps *PubSub) getBackups() []string {
 
 	var backups []string
 	var dialAddr string
-	for _, backup := range kb.SortClosestPeers(ps.ipfsDHT.RoutingTable().ListPeers(), kb.ID(ps.ipfsDHT.PeerID()))[:ps.faultToleranceFactor] {
+	for _, backup := range kb.SortClosestPeers(ps.ipfsDHT.RoutingTable().ListPeers(), kb.ConvertPeerID(ps.ipfsDHT.PeerID()))[:ps.faultToleranceFactor] {
 		backupAddr := ps.ipfsDHT.FindLocal(backup).Addrs[0]
 		if backupAddr == nil {
 			continue
