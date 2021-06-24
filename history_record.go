@@ -16,24 +16,13 @@ type EventRecord struct {
 	timeOfTravel time.Duration
 }
 
-// NewHistoryRecord
 func NewHistoryRecord() *HistoryRecord {
 	record := &HistoryRecord{operationHistory: make(map[string]int)}
 
 	return record
 }
 
-// AddOperationStat
-func (r *HistoryRecord) AddOperationStat(opName string) {
-
-	if _, ok := r.operationHistory[opName]; !ok {
-		r.operationHistory[opName] = 1
-	} else {
-		r.operationHistory[opName]++
-	}
-}
-
-// SaveReceivedEvent
+// SaveReceivedEvent register the time a event took until it reached the subscriber
 func (r *HistoryRecord) SaveReceivedEvent(eScource string, eBirth string, eData string) {
 
 	past, err1 := time.Parse(time.StampMilli, eBirth)
@@ -55,7 +44,7 @@ func (r *HistoryRecord) SaveReceivedEvent(eScource string, eBirth string, eData 
 	r.receivedEvents = append(r.receivedEvents, eventRecord)
 }
 
-// SaveTimeToSub
+// SaveTimeToSub register the time it took to confirm a subscription
 func (r *HistoryRecord) SaveTimeToSub(start string) {
 
 	past, err1 := time.Parse(time.StampMilli, start)
@@ -71,7 +60,7 @@ func (r *HistoryRecord) SaveTimeToSub(start string) {
 	r.timeToSub = append(r.timeToSub, int(present.Sub(past).Milliseconds()))
 }
 
-// EventStats
+// EventStats returns all events time of travel
 func (r *HistoryRecord) EventStats() []int {
 
 	var events []int
@@ -83,7 +72,8 @@ func (r *HistoryRecord) EventStats() []int {
 	return events
 }
 
-// CompileCorrectnessResults
+// CompileCorrectnessResults returns the number of events missing or received
+// more than once, by comparing with a array of supposed received events
 func (r *HistoryRecord) CorrectnessStats(expected []string) (int, int) {
 
 	missed := 0

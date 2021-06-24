@@ -17,48 +17,36 @@ func TestAddSubsToTreeAndRead(t *testing.T) {
 
 	rt := NewRangeAttributeTree(attr)
 
-	pred1, err1 := NewPredicate("wine T/year R 2011 2011", 5)
-	if err1 != nil {
-		t.Fatal(err1)
-	}
-
+	pred1, _ := NewPredicate("wine T/year R 2011 2011", 5)
 	sub1 := &SubData{
 		pred: pred1,
 		addr: "just for testing 1",
 	}
+
 	rt.AddSubToTree(sub1)
 
-	pred2, err2 := NewPredicate("wine T/year R 2010 2013", 5)
-	if err2 != nil {
-		t.Fatal(err2)
-	}
-
+	pred2, _ := NewPredicate("wine T/year R 2010 2013", 5)
 	sub2 := &SubData{
 		pred: pred2,
 		addr: "just for testing 2",
 	}
+
 	rt.AddSubToTree(sub2)
 
-	pred3, err3 := NewPredicate("wine T/year R 2010 2015", 5)
-	if err3 != nil {
-		t.Fatal(err3)
-	}
-
+	pred3, _ := NewPredicate("wine T/year R 2010 2015", 5)
 	sub3 := &SubData{
 		pred: pred3,
 		addr: "just for testing 3",
 	}
+
 	rt.AddSubToTree(sub3)
 
-	pred4, err4 := NewPredicate("wine T/year R 2010 2017", 5)
-	if err4 != nil {
-		t.Fatal(err4)
-	}
-
+	pred4, _ := NewPredicate("wine T/year R 2010 2017", 5)
 	sub4 := &SubData{
 		pred: pred4,
 		addr: "just for testing 4",
 	}
+
 	rt.AddSubToTree(sub4)
 
 	if len(rt.root.subs) != 1 {

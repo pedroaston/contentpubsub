@@ -10,34 +10,31 @@ import (
 	"google.golang.org/grpc"
 )
 
+// Tracker keeps "track" of a rendezvous forwarded events'
+// acknowledge chain, so that if after a certain time
+// not all confirmation were received he forwards a resend
+// request to certain peers back to the rendezvous
 type Tracker struct {
-	leader       bool
-	fresh        bool
-	attr         string
-	rvAddr       string
-	timeOfBirth  string
-	eventStats   map[string]*EventLedger
-	addEventAck  chan *pb.EventAck
-	addEventLog  chan *EventLedger
-	checkForAcks chan string
-	checkEvents  *time.Ticker
-	buffedAcks   []*pb.EventAck
+	leader      bool
+	attr        string
+	rvAddr      string
+	eventStats  map[string]*EventLedger
+	addEventAck chan *pb.EventAck
+	addEventLog chan *EventLedger
+	checkEvents *time.Ticker
+	buffedAcks  []*pb.EventAck
 }
 
-// NewTracker initiates a new tracker struct
 func NewTracker(leader bool, attr string, rvAddr string, timeToCheckDelivery time.Duration) *Tracker {
 
 	t := &Tracker{
-		leader:       leader,
-		fresh:        true,
-		attr:         attr,
-		rvAddr:       rvAddr,
-		timeOfBirth:  time.Now().Format(time.StampMilli),
-		eventStats:   make(map[string]*EventLedger),
-		addEventAck:  make(chan *pb.EventAck, 8),
-		addEventLog:  make(chan *EventLedger, 8),
-		checkForAcks: make(chan string),
-		checkEvents:  time.NewTicker(timeToCheckDelivery * time.Second),
+		leader:      leader,
+		attr:        attr,
+		rvAddr:      rvAddr,
+		eventStats:  make(map[string]*EventLedger),
+		addEventAck: make(chan *pb.EventAck, 8),
+		addEventLog: make(chan *EventLedger, 8),
+		checkEvents: time.NewTicker(timeToCheckDelivery * time.Second),
 	}
 
 	go t.trackerLoop()
@@ -55,9 +52,8 @@ func (t *Tracker) trackerLoop() {
 			t.newEventToCheck(pid)
 		case pid := <-t.addEventAck:
 			t.addAckToLedger(pid)
-		case <-t.checkForAcks:
-			t.applyBuffedAcks()
 		case <-t.checkEvents.C:
+			t.applyBuffedAcks()
 			if t.leader {
 				t.returnUnAckedEvents()
 			}
@@ -67,7 +63,6 @@ func (t *Tracker) trackerLoop() {
 
 // newEventToCheck places a event on tracker checking list
 func (t *Tracker) newEventToCheck(eL *EventLedger) {
-
 	t.eventStats[eL.eventID] = eL
 }
 
@@ -75,13 +70,10 @@ func (t *Tracker) newEventToCheck(eL *EventLedger) {
 func (t *Tracker) addAckToLedger(ack *pb.EventAck) {
 
 	eID := fmt.Sprintf("%s%d%d", ack.EventID.PublisherID, ack.EventID.SessionNumber, ack.EventID.SeqID)
-
 	if _, ok := t.eventStats[eID]; !ok {
-		fmt.Println("Already acked")
 		t.buffedAcks = append(t.buffedAcks, ack)
 		return
 	} else if _, ok := t.eventStats[eID].eventLog[ack.PeerID]; !ok {
-		fmt.Println("Not possible to ack")
 		return
 	}
 
@@ -91,10 +83,10 @@ func (t *Tracker) addAckToLedger(ack *pb.EventAck) {
 	if t.eventStats[eID].receivedAcks == t.eventStats[eID].expectedAcks {
 		delete(t.eventStats, eID)
 	}
-
 }
 
-// applyBuffedAcks
+// applyBuffedAcks tries to apply again previous acks that
+// may be left being due to delay of the Rv to send the Log
 func (t *Tracker) applyBuffedAcks() {
 
 	for _, ack := range t.buffedAcks {
@@ -155,6 +147,8 @@ func (t *Tracker) returnUnAckedEvents() {
 
 }
 
+// EventLedger keeps track of all acknowledge
+// received for a specific event
 type EventLedger struct {
 	eventID             string
 	event               *pb.Event
@@ -166,7 +160,6 @@ type EventLedger struct {
 	originalDestination string
 }
 
-// NewEventLedger
 func NewEventLedger(eID string, log map[string]bool, addr string, e *pb.Event, dest string) *EventLedger {
 
 	eL := &EventLedger{
