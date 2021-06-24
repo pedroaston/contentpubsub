@@ -31,9 +31,6 @@ func NewRouteStats(addr string) *RouteStats {
 // keeping its peers' routeStats and redirect support
 type FilterTable struct {
 	routes        map[string]*RouteStats
-	redirectTable map[string]map[string]string
-	routeTracker  map[string][]string
-	redirectLock  *sync.Mutex
 }
 
 func NewFilterTable(dht *dht.IpfsDHT) *FilterTable {
@@ -42,9 +39,6 @@ func NewFilterTable(dht *dht.IpfsDHT) *FilterTable {
 
 	ft := &FilterTable{
 		routes:        make(map[string]*RouteStats),
-		redirectTable: make(map[string]map[string]string),
-		routeTracker:  make(map[string][]string),
-		redirectLock:  &sync.Mutex{},
 	}
 
 	for _, peerStat := range peers {
@@ -56,48 +50,6 @@ func NewFilterTable(dht *dht.IpfsDHT) *FilterTable {
 	}
 
 	return ft
-}
-
-// addRedirect just adds a shortcut address for a specific set
-// of events to the peer's redirect support
-func (ft *FilterTable) addRedirect(route string, rvID string, addr string) {
-
-	ft.redirectLock.Lock()
-	defer ft.redirectLock.Unlock()
-
-	if ft.redirectTable[route] == nil {
-		ft.redirectTable[route] = make(map[string]string)
-	}
-
-	ft.redirectTable[route][rvID] = addr
-}
-
-// turnOffRedirect disallows a specific redirect from use
-func (ft *FilterTable) turnOffRedirect(route string, rvID string) {
-
-	ft.redirectLock.Lock()
-	defer ft.redirectLock.Unlock()
-
-	if ft.redirectTable[route] == nil {
-		ft.redirectTable[route] = make(map[string]string)
-	}
-
-	ft.redirectTable[route][rvID] = "!"
-}
-
-// addToRouteTracker updates the route tracking mechanism
-func (ft *FilterTable) addToRouteTracker(rvID string, peer string) {
-
-	ft.redirectLock.Lock()
-	defer ft.redirectLock.Unlock()
-
-	for _, p := range ft.routeTracker[rvID] {
-		if p == peer {
-			return
-		}
-	}
-
-	ft.routeTracker[rvID] = append(ft.routeTracker[rvID], peer)
 }
 
 func (ft *FilterTable) PrintFilterTable() {
