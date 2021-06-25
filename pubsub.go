@@ -1942,12 +1942,12 @@ func (ps *PubSub) MySearchAndPremiumSub(pred string) error {
 		return err
 	}
 
-	minID, minAttr, err := ps.closerAttrRvToSelf(p)
+	_, minAttr, err := ps.closerAttrRvToSelf(p)
 	if err != nil {
 		return errors.New("failed to find the closest attribute Rv")
 	}
 
-	isRv, _ := ps.rendezvousSelfCheck(minAttr)
+	isRv, nextHop := ps.rendezvousSelfCheck(minAttr)
 	if isRv {
 		for _, g := range ps.returnGroupsOfInterest(p) {
 			err := ps.MyPremiumSubscribe(pred, g.OwnerAddr, g.Predicate)
@@ -1958,14 +1958,9 @@ func (ps *PubSub) MySearchAndPremiumSub(pred string) error {
 		return nil
 	}
 
-	var dialAddr string
-	closest := ps.ipfsDHT.RoutingTable().NearestPeer(kb.ID(minID))
-	closestAddr := ps.ipfsDHT.FindLocal(closest).Addrs[0]
-	if closestAddr == nil {
-		return errors.New("no address for closest peer")
-	} else {
-		dialAddr = addrForPubSubServer(closestAddr)
-	}
+	ps.tablesLock.RLock()
+	dialAddr := ps.currentFilterTable.routes[peer.Encode(nextHop)].addr
+	ps.tablesLock.RUnlock()
 
 	conn, err := grpc.Dial(dialAddr, grpc.WithInsecure())
 	if err != nil {
@@ -2034,12 +2029,7 @@ func (ps *PubSub) GroupSearchRequest(ctx context.Context, req *pb.SearchRequest)
 		return nil, err
 	}
 
-	minID, minAttr, err := ps.closerAttrRvToSelf(p)
-	if err != nil {
-		return nil, errors.New("failed to find the closest attribute Rv")
-	}
-
-	isRv, _ := ps.rendezvousSelfCheck(minAttr)
+	isRv, nextHop := ps.rendezvousSelfCheck(req.RvID)
 	if isRv {
 		var groups map[int32]*pb.MulticastGroupID = make(map[int32]*pb.MulticastGroupID)
 		for i, g := range ps.returnGroupsOfInterest(p) {
@@ -2049,14 +2039,9 @@ func (ps *PubSub) GroupSearchRequest(ctx context.Context, req *pb.SearchRequest)
 		return &pb.SearchReply{Groups: groups}, nil
 	}
 
-	var dialAddr string
-	closest := ps.ipfsDHT.RoutingTable().NearestPeer(kb.ID(minID))
-	closestAddr := ps.ipfsDHT.FindLocal(closest).Addrs[0]
-	if closestAddr == nil {
-		return nil, errors.New("no address for closest peer")
-	} else {
-		dialAddr = addrForPubSubServer(closestAddr)
-	}
+	ps.tablesLock.RLock()
+	dialAddr := ps.currentFilterTable.routes[peer.Encode(nextHop)].addr
+	ps.tablesLock.RUnlock()
 
 	conn, err := grpc.Dial(dialAddr, grpc.WithInsecure())
 	if err != nil {
