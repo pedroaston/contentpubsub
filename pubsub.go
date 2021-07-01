@@ -508,7 +508,9 @@ func (ps *PubSub) forwardEventUp(dialAddr string, event *pb.Event) {
 				for backup := range ps.myBackupsFilters {
 					backupID, _ := peer.Decode(backup)
 					if kb.Closer(backupID, ps.ipfsDHT.PeerID(), event.RvId) {
+						fmt.Println("Hello!")
 						ps.Notify(ctx, event)
+						fmt.Println("Goodbye!")
 						break
 					}
 				}
