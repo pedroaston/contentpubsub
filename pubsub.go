@@ -605,7 +605,15 @@ func (ps *PubSub) forwardEventUp(dialAddr string, event *pb.Event) {
 
 			if addr == ps.serverAddr {
 				event.Backup = true
-				ps.Notify(ctxB, event)
+				for backup := range ps.myBackupsFilters {
+					backupID, _ := peer.Decode(backup)
+					if kb.Closer(backupID, ps.ipfsDHT.PeerID(), event.RvId) {
+						event.OriginalRoute = backup
+						ps.Notify(ctx, event)
+						break
+					}
+				}
+				return
 			}
 
 			conn, err := grpc.Dial(addr, grpc.WithInsecure())
@@ -695,6 +703,7 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 	} else {
 		ps.upBackLock.RLock()
 		if _, ok := ps.myBackupsFilters[event.OriginalRoute]; !ok {
+			ps.upBackLock.RUnlock()
 			return &pb.Ack{State: false, Info: "cannot backup"}, nil
 		}
 
