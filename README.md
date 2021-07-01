@@ -1,7 +1,5 @@
 # ScoutSubs-FastDelivery
-## Made for
-- Project: Master Thesis Dissertation in Telecomunication and Informatics
-- College: Instituto Superior Técnico
+For more context about this system check [here](https://github.com/pedroaston/smartpubsub-ipfs).
 
 ## PubSub Interface
 To use this pubsub middleware, you can use the following functions ...
@@ -52,6 +50,3 @@ pubsub.MyPremiumPublish("portugal T",
 
 ### Auxiliar
 - v0.13s  >> Used for Debugging
-
-## Tools
-In the directory extra-tools are programs that may be used over this pubsub middleware.
