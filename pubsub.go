@@ -505,8 +505,14 @@ func (ps *PubSub) forwardEventUp(dialAddr string, event *pb.Event) {
 
 			if addr == ps.serverAddr {
 				event.Backup = true
-				ps.Notify(ctxB, event)
-				break
+				for backup := range ps.myBackupsFilters {
+					backupID, _ := peer.Decode(backup)
+					if kb.Closer(backupID, ps.ipfsDHT.PeerID(), event.RvId) {
+						ps.Notify(ctx, event)
+						break
+					}
+				}
+				return
 			}
 
 			conn, err := grpc.Dial(addr, grpc.WithInsecure())
