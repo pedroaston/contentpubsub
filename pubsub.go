@@ -563,7 +563,6 @@ func (ps *PubSub) iAmRVPublish(p *Predicate, event *pb.Event, failedRv bool) err
 		if err == nil && ack.State {
 			eL[closestID] = false
 		}
-		// send a notify here
 	}
 
 	ps.tablesLock.RLock()
@@ -1124,6 +1123,7 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 	} else {
 		ps.upBackLock.RLock()
 		if _, ok := ps.myBackupsFilters[event.OriginalRoute]; !ok {
+			ps.upBackLock.RUnlock()
 			return &pb.Ack{State: false, Info: "cannot backup"}, nil
 		}
 
