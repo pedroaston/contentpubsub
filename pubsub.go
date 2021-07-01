@@ -1870,7 +1870,7 @@ func (ps *PubSub) forwardAdvertising(dialAddr string, adv *pb.AdvertRequest) {
 		for _, addr := range alternatives {
 
 			if addr == ps.serverAddr {
-				client.AdvertiseGroup(ctx, adv)
+				ps.addAdvertToBoards(adv)
 				return
 			}
 
