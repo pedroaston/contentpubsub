@@ -1,7 +1,5 @@
 # ScoutSubs-FastDelivery
-## Made for
-- Project: Master Thesis Dissertation in Telecomunication and Informatics
-- College: Instituto Superior Técnico
+For more context about this system check [here](https://github.com/pedroaston/smartpubsub-ipfs).
 
 ## PubSub Interface
 To use this pubsub middleware, you can use the following functions ...
@@ -41,10 +39,10 @@ pubsub.MyPremiumPublish("portugal T",
 
 ## Latest versions of each variant prepared for testground
 ### Active
-- v0.0.14 >> Base-Unreliable
-- v0.1.18 >> Redirect-Unreliable
-- v0.4.10 >> Base-Rv-Reliable
-- v0.5.16 >> Redirect-Rv-Reliable and latest FastDelivery
+- v0.0.15 >> Base-Unreliable
+- v0.1.19 >> Redirect-Unreliable
+- v0.4.11 >> Base-Rv-Reliable
+- v0.5.17 >> Redirect-Rv-Reliable and latest FastDelivery
 
 ### Abandoned
 - v0.2.13 >> Redirect-Reliable and latest FastDelivery
@@ -52,6 +50,3 @@ pubsub.MyPremiumPublish("portugal T",
 
 ### Auxiliar
 - v0.13s  >> Used for Debugging
-
-## Tools
-In the directory extra-tools are programs that may be used over this pubsub middleware.
