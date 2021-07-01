@@ -506,6 +506,7 @@ func (ps *PubSub) forwardEventUp(dialAddr string, event *pb.Event) {
 			if addr == ps.serverAddr {
 				event.Backup = true
 				ps.Notify(ctxB, event)
+				break
 			}
 
 			conn, err := grpc.Dial(addr, grpc.WithInsecure())
