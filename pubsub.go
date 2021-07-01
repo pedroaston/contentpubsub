@@ -508,9 +508,8 @@ func (ps *PubSub) forwardEventUp(dialAddr string, event *pb.Event) {
 				for backup := range ps.myBackupsFilters {
 					backupID, _ := peer.Decode(backup)
 					if kb.Closer(backupID, ps.ipfsDHT.PeerID(), event.RvId) {
-						fmt.Println("Hello!")
+						event.OriginalRoute = backup
 						ps.Notify(ctxB, event)
-						fmt.Println("Goodbye!")
 						break
 					}
 				}
@@ -576,10 +575,9 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 			}
 		}
 	} else {
-		fmt.Println("Entrei!")
 		ps.upBackLock.RLock()
-		fmt.Println("Dentro!")
 		if _, ok := ps.myBackupsFilters[event.OriginalRoute]; !ok {
+			ps.upBackLock.RUnlock()
 			return &pb.Ack{State: false, Info: "cannot backup"}, nil
 		}
 
@@ -602,7 +600,6 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 			}
 		}
 		ps.upBackLock.RUnlock()
-		fmt.Println("Sai!")
 	}
 	ps.tablesLock.RUnlock()
 
