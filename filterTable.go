@@ -37,8 +37,10 @@ type FilterTable struct {
 }
 
 func NewFilterTable(dht *dht.IpfsDHT) *FilterTable {
-
+  
 	peers := dht.RoutingTable().GetPeerInfos()
+	noAddrs := 0
+	nPeers := len(peers)
 
 	ft := &FilterTable{
 		routes:        make(map[string]*RouteStats),
@@ -48,12 +50,16 @@ func NewFilterTable(dht *dht.IpfsDHT) *FilterTable {
 	}
 
 	for _, peerStat := range peers {
-		addr := dht.FindLocal(peerStat.Id).Addrs[0]
-		if addr != nil {
-			dialAddr := addrForPubSubServer(addr)
+		addrs := dht.FindLocal(peerStat.Id).Addrs
+		if addrs != nil {
+			dialAddr := addrForPubSubServer(addrs[0])
 			ft.routes[peer.Encode(peerStat.Id)] = NewRouteStats(dialAddr)
+		} else {
+			noAddrs ++
 		}
 	}
+
+	fmt.Printf("peers:%d and addrs:%d", nPeers, noAddrs)
 
 	return ft
 }
