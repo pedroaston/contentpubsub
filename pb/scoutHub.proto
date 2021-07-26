@@ -18,6 +18,7 @@ service ScoutHub {
     rpc AckUp(EventAck) returns (Ack) {}
     rpc ResendEvent(stream EventLog) returns (Ack) {}
     rpc AckOp(Ack) returns (Ack) {}
+    rpc HelpNewRv(Event) returns (Ack) {}
 
     // FastDelivery
     rpc AdvertiseGroup(AdvertRequest) returns (Ack) {}
