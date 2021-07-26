@@ -501,7 +501,7 @@ func (ps *PubSub) iAmRVPublish(p *Predicate, event *pb.Event, failedRv bool) err
 
 	eL := make(map[string]bool)
 
-	if failedRv {
+	if failedRv && ps.lives >= 1 {
 		for backup := range ps.myBackupsFilters {
 			backupID, _ := peer.Decode(backup)
 			if kb.Closer(backupID, ps.ipfsDHT.PeerID(), event.RvId) {
@@ -527,41 +527,28 @@ func (ps *PubSub) iAmRVPublish(p *Predicate, event *pb.Event, failedRv bool) err
 					eL[backup] = false
 				}
 			}
+
+			break
 		}
 
-	} else if ps.lives < 2 {
-		closestID := peer.Encode(ps.ipfsDHT.RoutingTable().NearestPeer(kb.ID(kb.ConvertKey(event.RvId))))
+	} else if ps.lives < 1 {
+		alternatives := ps.alternativesToRv(event.RvId)
+		for _, addr := range alternatives {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
 
-		ps.tablesLock.RLock()
-		dialAddr := ps.currentFilterTable.routes[closestID].addr
-		ps.tablesLock.RUnlock()
-		newE := &pb.Event{
-			Event:         event.Event,
-			OriginalRoute: closestID,
-			Backup:        event.Backup,
-			Predicate:     event.Predicate,
-			RvId:          event.RvId,
-			AckAddr:       ps.serverAddr,
-			PubAddr:       event.PubAddr,
-			EventID:       event.EventID,
-			BirthTime:     event.BirthTime,
-			LastHop:       event.LastHop,
-		}
+			conn, err := grpc.Dial(addr, grpc.WithInsecure())
+			if err != nil {
+				log.Fatalf("fail to dial: %v", err)
+			}
+			defer conn.Close()
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		conn, err := grpc.Dial(dialAddr, grpc.WithInsecure())
-		if err != nil {
-			log.Fatalf("fail to dial: %v", err)
-		}
-		defer conn.Close()
-
-		client := pb.NewScoutHubClient(conn)
-		event.LastHop = peer.Encode(ps.ipfsDHT.PeerID())
-		ack, err := client.Notify(ctx, newE)
-		if err == nil && ack.State {
-			eL[closestID] = false
+			client := pb.NewScoutHubClient(conn)
+			ack, err := client.HelpNewRv(ctx, event)
+			if err == nil && ack.State {
+				eL[ack.Info] = false
+				break
+			}
 		}
 	}
 
@@ -614,6 +601,43 @@ func (ps *PubSub) iAmRVPublish(p *Predicate, event *pb.Event, failedRv bool) err
 	}
 
 	return nil
+}
+
+func (ps *PubSub) HelpNewRv(ctx context.Context, event *pb.Event) (*pb.Ack, error) {
+
+	for backup := range ps.myBackupsFilters {
+		backupID, _ := peer.Decode(backup)
+		if kb.Closer(backupID, ps.ipfsDHT.PeerID(), event.RvId) {
+			if ps.lives < 1 {
+				return &pb.Ack{State: false, Info: "new node"}, nil
+			}
+
+			newE := &pb.Event{
+				Event:         event.Event,
+				OriginalRoute: backup,
+				Backup:        true,
+				Predicate:     event.Predicate,
+				RvId:          event.RvId,
+				AckAddr:       event.AckAddr,
+				PubAddr:       event.PubAddr,
+				EventID:       event.EventID,
+				BirthTime:     event.BirthTime,
+				LastHop:       event.LastHop,
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			ack, err := ps.Notify(ctx, newE)
+			if err == nil && ack.State {
+				return &pb.Ack{State: true, Info: peer.Encode(ps.ipfsDHT.PeerID())}, nil
+			}
+
+			break
+		}
+	}
+
+	return &pb.Ack{State: false, Info: "unexpected result"}, nil
 }
 
 // sendAckOp just sends an ack to the operation initiator to confirm completion
