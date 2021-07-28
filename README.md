@@ -41,8 +41,8 @@ pubsub.MyPremiumPublish("portugal T",
 ### Active
 - v0.0.16 >> Base-Unreliable
 - v0.1.20 >> Redirect-Unreliable
-- v0.4.12 >> Base-Rv-Reliable
-- v0.5.18 >> Redirect-Rv-Reliable and latest FastDelivery
+- v0.4.13 >> Base-Rv-Reliable
+- v0.5.20 >> Redirect-Rv-Reliable and latest FastDelivery
 
 ### Abandoned
 - v0.2.13 >> Redirect-Reliable
