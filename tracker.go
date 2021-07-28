@@ -1,13 +1,10 @@
 package contentpubsub
 
 import (
-	"context"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/pedroaston/contentpubsub/pb"
-	"google.golang.org/grpc"
 )
 
 // Tracker keeps "track" of a rendezvous forwarded events'
@@ -17,7 +14,7 @@ import (
 type Tracker struct {
 	leader      bool
 	attr        string
-	rvAddr      string
+	rvPubSub    *PubSub
 	eventStats  map[string]*EventLedger
 	addEventAck chan *pb.EventAck
 	addEventLog chan *EventLedger
@@ -25,12 +22,12 @@ type Tracker struct {
 	buffedAcks  []*pb.EventAck
 }
 
-func NewTracker(leader bool, attr string, rvAddr string, timeToCheckDelivery time.Duration) *Tracker {
+func NewTracker(leader bool, attr string, ps *PubSub, timeToCheckDelivery time.Duration) *Tracker {
 
 	t := &Tracker{
 		leader:      leader,
 		attr:        attr,
-		rvAddr:      rvAddr,
+		rvPubSub:    ps,
 		eventStats:  make(map[string]*EventLedger),
 		addEventAck: make(chan *pb.EventAck, 8),
 		addEventLog: make(chan *EventLedger, 8),
@@ -104,21 +101,6 @@ func (t *Tracker) returnUnAckedEvents() {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	conn, err := grpc.Dial(t.rvAddr, grpc.WithInsecure())
-	if err != nil {
-		log.Fatalf("fail to dial: %v", err)
-	}
-	defer conn.Close()
-
-	client := pb.NewScoutHubClient(conn)
-	stream, err := client.ResendEvent(ctx)
-	if err != nil {
-		return
-	}
-
 	for _, l := range t.eventStats {
 		if !l.old {
 			l.old = true
@@ -136,15 +118,9 @@ func (t *Tracker) returnUnAckedEvents() {
 				Event: l.event,
 			}
 
-			stream.Send(eL)
+			t.rvPubSub.resendEvent(eL)
 		}
 	}
-
-	ack, err := stream.CloseAndRecv()
-	if err != nil || !ack.State {
-		return
-	}
-
 }
 
 // EventLedger keeps track of all acknowledge

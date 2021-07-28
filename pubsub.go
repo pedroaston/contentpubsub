@@ -506,7 +506,7 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 			ps.tablesLock.RUnlock()
 
 			if len(eLog) > 0 {
-				ps.sendLogToTracker(attr.name, eventID, eLog, event)
+				ps.sendLogToTrackers(attr.name, eventID, eLog, event)
 			}
 		} else {
 			ps.tablesLock.RLock()
@@ -675,7 +675,7 @@ func (ps *PubSub) iAmRVPublish(p *Predicate, event *pb.Event, failedRv bool) err
 
 	eID := fmt.Sprintf("%s%d%d%s", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID, event.RvId)
 	if len(eL) > 0 {
-		ps.sendLogToTracker(event.RvId, event.EventID, eL, event)
+		ps.sendLogToTrackers(event.RvId, event.EventID, eL, event)
 	}
 
 	ps.sendAckOp(event.PubAddr, "Publish", eID)
@@ -772,11 +772,24 @@ func (ps *PubSub) sendAckUp(ack *AckUp) {
 	client.AckUp(ctx, eAck)
 }
 
-// sendLogToTracker sends the log to the tracker for it to know then which interested
-// pathways have confirmed to have received the event
-func (ps *PubSub) sendLogToTracker(attr string, eID *pb.EventID, eLog map[string]bool, e *pb.Event) {
+// sendLogToTracker
+func (ps *PubSub) sendLogToTrackers(attr string, eID *pb.EventID, eLog map[string]bool, e *pb.Event) {
 
-	needLeader := true
+	eIDL := fmt.Sprintf("%s%d%d", e.EventID.PublisherID, e.EventID.SessionNumber, e.EventID.SeqID)
+	if ps.myTrackers[attr] != nil && ps.myTrackers[attr].leader {
+		ps.myTrackers[attr].newEventToCheck(NewEventLedger(eIDL, eLog, "", e, ""))
+	} else if ps.myTrackers[attr] != nil {
+		ps.tablesLock.Lock()
+		ps.myTrackers[attr].leader = true
+		ps.tablesLock.Unlock()
+		ps.myTrackers[attr].newEventToCheck(NewEventLedger(eIDL, eLog, "", e, ""))
+	} else {
+		ps.tablesLock.Lock()
+		ps.myTrackers[attr] = NewTracker(true, attr, ps, ps.timeToCheckDelivery)
+		ps.tablesLock.Unlock()
+		ps.myTrackers[attr].newEventToCheck(NewEventLedger(eIDL, eLog, "", e, ""))
+	}
+
 	for _, addr := range ps.alternativesToRv(attr) {
 
 		if addr == ps.serverAddr {
@@ -793,7 +806,6 @@ func (ps *PubSub) sendLogToTracker(attr string, eID *pb.EventID, eLog map[string
 		defer conn.Close()
 
 		rm := &pb.RecruitTrackerMessage{
-			Leader: needLeader,
 			RvID:   attr,
 			RvAddr: ps.serverAddr,
 		}
@@ -807,17 +819,22 @@ func (ps *PubSub) sendLogToTracker(attr string, eID *pb.EventID, eLog map[string
 		}
 
 		client := pb.NewScoutHubClient(conn)
-		resp, err := client.LogToTracker(ctx, eL)
-		if err == nil && resp.State {
-			needLeader = false
-		}
+		client.LogToTracker(ctx, eL)
 	}
 }
 
-// sendAckToTracker sends an acknowledge from event delivery at the Rv to the tracker
+// sendAckToTrackers
 func (ps *PubSub) sendAckToTrackers(ack *pb.EventAck) {
 
-	needLeader := true
+	if ps.myTrackers[ack.RvID] != nil {
+		ps.myTrackers[ack.RvID].addAckToLedger(ack)
+	} else {
+		ps.tablesLock.Lock()
+		ps.myTrackers[ack.RvID] = NewTracker(true, ack.RvID, ps, ps.timeToCheckDelivery)
+		ps.tablesLock.Unlock()
+		ps.myTrackers[ack.RvID].addAckToLedger(ack)
+	}
+
 	for _, addr := range ps.alternativesToRv(ack.RvID) {
 
 		if addr == ps.serverAddr {
@@ -834,7 +851,6 @@ func (ps *PubSub) sendAckToTrackers(ack *pb.EventAck) {
 		defer conn.Close()
 
 		rm := &pb.RecruitTrackerMessage{
-			Leader: needLeader,
 			RvID:   ack.RvID,
 			RvAddr: ps.serverAddr,
 		}
@@ -842,10 +858,7 @@ func (ps *PubSub) sendAckToTrackers(ack *pb.EventAck) {
 		ack.RecruitMessage = rm
 
 		client := pb.NewScoutHubClient(conn)
-		resp, err := client.AckToTracker(ctx, ack)
-		if err == nil && resp.State {
-			needLeader = false
-		}
+		client.AckToTracker(ctx, ack)
 	}
 }
 
@@ -934,12 +947,10 @@ func (ps *PubSub) AckOp(ctx context.Context, ack *pb.Ack) (*pb.Ack, error) {
 func (ps *PubSub) LogToTracker(ctx context.Context, log *pb.EventLog) (*pb.Ack, error) {
 	fmt.Println("LogTracker >> " + ps.serverAddr)
 
-	if ps.myTrackers[log.RecruitMessage.RvID] != nil {
-		ps.myTrackers[log.RecruitMessage.RvID].leader = log.RecruitMessage.Leader
-		ps.myTrackers[log.RecruitMessage.RvID].rvAddr = log.RecruitMessage.RvAddr
-	} else {
-		ps.myTrackers[log.RecruitMessage.RvID] = NewTracker(log.RecruitMessage.Leader, log.RecruitMessage.RvID,
-			log.RecruitMessage.RvAddr, ps.timeToCheckDelivery)
+	if ps.myTrackers[log.RecruitMessage.RvID] == nil {
+
+		ps.myTrackers[log.RecruitMessage.RvID] = NewTracker(false, log.RecruitMessage.RvID,
+			ps, ps.timeToCheckDelivery)
 
 		for _, addr := range ps.alternativesToRv(log.RvID) {
 
@@ -977,12 +988,10 @@ func (ps *PubSub) LogToTracker(ctx context.Context, log *pb.EventLog) (*pb.Ack, 
 func (ps *PubSub) AckToTracker(ctx context.Context, ack *pb.EventAck) (*pb.Ack, error) {
 	fmt.Println("AckToTracker >> " + ps.serverAddr)
 
-	if ps.myTrackers[ack.RecruitMessage.RvID] != nil {
-		ps.myTrackers[ack.RecruitMessage.RvID].leader = ack.RecruitMessage.Leader
-		ps.myTrackers[ack.RecruitMessage.RvID].rvAddr = ack.RecruitMessage.RvAddr
-	} else {
-		ps.myTrackers[ack.RecruitMessage.RvID] = NewTracker(ack.RecruitMessage.Leader, ack.RecruitMessage.RvID,
-			ack.RecruitMessage.RvAddr, ps.timeToCheckDelivery)
+	if ps.myTrackers[ack.RecruitMessage.RvID] == nil {
+
+		ps.myTrackers[ack.RecruitMessage.RvID] = NewTracker(false, ack.RecruitMessage.RvID,
+			ps, ps.timeToCheckDelivery)
 
 		for _, addr := range ps.alternativesToRv(ack.RecruitMessage.RvID) {
 
@@ -1051,57 +1060,45 @@ func (ps *PubSub) TrackerRefresh(ctx context.Context, req *pb.RecruitTrackerMess
 	return &pb.Ack{State: true, Info: ""}, nil
 }
 
-// ResendEvent is a remote call used by the tracker to communicate to the Rv node which
-// are the event pathways that are still missing so that still in this call the Rv
-// node initiates a retransmission process for every unacknowledge event pathway
-func (ps *PubSub) ResendEvent(stream pb.ScoutHub_ResendEventServer) error {
-	fmt.Println("ResendEvent >> " + ps.serverAddr)
+// resendEvent
+func (ps *PubSub) resendEvent(eLog *pb.EventLog) {
 
 	ps.tablesLock.RLock()
 	defer ps.tablesLock.RUnlock()
 
-	for {
-		eLog, err := stream.Recv()
-		if err == io.EOF {
-			return stream.SendAndClose(&pb.Ack{State: true, Info: ""})
-		} else if err != nil {
-			return err
+	for p := range eLog.Log {
+
+		dialAddr := ps.currentFilterTable.routes[p].addr
+		newE := &pb.Event{
+			Event:         eLog.Event.Event,
+			OriginalRoute: p,
+			Backup:        eLog.Event.Backup,
+			Predicate:     eLog.Event.Predicate,
+			RvId:          eLog.Event.RvId,
+			AckAddr:       eLog.Event.AckAddr,
+			PubAddr:       eLog.Event.PubAddr,
+			EventID:       eLog.Event.EventID,
+			BirthTime:     eLog.Event.BirthTime,
+			LastHop:       eLog.Event.LastHop,
 		}
 
-		for p := range eLog.Log {
-
-			dialAddr := ps.currentFilterTable.routes[p].addr
-			newE := &pb.Event{
-				Event:         eLog.Event.Event,
-				OriginalRoute: p,
-				Backup:        eLog.Event.Backup,
-				Predicate:     eLog.Event.Predicate,
-				RvId:          eLog.Event.RvId,
-				AckAddr:       eLog.Event.AckAddr,
-				PubAddr:       eLog.Event.PubAddr,
-				EventID:       eLog.Event.EventID,
-				BirthTime:     eLog.Event.BirthTime,
-				LastHop:       eLog.Event.LastHop,
+		ps.currentFilterTable.redirectLock.Lock()
+		ps.nextFilterTable.redirectLock.Lock()
+		if ps.currentFilterTable.redirectTable[p][eLog.Event.RvId] != "" {
+			ps.eventsToForwardDown <- &ForwardEvent{
+				dialAddr:       dialAddr,
+				event:          newE,
+				redirectOption: ps.currentFilterTable.redirectTable[p][eLog.Event.RvId],
 			}
-
-			ps.currentFilterTable.redirectLock.Lock()
-			ps.nextFilterTable.redirectLock.Lock()
-			if ps.currentFilterTable.redirectTable[p][eLog.Event.RvId] != "" {
-				ps.eventsToForwardDown <- &ForwardEvent{
-					dialAddr:       dialAddr,
-					event:          newE,
-					redirectOption: ps.currentFilterTable.redirectTable[p][eLog.Event.RvId],
-				}
-			} else {
-				ps.eventsToForwardDown <- &ForwardEvent{
-					dialAddr:       dialAddr,
-					event:          newE,
-					redirectOption: "",
-				}
+		} else {
+			ps.eventsToForwardDown <- &ForwardEvent{
+				dialAddr:       dialAddr,
+				event:          newE,
+				redirectOption: "",
 			}
-			ps.currentFilterTable.redirectLock.Unlock()
-			ps.nextFilterTable.redirectLock.Unlock()
 		}
+		ps.currentFilterTable.redirectLock.Unlock()
+		ps.nextFilterTable.redirectLock.Unlock()
 	}
 }
 

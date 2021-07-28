@@ -16,7 +16,6 @@ service ScoutHub {
     rpc AckToTracker(EventAck) returns (Ack) {}
     rpc TrackerRefresh(RecruitTrackerMessage) returns (Ack) {}
     rpc AckUp(EventAck) returns (Ack) {}
-    rpc ResendEvent(stream EventLog) returns (Ack) {}
     rpc AckOp(Ack) returns (Ack) {}
     rpc HelpNewRv(Event) returns (Ack) {}
 
