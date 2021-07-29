@@ -47,14 +47,18 @@ func NewFilterTable(dht *dht.IpfsDHT) *FilterTable {
 		redirectLock:  &sync.Mutex{},
 	}
 
+	noAddr := 0
 	for _, peerStat := range peers {
-		addr := dht.FindLocal(peerStat.Id).Addrs[0]
+		addr := dht.FindLocal(peerStat.Id).Addrs
 		if addr != nil {
-			dialAddr := addrForPubSubServer(addr)
+			dialAddr := addrForPubSubServer(addr[0])
 			ft.routes[peer.Encode(peerStat.Id)] = NewRouteStats(dialAddr)
+		} else {
+			noAddr++
 		}
 	}
 
+	fmt.Printf("# Peers: %d | # No Addrs: %d", len(peers), noAddr)
 	return ft
 }
 
