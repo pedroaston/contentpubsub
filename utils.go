@@ -13,7 +13,12 @@ func addrForPubSubServer(addr multiaddr.Multiaddr) string {
 
 	if TestgroundReady {
 		aux := strings.Split(addr.String(), "/")
-		return fmt.Sprintf("%s:%d%s", aux[2], 1, aux[4][1:])
+		if aux[4][0] == 2 {
+			return fmt.Sprintf("%s:%d%s", aux[2], 4, aux[4][1:])
+		} else {
+			return fmt.Sprintf("%s:%d%s", aux[2], 2, aux[4][1:])
+		}
+
 	} else {
 		aux := strings.Split(addr.String(), "/")
 		dialAddr := aux[2] + ":4" + aux[4][1:]
