@@ -104,5 +104,6 @@ func (r *HistoryRecord) CorrectnessStats(expected []string) (int, int) {
 		}
 	}
 
+	r.receivedEvents = nil
 	return missed, duplicated
 }
