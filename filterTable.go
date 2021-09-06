@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/libp2p/go-libp2p-core/peer"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 )
 
@@ -38,21 +37,11 @@ type FilterTable struct {
 
 func NewFilterTable(dht *dht.IpfsDHT) *FilterTable {
 
-	peers := dht.RoutingTable().GetPeerInfos()
-
 	ft := &FilterTable{
 		routes:        make(map[string]*RouteStats),
 		redirectTable: make(map[string]map[string]string),
 		routeTracker:  make(map[string][]string),
 		redirectLock:  &sync.Mutex{},
-	}
-
-	for _, peerStat := range peers {
-		addr := dht.FindLocal(peerStat.Id).Addrs[0]
-		if addr != nil {
-			dialAddr := addrForPubSubServer(addr)
-			ft.routes[peer.Encode(peerStat.Id)] = NewRouteStats(dialAddr)
-		}
 	}
 
 	return ft
