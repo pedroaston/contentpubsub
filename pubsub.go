@@ -316,9 +316,20 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 			backups[int32(i)] = backup
 		}
 
-		ps.tablesLock.RLock()
-		dialAddr := ps.currentFilterTable.routes[peer.Encode(nextHop)].addr
-		ps.tablesLock.RUnlock()
+		var dialAddr string
+		if ps.currentFilterTable.routes[peer.Encode(nextHop)] == nil {
+			closestAddr := ps.ipfsDHT.FindLocal(nextHop).Addrs[0]
+			if closestAddr == nil {
+				return nil, errors.New("no address for closest peer")
+			} else {
+				dialAddr = addrForPubSubServer(closestAddr)
+			}
+		} else {
+			ps.tablesLock.RLock()
+			dialAddr = ps.currentFilterTable.routes[peer.Encode(nextHop)].addr
+			ps.tablesLock.RUnlock()
+		}
+
 		subForward := &pb.Subscription{
 			PeerID:    peer.Encode(ps.ipfsDHT.PeerID()),
 			Predicate: sub.Predicate,
