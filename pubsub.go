@@ -520,9 +520,19 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 				ps.sendLogToTrackers(attr.name, eventID, eLog, event)
 			}
 		} else {
-			ps.tablesLock.RLock()
-			dialAddr := ps.currentFilterTable.routes[peer.Encode(nextRvHop)].addr
-			ps.tablesLock.RUnlock()
+			var dialAddr string
+			if ps.currentFilterTable.routes[peer.Encode(nextRvHop)] == nil {
+				closestAddr := ps.ipfsDHT.FindLocal(nextRvHop).Addrs[0]
+				if closestAddr == nil {
+					return errors.New("no address for closest peer")
+				} else {
+					dialAddr = addrForPubSubServer(closestAddr)
+				}
+			} else {
+				ps.tablesLock.RLock()
+				dialAddr = ps.currentFilterTable.routes[peer.Encode(nextRvHop)].addr
+				ps.tablesLock.RUnlock()
+			}
 
 			eID := fmt.Sprintf("%s%d%d%s", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID, event.RvId)
 			ps.unconfirmedEvents[eID] = &PubEventState{event: event, aged: false, dialAddr: dialAddr}
@@ -552,9 +562,19 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 	isRv, nextRvHop := ps.rendezvousSelfCheck(event.RvId)
 	if !isRv && nextRvHop != "" {
 
-		ps.tablesLock.RLock()
-		dialAddr := ps.currentFilterTable.routes[peer.Encode(nextRvHop)].addr
-		ps.tablesLock.RUnlock()
+		var dialAddr string
+		if ps.currentFilterTable.routes[peer.Encode(nextRvHop)] == nil {
+			closestAddr := ps.ipfsDHT.FindLocal(nextRvHop).Addrs[0]
+			if closestAddr == nil {
+				return nil, errors.New("no address for closest peer")
+			} else {
+				dialAddr = addrForPubSubServer(closestAddr)
+			}
+		} else {
+			ps.tablesLock.RLock()
+			dialAddr = ps.currentFilterTable.routes[peer.Encode(nextRvHop)].addr
+			ps.tablesLock.RUnlock()
+		}
 
 		ps.eventsToForwardUp <- &ForwardEvent{dialAddr: dialAddr, event: event}
 
