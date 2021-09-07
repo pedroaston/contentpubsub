@@ -39,10 +39,10 @@ pubsub.MyPremiumPublish("portugal T",
 
 ## Latest versions of each variant prepared for testground
 ### Active
-- v0.0.17 >> Base-Unreliable
-- v0.1.21 >> Redirect-Unreliable
-- v0.4.16 >> Base-Rv-Reliable
-- v0.5.21 >> Redirect-Rv-Reliable and latest FastDelivery
+- v0.0.18 >> Base-Unreliable
+- v0.1.22 >> Redirect-Unreliable
+- v0.4.17 >> Base-Rv-Reliable
+- v0.5.22 >> Redirect-Rv-Reliable and latest FastDelivery
 
 ### Abandoned
 - v0.2.13 >> Redirect-Reliable
