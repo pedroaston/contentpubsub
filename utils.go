@@ -8,7 +8,7 @@ import (
 	"github.com/multiformats/go-multiaddr"
 )
 
-const TestgroundReady = true
+const TestgroundReady = false
 
 func addrForPubSubServer(addr multiaddr.Multiaddr) string {
 
