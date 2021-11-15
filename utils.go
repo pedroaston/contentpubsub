@@ -8,7 +8,7 @@ import (
 	"github.com/multiformats/go-multiaddr"
 )
 
-const TestgroundReady = true
+const TestgroundReady = false
 
 func addrForPubSubServer(addr multiaddr.Multiaddr) string {
 
@@ -21,7 +21,7 @@ func addrForPubSubServer(addr multiaddr.Multiaddr) string {
 		return dialAddr
 	} else {
 		aux := strings.Split(addr.String(), "/")
-		dialAddr := aux[2] + ":4" + aux[4][1:]
+		dialAddr := aux[2] + ":3" + aux[4][1:]
 
 		return dialAddr
 	}

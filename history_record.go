@@ -19,6 +19,8 @@ type EventRecord struct {
 func NewHistoryRecord() *HistoryRecord {
 	record := &HistoryRecord{operationHistory: make(map[string]int)}
 
+	record.operationHistory["Notify"] = 0
+
 	return record
 }
 

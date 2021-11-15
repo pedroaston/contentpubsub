@@ -103,6 +103,7 @@ func NewPubSub(dht *kaddht.IpfsDHT, cfg *SetupPubSub) *PubSub {
 		currentFilterTable:        filterTable,
 		nextFilterTable:           auxFilterTable,
 		myFilters:                 mySubs,
+		ipfsDHT:                   dht,
 		myBackupsFilters:          make(map[string]*FilterTable),
 		myTrackers:                make(map[string]*Tracker),
 		myETrackers:               make(map[string]*EventLedger),
@@ -115,12 +116,14 @@ func NewPubSub(dht *kaddht.IpfsDHT, cfg *SetupPubSub) *PubSub {
 		eventsToForwardUp:         make(chan *ForwardEvent, cfg.ConcurrentProcessingFactor),
 		eventsToForwardDown:       make(chan *ForwardEvent, cfg.ConcurrentProcessingFactor),
 		terminate:                 make(chan string),
-		advToForward:              make(chan *ForwardAdvert),
-		ackToSendUp:               make(chan *AckUp),
+		advToForward:              make(chan *ForwardAdvert, cfg.ConcurrentProcessingFactor),
+		ackToSendUp:               make(chan *AckUp, cfg.ConcurrentProcessingFactor),
 		heartbeatTicker:           time.NewTicker(cfg.SubRefreshRateMin * time.Minute),
 		refreshTicker:             time.NewTicker(2 * cfg.SubRefreshRateMin * time.Minute),
 		eventTicker:               time.NewTicker(cfg.OpResendRate * time.Second),
 		subTicker:                 time.NewTicker(cfg.OpResendRate * time.Second),
+		eventTickerState:          false,
+		subTickerState:            false,
 		tablesLock:                &sync.RWMutex{},
 		upBackLock:                &sync.RWMutex{},
 		ackOpLock:                 &sync.Mutex{},
@@ -131,12 +134,9 @@ func NewPubSub(dht *kaddht.IpfsDHT, cfg *SetupPubSub) *PubSub {
 		lives:                     0,
 	}
 
-	ps.ipfsDHT = dht
 	ps.myBackups = ps.getBackups()
 	ps.eventTicker.Stop()
-	ps.eventTickerState = false
 	ps.subTicker.Stop()
-	ps.subTickerState = false
 
 	dialAddr := addrForPubSubServer(ps.ipfsDHT.Host().Addrs()[0])
 	lis, err := net.Listen("tcp", dialAddr)
@@ -376,7 +376,6 @@ func (ps *PubSub) forwardSub(dialAddr string, sub *pb.Subscription) {
 	if err != nil || !ack.State {
 		alternatives := ps.alternativesToRv(sub.RvId)
 		for _, addr := range alternatives {
-
 			if addr == ps.serverAddr {
 				return
 			}
@@ -1149,6 +1148,7 @@ func (ps *PubSub) forwardEventUp(dialAddr string, event *pb.Event) {
 // Notify is a remote function called by a external peer to send an Event downstream
 func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) {
 	fmt.Println("Notify >> " + ps.serverAddr)
+	ps.record.operationHistory["Notify"]++
 
 	p, err := NewPredicate(event.Predicate, ps.maxAttributesPerPredicate)
 	if err != nil {
@@ -2473,6 +2473,12 @@ func (ps *PubSub) ReturnSubStats() []int {
 func (ps *PubSub) ReturnCorrectnessStats(expected []string) (int, int) {
 
 	return ps.record.CorrectnessStats(expected)
+}
+
+// ReturnOpStats returns the number of times a operation was executed
+func (ps *PubSub) ReturnOpStats(opName string) int {
+
+	return ps.record.operationHistory[opName]
 }
 
 // SetHasOldPeer only goal is to set peer as old in testing scenario

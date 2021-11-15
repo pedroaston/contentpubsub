@@ -7,6 +7,8 @@ import (
 
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-core/peerstore"
+	kb "github.com/libp2p/go-libp2p-kbucket"
+	"github.com/stretchr/testify/require"
 
 	swarmt "github.com/libp2p/go-libp2p-swarm/testing"
 	bhost "github.com/libp2p/go-libp2p/p2p/host/basic"
@@ -39,14 +41,11 @@ func setupDHT(ctx context.Context, t *testing.T, client bool, options ...dht.Opt
 		baseOpts = append(baseOpts, dht.Mode(dht.ModeServer))
 	}
 
-	d, err := dht.New(
-		ctx,
-		bhost.New(swarmt.GenSwarm(t, ctx, swarmt.OptDisableReuseport)),
-		append(baseOpts, options...)...,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	host, err := bhost.NewHost(ctx, swarmt.GenSwarm(t, ctx, swarmt.OptDisableReuseport), new(bhost.HostOpts))
+	require.NoError(t, err)
+
+	d, err := dht.New(ctx, host, append(baseOpts, options...)...)
+	require.NoError(t, err)
 	return d
 }
 
@@ -97,6 +96,8 @@ func connectNoSync(t *testing.T, ctx context.Context, a, b *dht.IpfsDHT) {
 func wait(t *testing.T, ctx context.Context, a, b *dht.IpfsDHT) {
 	t.Helper()
 
+	// loop until connection notification has been received.
+	// under high load, this may not happen as immediately as we would like.
 	for a.RoutingTable().Find(b.Host().ID()) == "" {
 		select {
 		case <-ctx.Done():
@@ -111,4 +112,20 @@ func connect(t *testing.T, ctx context.Context, a, b *dht.IpfsDHT) {
 	connectNoSync(t, ctx, a, b)
 	wait(t, ctx, a, b)
 	wait(t, ctx, b, a)
+}
+
+// bootstrapHelper organizes peers from closest to furthest to a key
+func bootstrapHelper(kads []*dht.IpfsDHT, attr string) []int {
+
+	var order []int
+	orderedPeers := kads[0].RoutingTable().NearestPeers(kb.ConvertKey(attr), len(kads)-1)
+	for _, p := range orderedPeers {
+		for i, kad := range kads {
+			if kad.PeerID().Pretty() == p.Pretty() {
+				order = append(order, i)
+			}
+		}
+	}
+
+	return order
 }
