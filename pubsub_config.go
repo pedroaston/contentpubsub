@@ -33,6 +33,9 @@ type SetupPubSub struct {
 
 	// Number of peer he may help in FastDelivery
 	Capacity int
+
+	// True to activate redirect mechanism
+	RedirectMechanism bool
 }
 
 func DefaultConfig(region string, cap int) *SetupPubSub {
@@ -48,6 +51,7 @@ func DefaultConfig(region string, cap int) *SetupPubSub {
 		TimeToCheckDelivery:        time.Duration(30),
 		Region:                     region,
 		Capacity:                   cap,
+		RedirectMechanism:          true,
 	}
 
 	return cfg
