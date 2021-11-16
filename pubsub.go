@@ -33,6 +33,7 @@ type PubSub struct {
 	region                    string
 	activeRedirect            bool
 	activeReliability         bool
+	addrOption                bool
 
 	pb.UnimplementedScoutHubServer
 	server     *grpc.Server
@@ -89,8 +90,8 @@ type PubSub struct {
 
 func NewPubSub(dht *kaddht.IpfsDHT, cfg *SetupPubSub) *PubSub {
 
-	filterTable := NewFilterTable(dht)
-	auxFilterTable := NewFilterTable(dht)
+	filterTable := NewFilterTable(dht, cfg.TestgroundReady)
+	auxFilterTable := NewFilterTable(dht, cfg.TestgroundReady)
 	mySubs := NewRouteStats("no need")
 
 	ps := &PubSub{
@@ -104,6 +105,7 @@ func NewPubSub(dht *kaddht.IpfsDHT, cfg *SetupPubSub) *PubSub {
 		capacity:                  cfg.Capacity,
 		activeRedirect:            cfg.RedirectMechanism,
 		activeReliability:         cfg.ReliableMechanisms,
+		addrOption:                cfg.TestgroundReady,
 		currentFilterTable:        filterTable,
 		nextFilterTable:           auxFilterTable,
 		myFilters:                 mySubs,
@@ -142,7 +144,7 @@ func NewPubSub(dht *kaddht.IpfsDHT, cfg *SetupPubSub) *PubSub {
 	ps.eventTicker.Stop()
 	ps.subTicker.Stop()
 
-	dialAddr := addrForPubSubServer(ps.ipfsDHT.Host().Addrs()[0])
+	dialAddr := addrForPubSubServer(ps.ipfsDHT.Host().Addrs()[0], ps.addrOption)
 	lis, err := net.Listen("tcp", dialAddr)
 	if err != nil {
 		return nil
@@ -224,7 +226,7 @@ func (ps *PubSub) MySubscribe(info string) error {
 	if closestAddr == nil {
 		return errors.New("no address for closest peer")
 	} else {
-		dialAddr = addrForPubSubServer(closestAddr)
+		dialAddr = addrForPubSubServer(closestAddr, ps.addrOption)
 	}
 
 	if ps.activeRedirect {
@@ -676,13 +678,9 @@ func (ps *PubSub) iAmRVPublish(p *Predicate, event *pb.Event, failedRv bool) err
 
 	for next, route := range ps.currentFilterTable.routes {
 		if !ps.activeReliability && next == event.LastHop {
-			println("nope")
-			println(len(route.filters[1]))
 			continue
 		}
 
-		println("good")
-		println(len(route.filters[1]))
 		if route.IsInterested(p) {
 			eL[next] = false
 			dialAddr := route.addr
@@ -1568,7 +1566,7 @@ func (ps *PubSub) updateRvRegion(route string, info string, rvID string) error {
 			continue
 		}
 
-		altAddr := addrForPubSubServer(backupAddr)
+		altAddr := addrForPubSubServer(backupAddr, ps.addrOption)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -1605,7 +1603,7 @@ func (ps *PubSub) getBackups() []string {
 			continue
 		}
 
-		dialAddr = addrForPubSubServer(backupAddr)
+		dialAddr = addrForPubSubServer(backupAddr, ps.addrOption)
 		backups = append(backups, dialAddr)
 	}
 
@@ -1632,7 +1630,7 @@ func (ps *PubSub) eraseOldFetchNewBackup(oldAddr string) {
 	if backupAddr == nil {
 		return
 	}
-	newAddr := addrForPubSubServer(backupAddr)
+	newAddr := addrForPubSubServer(backupAddr, ps.addrOption)
 	ps.myBackups[refIndex] = newAddr
 
 	updates, err := ps.filtersForBackupRefresh()
@@ -1783,7 +1781,7 @@ func (ps *PubSub) alternativesToRv(rvID string) []string {
 		if kb.Closer(ID, selfID, rvID) {
 			attrAddr := ps.ipfsDHT.FindLocal(ID).Addrs[0]
 			if attrAddr != nil {
-				validAlt = append(validAlt, addrForPubSubServer(attrAddr))
+				validAlt = append(validAlt, addrForPubSubServer(attrAddr, ps.addrOption))
 			}
 		} else {
 			validAlt = append(validAlt, ps.serverAddr)
@@ -1885,7 +1883,7 @@ func (ps *PubSub) processLoop() {
 		case <-ps.refreshTicker.C:
 			ps.tablesLock.Lock()
 			ps.currentFilterTable = ps.nextFilterTable
-			ps.nextFilterTable = NewFilterTable(ps.ipfsDHT)
+			ps.nextFilterTable = NewFilterTable(ps.ipfsDHT, ps.addrOption)
 			ps.currentAdvertiseBoard = ps.nextAdvertiseBoard
 			ps.nextAdvertiseBoard = nil
 			ps.tablesLock.Unlock()
@@ -2570,7 +2568,7 @@ func (ps *PubSub) ReturnEventStats() []int {
 // confirmation of subscription completion
 func (ps *PubSub) ReturnSubStats() []int {
 
-	return ps.record.timeToSub
+	return ps.record.SubStats()
 }
 
 // ReturnCorrectnessStats returns the number of events missing and duplicated

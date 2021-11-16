@@ -102,7 +102,7 @@ func TestNewFilterTable(t *testing.T) {
 	connect(t, ctx, dhts[0], dhts[3])
 	connect(t, ctx, dhts[0], dhts[4])
 
-	ft := NewFilterTable(dhts[0])
+	ft := NewFilterTable(dhts[0], false)
 
 	if len(ft.routes) != 4 {
 		t.Fatal("Error creating filterTable")

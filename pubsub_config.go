@@ -39,6 +39,9 @@ type SetupPubSub struct {
 
 	// True to activate the tracking mechanism and operation acknowledgement
 	ReliableMechanisms bool
+
+	// Should be true if we are running with our testground testbed
+	TestgroundReady bool
 }
 
 func DefaultConfig(region string, cap int) *SetupPubSub {
@@ -56,6 +59,7 @@ func DefaultConfig(region string, cap int) *SetupPubSub {
 		Capacity:                   cap,
 		RedirectMechanism:          true,
 		ReliableMechanisms:         true,
+		TestgroundReady:            false,
 	}
 
 	return cfg

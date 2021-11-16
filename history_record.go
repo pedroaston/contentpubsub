@@ -74,6 +74,15 @@ func (r *HistoryRecord) EventStats() []int {
 	return events
 }
 
+// SubStats returns all subscriptions time to completion and deletes the saved values
+func (r *HistoryRecord) SubStats() []int {
+
+	res := r.timeToSub
+	r.timeToSub = nil
+
+	return res
+}
+
 // CompileCorrectnessResults returns the number of events missing or received
 // more than once, by comparing with a array of supposed received events
 func (r *HistoryRecord) CorrectnessStats(expected []string) (int, int) {

@@ -36,7 +36,7 @@ type FilterTable struct {
 	redirectLock  *sync.Mutex
 }
 
-func NewFilterTable(dht *dht.IpfsDHT) *FilterTable {
+func NewFilterTable(dht *dht.IpfsDHT, addrOption bool) *FilterTable {
 
 	peers := dht.RoutingTable().GetPeerInfos()
 
@@ -50,7 +50,7 @@ func NewFilterTable(dht *dht.IpfsDHT) *FilterTable {
 	for _, peerStat := range peers {
 		addr := dht.FindLocal(peerStat.Id).Addrs[0]
 		if addr != nil {
-			dialAddr := addrForPubSubServer(addr)
+			dialAddr := addrForPubSubServer(addr, addrOption)
 			ft.routes[peer.Encode(peerStat.Id)] = NewRouteStats(dialAddr)
 		}
 	}
