@@ -32,6 +32,7 @@ type PubSub struct {
 	faultToleranceFactor      int
 	region                    string
 	activeRedirect            bool
+	activeReliability         bool
 
 	pb.UnimplementedScoutHubServer
 	server     *grpc.Server
@@ -102,6 +103,7 @@ func NewPubSub(dht *kaddht.IpfsDHT, cfg *SetupPubSub) *PubSub {
 		region:                    cfg.Region,
 		capacity:                  cfg.Capacity,
 		activeRedirect:            cfg.RedirectMechanism,
+		activeReliability:         cfg.ReliableMechanisms,
 		currentFilterTable:        filterTable,
 		nextFilterTable:           auxFilterTable,
 		myFilters:                 mySubs,
@@ -243,17 +245,19 @@ func (ps *PubSub) MySubscribe(info string) error {
 		IntAddr:   ps.serverAddr,
 	}
 
-	ps.unconfirmedSubs[sub.Predicate] = &SubState{
-		sub:      sub,
-		aged:     false,
-		dialAddr: dialAddr,
-		started:  time.Now().Format(time.StampMilli),
-	}
+	if ps.activeReliability {
+		ps.unconfirmedSubs[sub.Predicate] = &SubState{
+			sub:      sub,
+			aged:     false,
+			dialAddr: dialAddr,
+			started:  time.Now().Format(time.StampMilli),
+		}
 
-	if !ps.eventTickerState {
-		ps.subTicker.Reset(ps.opResendRate * time.Second)
-		ps.subTickerState = true
-		ps.unconfirmedSubs[sub.Predicate].aged = true
+		if !ps.subTickerState {
+			ps.subTicker.Reset(ps.opResendRate * time.Second)
+			ps.subTickerState = true
+			ps.unconfirmedSubs[sub.Predicate].aged = true
+		}
 	}
 
 	ps.subsToForward <- &ForwardSubRequest{dialAddr: dialAddr, sub: sub}
@@ -309,7 +313,9 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 	ps.tablesLock.RUnlock()
 
 	if alreadyDone {
-		ps.sendAckOp(sub.SubAddr, "Subscribe", sub.Predicate)
+		if ps.activeReliability {
+			ps.sendAckOp(sub.SubAddr, "Subscribe", sub.Predicate)
+		}
 		return &pb.Ack{State: true, Info: ""}, nil
 	} else if pNew != nil {
 		sub.Predicate = pNew.ToString()
@@ -359,7 +365,10 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 	} else if !isRv {
 		return &pb.Ack{State: false, Info: "rendezvous check failed"}, nil
 	} else {
-		ps.sendAckOp(sub.SubAddr, "Subscribe", sub.Predicate)
+		if ps.activeReliability {
+			ps.sendAckOp(sub.SubAddr, "Subscribe", sub.Predicate)
+		}
+
 		ps.updateRvRegion(sub.PeerID, sub.Predicate, sub.RvId)
 	}
 
@@ -523,7 +532,7 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 			}
 			ps.tablesLock.RUnlock()
 
-			if len(eLog) > 0 {
+			if ps.activeReliability && len(eLog) > 0 {
 				ps.sendLogToTrackers(attr.name, eventID, eLog, event)
 			}
 		} else {
@@ -531,12 +540,19 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 			dialAddr := ps.currentFilterTable.routes[peer.Encode(nextRvHop)].addr
 			ps.tablesLock.RUnlock()
 
-			eID := fmt.Sprintf("%s%d%d%s", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID, event.RvId)
-			ps.unconfirmedEvents[eID] = &PubEventState{event: event, aged: false, dialAddr: dialAddr}
-			if !ps.eventTickerState {
-				ps.eventTicker.Reset(ps.opResendRate * time.Second)
-				ps.eventTickerState = true
-				ps.unconfirmedEvents[eID].aged = true
+			if ps.activeReliability {
+				eID := fmt.Sprintf("%s%d%d%s", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID, event.RvId)
+				ps.unconfirmedEvents[eID] = &PubEventState{event: event, aged: false, dialAddr: dialAddr}
+				if !ps.eventTickerState {
+					ps.eventTicker.Reset(ps.opResendRate * time.Second)
+					ps.eventTickerState = true
+					ps.unconfirmedEvents[eID].aged = true
+				}
+			} else {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+
+				ps.Notify(ctx, event)
 			}
 
 			ps.eventsToForwardUp <- &ForwardEvent{dialAddr: dialAddr, event: event}
@@ -559,11 +575,28 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 	isRv, nextRvHop := ps.rendezvousSelfCheck(event.RvId)
 	if !isRv && nextRvHop != "" {
 
+		if !ps.activeReliability {
+			ps.Notify(ctx, event)
+		}
+
+		newE := &pb.Event{
+			Event:         event.Event,
+			OriginalRoute: event.OriginalRoute,
+			Backup:        event.Backup,
+			Predicate:     event.Predicate,
+			RvId:          event.RvId,
+			AckAddr:       event.AckAddr,
+			PubAddr:       event.PubAddr,
+			EventID:       event.EventID,
+			BirthTime:     event.BirthTime,
+			LastHop:       peer.Encode(ps.ipfsDHT.PeerID()),
+		}
+
 		ps.tablesLock.RLock()
 		dialAddr := ps.currentFilterTable.routes[peer.Encode(nextRvHop)].addr
 		ps.tablesLock.RUnlock()
 
-		ps.eventsToForwardUp <- &ForwardEvent{dialAddr: dialAddr, event: event}
+		ps.eventsToForwardUp <- &ForwardEvent{dialAddr: dialAddr, event: newE}
 
 	} else if !isRv {
 		return &pb.Ack{State: false, Info: "rendezvous check failed"}, nil
@@ -642,8 +675,15 @@ func (ps *PubSub) iAmRVPublish(p *Predicate, event *pb.Event, failedRv bool) err
 	event.AckAddr = ps.serverAddr
 
 	for next, route := range ps.currentFilterTable.routes {
-		if route.IsInterested(p) {
+		if !ps.activeReliability && next == event.LastHop {
+			println("nope")
+			println(len(route.filters[1]))
+			continue
+		}
 
+		println("good")
+		println(len(route.filters[1]))
+		if route.IsInterested(p) {
 			eL[next] = false
 			dialAddr := route.addr
 			newE := &pb.Event{
@@ -702,12 +742,14 @@ func (ps *PubSub) iAmRVPublish(p *Predicate, event *pb.Event, failedRv bool) err
 	}
 	ps.tablesLock.RUnlock()
 
-	eID := fmt.Sprintf("%s%d%d%s", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID, event.RvId)
-	if len(eL) > 0 {
-		ps.sendLogToTrackers(event.RvId, event.EventID, eL, event)
-	}
+	if ps.activeReliability {
+		eID := fmt.Sprintf("%s%d%d%s", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID, event.RvId)
+		if len(eL) > 0 {
+			ps.sendLogToTrackers(event.RvId, event.EventID, eL, event)
+		}
 
-	ps.sendAckOp(event.PubAddr, "Publish", eID)
+		ps.sendAckOp(event.PubAddr, "Publish", eID)
+	}
 
 	if ps.myFilters.IsInterested(p) {
 		ps.interestingEvents <- event
@@ -1210,7 +1252,7 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 	originalDestination := event.OriginalRoute
 
 	eID := fmt.Sprintf("%s%d%d%s", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID, event.RvId)
-	if ps.myETrackers[eID] != nil {
+	if ps.activeReliability && ps.myETrackers[eID] != nil {
 
 		for node, received := range ps.myETrackers[eID].eventLog {
 			if !received {
@@ -1331,10 +1373,12 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 			}
 		}
 
-		if len(eL) > 0 && ps.myETrackers[eID] == nil {
-			ps.myETrackers[eID] = NewEventLedger(eID, eL, ackAddr, event, originalDestination)
-		} else {
-			ps.ackToSendUp <- &AckUp{dialAddr: ackAddr, eventID: event.EventID, peerID: originalDestination, rvID: event.RvId}
+		if ps.activeReliability {
+			if len(eL) > 0 && ps.myETrackers[eID] == nil {
+				ps.myETrackers[eID] = NewEventLedger(eID, eL, ackAddr, event, originalDestination)
+			} else {
+				ps.ackToSendUp <- &AckUp{dialAddr: ackAddr, eventID: event.EventID, peerID: originalDestination, rvID: event.RvId}
+			}
 		}
 
 	} else {
@@ -1366,10 +1410,12 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 		}
 		ps.upBackLock.RUnlock()
 
-		if len(eL) > 0 && ps.myEBackTrackers[eID] == nil {
-			ps.myEBackTrackers[eID] = NewEventLedger(eID, eL, ackAddr, event, originalDestination)
-		} else {
-			ps.ackToSendUp <- &AckUp{dialAddr: ackAddr, eventID: event.EventID, peerID: originalDestination, rvID: event.RvId}
+		if ps.activeReliability {
+			if len(eL) > 0 && ps.myEBackTrackers[eID] == nil {
+				ps.myEBackTrackers[eID] = NewEventLedger(eID, eL, ackAddr, event, originalDestination)
+			} else {
+				ps.ackToSendUp <- &AckUp{dialAddr: ackAddr, eventID: event.EventID, peerID: originalDestination, rvID: event.RvId}
+			}
 		}
 	}
 	ps.tablesLock.RUnlock()

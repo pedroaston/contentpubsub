@@ -36,6 +36,9 @@ type SetupPubSub struct {
 
 	// True to activate redirect mechanism
 	RedirectMechanism bool
+
+	// True to activate the tracking mechanism and operation acknowledgement
+	ReliableMechanisms bool
 }
 
 func DefaultConfig(region string, cap int) *SetupPubSub {
@@ -52,6 +55,7 @@ func DefaultConfig(region string, cap int) *SetupPubSub {
 		Region:                     region,
 		Capacity:                   cap,
 		RedirectMechanism:          true,
+		ReliableMechanisms:         true,
 	}
 
 	return cfg
