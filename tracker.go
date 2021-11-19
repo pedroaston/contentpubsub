@@ -29,8 +29,8 @@ func NewTracker(leader bool, attr string, ps *PubSub, timeToCheckDelivery time.D
 		attr:        attr,
 		rvPubSub:    ps,
 		eventStats:  make(map[string]*EventLedger),
-		addEventAck: make(chan *pb.EventAck, 8),
-		addEventLog: make(chan *EventLedger, 8),
+		addEventAck: make(chan *pb.EventAck),
+		addEventLog: make(chan *EventLedger),
 		checkEvents: time.NewTicker(timeToCheckDelivery),
 	}
 
