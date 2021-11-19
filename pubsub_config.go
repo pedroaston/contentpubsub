@@ -10,7 +10,7 @@ type SetupPubSub struct {
 	// # nodes of a region that are not delegated, to keep the most powerfull nodes recruitable for the future
 	PowerSubsPoolSize int
 
-	// Seconds to resend operation if not acknowledge
+	// Time resend operation if not acknowledge
 	OpResendRate time.Duration
 
 	// Number of backups, localized tolerable faults
@@ -22,10 +22,10 @@ type SetupPubSub struct {
 	// Maximum allowed number of attributes per predicate
 	MaxAttributesPerPredicate int
 
-	// Frequency in which a subscriber needs to resub in minutes
+	// Frequency in which a subscriber needs to resub
 	SubRefreshRateMin time.Duration
 
-	// Seconds that the publisher waits for rv ack until it resends event
+	// Time the publisher waits for rv ack until it resends event
 	TimeToCheckDelivery time.Duration
 
 	// Geographic region of the peer
@@ -49,12 +49,12 @@ func DefaultConfig(region string, cap int) *SetupPubSub {
 	cfg := &SetupPubSub{
 		MaxSubsPerRegion:           5,
 		PowerSubsPoolSize:          2,
-		OpResendRate:               time.Duration(10),
+		OpResendRate:               10 * time.Second,
 		FaultToleranceFactor:       2,
 		ConcurrentProcessingFactor: 25,
 		MaxAttributesPerPredicate:  5,
-		SubRefreshRateMin:          time.Duration(15),
-		TimeToCheckDelivery:        time.Duration(30),
+		SubRefreshRateMin:          15 * time.Minute,
+		TimeToCheckDelivery:        30 * time.Second,
 		Region:                     region,
 		Capacity:                   cap,
 		RedirectMechanism:          true,

@@ -31,7 +31,7 @@ func NewTracker(leader bool, attr string, ps *PubSub, timeToCheckDelivery time.D
 		eventStats:  make(map[string]*EventLedger),
 		addEventAck: make(chan *pb.EventAck, 8),
 		addEventLog: make(chan *EventLedger, 8),
-		checkEvents: time.NewTicker(timeToCheckDelivery * time.Second),
+		checkEvents: time.NewTicker(timeToCheckDelivery),
 	}
 
 	go t.trackerLoop()

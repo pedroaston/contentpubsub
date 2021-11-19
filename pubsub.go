@@ -124,10 +124,10 @@ func NewPubSub(dht *kaddht.IpfsDHT, cfg *SetupPubSub) *PubSub {
 		terminate:                 make(chan string),
 		advToForward:              make(chan *ForwardAdvert, cfg.ConcurrentProcessingFactor),
 		ackToSendUp:               make(chan *AckUp, cfg.ConcurrentProcessingFactor),
-		heartbeatTicker:           time.NewTicker(cfg.SubRefreshRateMin * time.Minute),
-		refreshTicker:             time.NewTicker(2 * cfg.SubRefreshRateMin * time.Minute),
-		eventTicker:               time.NewTicker(cfg.OpResendRate * time.Second),
-		subTicker:                 time.NewTicker(cfg.OpResendRate * time.Second),
+		heartbeatTicker:           time.NewTicker(cfg.SubRefreshRateMin),
+		refreshTicker:             time.NewTicker(2 * cfg.SubRefreshRateMin),
+		eventTicker:               time.NewTicker(cfg.OpResendRate),
+		subTicker:                 time.NewTicker(cfg.OpResendRate),
 		eventTickerState:          false,
 		subTickerState:            false,
 		tablesLock:                &sync.RWMutex{},
@@ -144,7 +144,7 @@ func NewPubSub(dht *kaddht.IpfsDHT, cfg *SetupPubSub) *PubSub {
 	ps.eventTicker.Stop()
 	ps.subTicker.Stop()
 
-	dialAddr := addrForPubSubServer(ps.ipfsDHT.Host().Addrs()[0], ps.addrOption)
+	dialAddr := addrForPubSubServer(ps.ipfsDHT.Host().Addrs(), ps.addrOption)
 	lis, err := net.Listen("tcp", dialAddr)
 	if err != nil {
 		return nil
@@ -222,11 +222,11 @@ func (ps *PubSub) MySubscribe(info string) error {
 
 	var dialAddr string
 	closest := ps.ipfsDHT.RoutingTable().NearestPeer(kb.ID(minID))
-	closestAddr := ps.ipfsDHT.FindLocal(closest).Addrs[0]
-	if closestAddr == nil {
+	closestAddrs := ps.ipfsDHT.FindLocal(closest).Addrs
+	if closestAddrs == nil {
 		return errors.New("no address for closest peer")
 	} else {
-		dialAddr = addrForPubSubServer(closestAddr, ps.addrOption)
+		dialAddr = addrForPubSubServer(closestAddrs, ps.addrOption)
 	}
 
 	if ps.activeRedirect {
@@ -256,7 +256,7 @@ func (ps *PubSub) MySubscribe(info string) error {
 		}
 
 		if !ps.subTickerState {
-			ps.subTicker.Reset(ps.opResendRate * time.Second)
+			ps.subTicker.Reset(ps.opResendRate)
 			ps.subTickerState = true
 			ps.unconfirmedSubs[sub.Predicate].aged = true
 		}
@@ -546,7 +546,7 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 				eID := fmt.Sprintf("%s%d%d%s", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID, event.RvId)
 				ps.unconfirmedEvents[eID] = &PubEventState{event: event, aged: false, dialAddr: dialAddr}
 				if !ps.eventTickerState {
-					ps.eventTicker.Reset(ps.opResendRate * time.Second)
+					ps.eventTicker.Reset(ps.opResendRate)
 					ps.eventTickerState = true
 					ps.unconfirmedEvents[eID].aged = true
 				}
@@ -1561,12 +1561,12 @@ func (ps *PubSub) updateRvRegion(route string, info string, rvID string) error {
 
 	for _, alt := range ps.ipfsDHT.RoutingTable().NearestPeers(kb.ConvertKey(rvID), ps.faultToleranceFactor) {
 
-		backupAddr := ps.ipfsDHT.FindLocal(alt).Addrs[0]
-		if backupAddr == nil {
+		backupAddrs := ps.ipfsDHT.FindLocal(alt).Addrs
+		if backupAddrs == nil {
 			continue
 		}
 
-		altAddr := addrForPubSubServer(backupAddr, ps.addrOption)
+		altAddr := addrForPubSubServer(backupAddrs, ps.addrOption)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -1598,12 +1598,12 @@ func (ps *PubSub) getBackups() []string {
 	var backups []string
 	var dialAddr string
 	for _, backup := range ps.ipfsDHT.RoutingTable().NearestPeers(kb.ConvertPeerID(ps.ipfsDHT.PeerID()), ps.faultToleranceFactor) {
-		backupAddr := ps.ipfsDHT.FindLocal(backup).Addrs[0]
-		if backupAddr == nil {
+		backupAddrs := ps.ipfsDHT.FindLocal(backup).Addrs
+		if backupAddrs == nil {
 			continue
 		}
 
-		dialAddr = addrForPubSubServer(backupAddr, ps.addrOption)
+		dialAddr = addrForPubSubServer(backupAddrs, ps.addrOption)
 		backups = append(backups, dialAddr)
 	}
 
@@ -1626,11 +1626,11 @@ func (ps *PubSub) eraseOldFetchNewBackup(oldAddr string) {
 		return
 	}
 
-	backupAddr := ps.ipfsDHT.FindLocal(candidate[ps.faultToleranceFactor]).Addrs[0]
-	if backupAddr == nil {
+	backupAddrs := ps.ipfsDHT.FindLocal(candidate[ps.faultToleranceFactor]).Addrs
+	if backupAddrs == nil {
 		return
 	}
-	newAddr := addrForPubSubServer(backupAddr, ps.addrOption)
+	newAddr := addrForPubSubServer(backupAddrs, ps.addrOption)
 	ps.myBackups[refIndex] = newAddr
 
 	updates, err := ps.filtersForBackupRefresh()
@@ -1779,9 +1779,9 @@ func (ps *PubSub) alternativesToRv(rvID string) []string {
 
 	for _, ID := range closestIDs {
 		if kb.Closer(ID, selfID, rvID) {
-			attrAddr := ps.ipfsDHT.FindLocal(ID).Addrs[0]
-			if attrAddr != nil {
-				validAlt = append(validAlt, addrForPubSubServer(attrAddr, ps.addrOption))
+			attrAddrs := ps.ipfsDHT.FindLocal(ID).Addrs
+			if attrAddrs != nil {
+				validAlt = append(validAlt, addrForPubSubServer(attrAddrs, ps.addrOption))
 			}
 		} else {
 			validAlt = append(validAlt, ps.serverAddr)

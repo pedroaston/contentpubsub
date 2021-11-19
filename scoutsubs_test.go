@@ -273,3 +273,75 @@ func TestRedirectMechanism(t *testing.T) {
 		t.Fatal("event failed to jump")
 	}
 }
+
+// TestRefreshing performs two subscriptions and right after unsubs
+// one of those. This way after the refreshing of the filter tables
+// only one of the subscriptions will remain on the network
+// Test composition: 3 nodes
+// >> 2 Subscriber that subscribes and unsubscribes
+// >> 1 node acting has rendezvous
+func TestRefreshing(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Initialize kademlia dhts
+	dhts := setupDHTS(t, ctx, 4)
+	var pubsubs [4]*PubSub
+	defer func() {
+		for _, dht := range dhts {
+			dht.Close()
+			defer dht.Host().Close()
+		}
+
+		for _, pubsub := range pubsubs {
+			pubsub.TerminateService()
+		}
+	}()
+
+	// One dht will act has bootstrapper
+	connect(t, ctx, dhts[0], dhts[1])
+	connect(t, ctx, dhts[0], dhts[2])
+	connect(t, ctx, dhts[0], dhts[3])
+
+	// Connect peers to achieve a dissemination chain for the attribute
+	// portugal and remove bootstrapper from routing table
+	helper := bootstrapHelper(dhts, "portugal")
+	dhts[1].RoutingTable().RemovePeer(dhts[0].PeerID())
+	dhts[2].RoutingTable().RemovePeer(dhts[0].PeerID())
+	dhts[3].RoutingTable().RemovePeer(dhts[0].PeerID())
+	connect(t, ctx, dhts[helper[0]], dhts[helper[1]])
+	connect(t, ctx, dhts[helper[0]], dhts[helper[2]])
+
+	// Initialize pub-subs
+	cfg := DefaultConfig("PT", 10)
+	cfg.SubRefreshRateMin = 5 * time.Second
+	for i, dht := range dhts {
+		pubsubs[i] = NewPubSub(dht, cfg)
+		pubsubs[i].SetHasOldPeer()
+	}
+
+	// Two peers subscribe and one imediatly unsubs
+	pubsubs[helper[1]].MySubscribe("portugal T")
+	pubsubs[helper[2]].MySubscribe("portugal T")
+	pubsubs[helper[2]].MyUnsubscribe("portugal T")
+
+	// Wait for subscriptions to be disseminated
+	time.Sleep(time.Second)
+
+	// Confirm that the rendezvous has the filters
+	if len(pubsubs[helper[0]].currentFilterTable.routes[peer.Encode(pubsubs[helper[2]].ipfsDHT.PeerID())].filters[1]) != 1 ||
+		len(pubsubs[helper[0]].currentFilterTable.routes[peer.Encode(pubsubs[helper[1]].ipfsDHT.PeerID())].filters[1]) != 1 {
+
+		t.Fatal("Failed Subscribing!")
+	}
+
+	// Wait a complete refresh cycle
+	time.Sleep(23 * time.Second)
+
+	// Confirm that the rendezvous has the filters
+	if len(pubsubs[helper[0]].currentFilterTable.routes[peer.Encode(pubsubs[helper[2]].ipfsDHT.PeerID())].filters[1]) != 0 ||
+		len(pubsubs[helper[0]].currentFilterTable.routes[peer.Encode(pubsubs[helper[1]].ipfsDHT.PeerID())].filters[1]) != 1 {
+
+		t.Fatal("Incorrect state after refreshing!")
+	}
+}

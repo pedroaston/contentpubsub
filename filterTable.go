@@ -48,9 +48,9 @@ func NewFilterTable(dht *dht.IpfsDHT, addrOption bool) *FilterTable {
 	}
 
 	for _, peerStat := range peers {
-		addr := dht.FindLocal(peerStat.Id).Addrs[0]
-		if addr != nil {
-			dialAddr := addrForPubSubServer(addr, addrOption)
+		addrs := dht.FindLocal(peerStat.Id).Addrs
+		if addrs != nil {
+			dialAddr := addrForPubSubServer(addrs, addrOption)
 			ft.routes[peer.Encode(peerStat.Id)] = NewRouteStats(dialAddr)
 		}
 	}
