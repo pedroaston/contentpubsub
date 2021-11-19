@@ -13,7 +13,9 @@ jobs:
         with:
           go-version: '1.17'
       - name: System setup
-        run: sysctl -w net.core.rmem_max=2500000
+        run: |
+          sysctl -w net.core.rmem_max=2500000
+          sudo sysctl -p
       - name: Run coverage
         run: go test -covermode=atomic -coverprofile=coverage.out
       - name: Upload coverage to Codecov
