@@ -323,17 +323,14 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 		sub.Predicate = pNew.ToString()
 	}
 
-	isRv, nextHop := ps.rendezvousSelfCheck(sub.RvId)
-	if !isRv && nextHop != "" {
+	isRv, nextHopAddr := ps.rendezvousSelfCheck(sub.RvId)
+	if !isRv && nextHopAddr != "" {
 
 		var backups map[int32]string = make(map[int32]string)
 		for i, backup := range ps.myBackups {
 			backups[int32(i)] = backup
 		}
 
-		ps.tablesLock.RLock()
-		dialAddr := ps.currentFilterTable.routes[peer.Encode(nextHop)].addr
-		ps.tablesLock.RUnlock()
 		subForward := &pb.Subscription{
 			PeerID:    peer.Encode(ps.ipfsDHT.PeerID()),
 			Predicate: sub.Predicate,
@@ -351,16 +348,16 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 
 			if len(ps.currentFilterTable.routeTracker[sub.RvId]) >= 2 {
 				subForward.Shortcut = "!"
-				ps.subsToForward <- &ForwardSubRequest{dialAddr: dialAddr, sub: subForward}
+				ps.subsToForward <- &ForwardSubRequest{dialAddr: nextHopAddr, sub: subForward}
 			} else if sub.Shortcut != "!" {
 				subForward.Shortcut = sub.Shortcut
-				ps.subsToForward <- &ForwardSubRequest{dialAddr: dialAddr, sub: subForward}
+				ps.subsToForward <- &ForwardSubRequest{dialAddr: nextHopAddr, sub: subForward}
 			} else {
 				subForward.Shortcut = ps.currentFilterTable.routes[sub.PeerID].addr
-				ps.subsToForward <- &ForwardSubRequest{dialAddr: dialAddr, sub: subForward}
+				ps.subsToForward <- &ForwardSubRequest{dialAddr: nextHopAddr, sub: subForward}
 			}
 		} else {
-			ps.subsToForward <- &ForwardSubRequest{dialAddr: dialAddr, sub: subForward}
+			ps.subsToForward <- &ForwardSubRequest{dialAddr: nextHopAddr, sub: subForward}
 		}
 
 		ps.updateMyBackups(sub.PeerID, sub.Predicate)
@@ -466,7 +463,7 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 			PubAddr:   ps.serverAddr,
 		}
 
-		isRv, nextRvHop := ps.rendezvousSelfCheck(attr.name)
+		isRv, nextRvHopAddr := ps.rendezvousSelfCheck(attr.name)
 		eLog := make(map[string]bool)
 
 		if isRv && notSent {
@@ -538,13 +535,10 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 				ps.sendLogToTrackers(attr.name, eventID, eLog, event)
 			}
 		} else {
-			ps.tablesLock.RLock()
-			dialAddr := ps.currentFilterTable.routes[peer.Encode(nextRvHop)].addr
-			ps.tablesLock.RUnlock()
 
 			if ps.activeReliability {
 				eID := fmt.Sprintf("%s%d%d%s", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID, event.RvId)
-				ps.unconfirmedEvents[eID] = &PubEventState{event: event, aged: false, dialAddr: dialAddr}
+				ps.unconfirmedEvents[eID] = &PubEventState{event: event, aged: false, dialAddr: nextRvHopAddr}
 				if !ps.eventTickerState {
 					ps.eventTicker.Reset(ps.opResendRate)
 					ps.eventTickerState = true
@@ -557,7 +551,7 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 				ps.Notify(ctx, event)
 			}
 
-			ps.eventsToForwardUp <- &ForwardEvent{dialAddr: dialAddr, event: event}
+			ps.eventsToForwardUp <- &ForwardEvent{dialAddr: nextRvHopAddr, event: event}
 		}
 	}
 
@@ -574,8 +568,8 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 		return &pb.Ack{State: false, Info: err.Error()}, err
 	}
 
-	isRv, nextRvHop := ps.rendezvousSelfCheck(event.RvId)
-	if !isRv && nextRvHop != "" {
+	isRv, nextRvHopAddr := ps.rendezvousSelfCheck(event.RvId)
+	if !isRv && nextRvHopAddr != "" {
 
 		if !ps.activeReliability {
 			ps.Notify(ctx, event)
@@ -594,11 +588,7 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 			LastHop:       peer.Encode(ps.ipfsDHT.PeerID()),
 		}
 
-		ps.tablesLock.RLock()
-		dialAddr := ps.currentFilterTable.routes[peer.Encode(nextRvHop)].addr
-		ps.tablesLock.RUnlock()
-
-		ps.eventsToForwardUp <- &ForwardEvent{dialAddr: dialAddr, event: newE}
+		ps.eventsToForwardUp <- &ForwardEvent{dialAddr: nextRvHopAddr, event: newE}
 
 	} else if !isRv {
 		return &pb.Ack{State: false, Info: "rendezvous check failed"}, nil
@@ -1757,16 +1747,17 @@ func (ps *PubSub) refreshOneBackup(backup string, updates []*pb.Update) error {
 
 // rendezvousSelfCheck evaluates if the peer is the rendezvous node
 // and if not it returns the peerID of the next subscribing hop
-func (ps *PubSub) rendezvousSelfCheck(rvID string) (bool, peer.ID) {
+func (ps *PubSub) rendezvousSelfCheck(rvID string) (bool, string) {
 
 	selfID := ps.ipfsDHT.PeerID()
 	closestID := ps.ipfsDHT.RoutingTable().NearestPeer(kb.ConvertKey(rvID))
 
 	if kb.Closer(selfID, closestID, rvID) {
 		return true, ""
+	} else {
+		addrs := ps.ipfsDHT.FindLocal(closestID).Addrs
+		return false, addrForPubSubServer(addrs, ps.addrOption)
 	}
-
-	return false, closestID
 }
 
 // alternativesToRv checks for alternative
@@ -1933,17 +1924,14 @@ func (ps *PubSub) myAdvertiseGroup(pred *Predicate) error {
 			RvId:    attr.name,
 		}
 
-		isRv, nextHop := ps.rendezvousSelfCheck(attr.name)
+		isRv, nextRvHopAddr := ps.rendezvousSelfCheck(attr.name)
 		if isRv {
 			ps.addAdvertToBoards(advReq)
 			continue
 		}
 
-		ps.tablesLock.RLock()
-		dialAddr := ps.currentFilterTable.routes[peer.Encode(nextHop)].addr
-		ps.tablesLock.RUnlock()
 		ps.advToForward <- &ForwardAdvert{
-			dialAddr: dialAddr,
+			dialAddr: nextRvHopAddr,
 			adv:      advReq,
 		}
 	}
@@ -1955,17 +1943,14 @@ func (ps *PubSub) myAdvertiseGroup(pred *Predicate) error {
 func (ps *PubSub) AdvertiseGroup(ctx context.Context, adv *pb.AdvertRequest) (*pb.Ack, error) {
 	fmt.Println("AdvertiseGroup >> " + ps.serverAddr)
 
-	isRv, nextHop := ps.rendezvousSelfCheck(adv.RvId)
+	isRv, nextRvHopAddr := ps.rendezvousSelfCheck(adv.RvId)
 	if isRv {
 		ps.addAdvertToBoards(adv)
 		return &pb.Ack{State: true, Info: ""}, nil
 	}
 
-	ps.tablesLock.RLock()
-	dialAddr := ps.currentFilterTable.routes[peer.Encode(nextHop)].addr
-	ps.tablesLock.RUnlock()
 	ps.advToForward <- &ForwardAdvert{
-		dialAddr: dialAddr,
+		dialAddr: nextRvHopAddr,
 		adv:      adv,
 	}
 
@@ -2068,7 +2053,7 @@ func (ps *PubSub) MySearchAndPremiumSub(pred string) error {
 		return errors.New("failed to find the closest attribute Rv")
 	}
 
-	isRv, nextHop := ps.rendezvousSelfCheck(minAttr)
+	isRv, nextRvHopAddr := ps.rendezvousSelfCheck(minAttr)
 	if isRv {
 		for _, g := range ps.returnGroupsOfInterest(p) {
 			err := ps.MyPremiumSubscribe(pred, g.OwnerAddr, g.Predicate)
@@ -2079,11 +2064,7 @@ func (ps *PubSub) MySearchAndPremiumSub(pred string) error {
 		return nil
 	}
 
-	ps.tablesLock.RLock()
-	dialAddr := ps.currentFilterTable.routes[peer.Encode(nextHop)].addr
-	ps.tablesLock.RUnlock()
-
-	conn, err := grpc.Dial(dialAddr, grpc.WithInsecure())
+	conn, err := grpc.Dial(nextRvHopAddr, grpc.WithInsecure())
 	if err != nil {
 		log.Fatalf("fail to dial: %v", err)
 	}
@@ -2150,7 +2131,7 @@ func (ps *PubSub) GroupSearchRequest(ctx context.Context, req *pb.SearchRequest)
 		return nil, err
 	}
 
-	isRv, nextHop := ps.rendezvousSelfCheck(req.RvID)
+	isRv, nextRvHopAddr := ps.rendezvousSelfCheck(req.RvID)
 	if isRv {
 		var groups map[int32]*pb.MulticastGroupID = make(map[int32]*pb.MulticastGroupID)
 		for i, g := range ps.returnGroupsOfInterest(p) {
@@ -2160,11 +2141,7 @@ func (ps *PubSub) GroupSearchRequest(ctx context.Context, req *pb.SearchRequest)
 		return &pb.SearchReply{Groups: groups}, nil
 	}
 
-	ps.tablesLock.RLock()
-	dialAddr := ps.currentFilterTable.routes[peer.Encode(nextHop)].addr
-	ps.tablesLock.RUnlock()
-
-	conn, err := grpc.Dial(dialAddr, grpc.WithInsecure())
+	conn, err := grpc.Dial(nextRvHopAddr, grpc.WithInsecure())
 	if err != nil {
 		log.Fatalf("fail to dial: %v", err)
 	}
