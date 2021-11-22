@@ -87,7 +87,7 @@ func (t *Tracker) addAckToLedger(ack *pb.EventAck) {
 func (t *Tracker) applyBuffedAcks() {
 
 	for _, ack := range t.buffedAcks {
-		t.addAckToLedger(ack)
+		t.addEventAck <- ack
 	}
 
 	t.buffedAcks = nil
