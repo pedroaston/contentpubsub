@@ -342,19 +342,23 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 
 		if ps.activeRedirect {
 			ps.tablesLock.RLock()
-			defer ps.tablesLock.RUnlock()
 			ps.currentFilterTable.redirectLock.Lock()
-			defer ps.currentFilterTable.redirectLock.Unlock()
 
 			if len(ps.currentFilterTable.routeTracker[sub.RvId]) >= 2 {
 				subForward.Shortcut = "!"
 				ps.subsToForward <- &ForwardSubRequest{dialAddr: nextHopAddr, sub: subForward}
+				ps.currentFilterTable.redirectLock.Unlock()
+				ps.tablesLock.RUnlock()
 			} else if sub.Shortcut != "!" {
 				subForward.Shortcut = sub.Shortcut
 				ps.subsToForward <- &ForwardSubRequest{dialAddr: nextHopAddr, sub: subForward}
+				ps.currentFilterTable.redirectLock.Unlock()
+				ps.tablesLock.RUnlock()
 			} else {
 				subForward.Shortcut = ps.currentFilterTable.routes[sub.PeerID].addr
 				ps.subsToForward <- &ForwardSubRequest{dialAddr: nextHopAddr, sub: subForward}
+				ps.currentFilterTable.redirectLock.Unlock()
+				ps.tablesLock.RUnlock()
 			}
 		} else {
 			ps.subsToForward <- &ForwardSubRequest{dialAddr: nextHopAddr, sub: subForward}
@@ -1498,9 +1502,11 @@ func (ps *PubSub) UpdateBackup(ctx context.Context, update *pb.Update) (*pb.Ack,
 	if _, ok := ps.myBackupsFilters[update.Sender].routes[update.Route]; !ok {
 		ps.myBackupsFilters[update.Sender].routes[update.Route] = NewRouteStats(update.RouteAddr)
 	}
-
-	ps.myBackupsFilters[update.Sender].routes[update.Route].SimpleAddSummarizedFilter(p)
 	ps.upBackLock.Unlock()
+
+	ps.upBackLock.RLock()
+	ps.myBackupsFilters[update.Sender].routes[update.Route].SimpleAddSummarizedFilter(p)
+	ps.upBackLock.RUnlock()
 
 	return &pb.Ack{State: true, Info: ""}, nil
 }
