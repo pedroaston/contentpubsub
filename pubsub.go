@@ -886,12 +886,12 @@ func (ps *PubSub) sendLogToTrackers(attr string, eID *pb.EventID, eLog map[strin
 func (ps *PubSub) sendAckToTrackers(ack *pb.EventAck) {
 
 	if ps.myTrackers[ack.RvID] != nil {
-		ps.myTrackers[ack.RvID].addAckToLedger(ack)
+		ps.myTrackers[ack.RvID].addEventAck <- ack
 	} else {
 		ps.tablesLock.Lock()
 		ps.myTrackers[ack.RvID] = NewTracker(true, ack.RvID, ps, ps.timeToCheckDelivery)
 		ps.tablesLock.Unlock()
-		ps.myTrackers[ack.RvID].addAckToLedger(ack)
+		ps.myTrackers[ack.RvID].addEventAck <- ack
 	}
 
 	for _, addr := range ps.alternativesToRv(ack.RvID) {
