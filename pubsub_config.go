@@ -42,6 +42,9 @@ type SetupPubSub struct {
 
 	// Should be true if we are running with our testground testbed
 	TestgroundReady bool
+
+	// timeout of each rpc
+	RPCTimeout time.Duration
 }
 
 func DefaultConfig(region string, cap int) *SetupPubSub {
@@ -55,6 +58,7 @@ func DefaultConfig(region string, cap int) *SetupPubSub {
 		MaxAttributesPerPredicate:  5,
 		SubRefreshRateMin:          15 * time.Minute,
 		TimeToCheckDelivery:        30 * time.Second,
+		RPCTimeout:                 10 * time.Second,
 		Region:                     region,
 		Capacity:                   cap,
 		RedirectMechanism:          true,
