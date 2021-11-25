@@ -266,6 +266,8 @@ func (ps *PubSub) MySubscribe(info string) error {
 
 	ps.subsToForward <- &ForwardSubRequest{dialAddr: dialAddr, sub: sub}
 
+	fmt.Println("Done SubMy " + ps.serverAddr)
+
 	return nil
 }
 
