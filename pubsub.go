@@ -327,6 +327,7 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 		sub.Predicate = pNew.ToString()
 	}
 
+	fmt.Println("phase delta >> " + ps.serverAddr)
 	isRv, nextHopAddr := ps.rendezvousSelfCheck(sub.RvId)
 	if !isRv && nextHopAddr != "" {
 		fmt.Println("phase 4a >> " + ps.serverAddr)
@@ -761,6 +762,7 @@ func (ps *PubSub) iAmRVPublish(p *Predicate, event *pb.Event, failedRv bool) err
 }
 
 func (ps *PubSub) HelpNewRv(ctx context.Context, event *pb.Event) (*pb.Ack, error) {
+	fmt.Println("HelpNewRv >> " + ps.serverAddr)
 
 	for backup := range ps.myBackupsFilters {
 		backupID, _ := peer.Decode(backup)
@@ -801,6 +803,8 @@ func (ps *PubSub) HelpNewRv(ctx context.Context, event *pb.Event) (*pb.Ack, erro
 func (ps *PubSub) sendAckOp(dialAddr string, Op string, info string) {
 	ctx, cancel := context.WithTimeout(context.Background(), ps.rpcTimeout)
 	defer cancel()
+
+	fmt.Println("sending ack op >> " + ps.serverAddr)
 
 	conn, err := grpc.Dial(dialAddr, grpc.WithInsecure())
 	if err != nil {
