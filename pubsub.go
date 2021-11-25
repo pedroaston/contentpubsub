@@ -1770,14 +1770,18 @@ func (ps *PubSub) refreshOneBackup(backup string, updates []*pb.Update) error {
 func (ps *PubSub) rendezvousSelfCheck(rvID string) (bool, string) {
 
 	selfID := ps.ipfsDHT.PeerID()
-	closestID := ps.ipfsDHT.RoutingTable().NearestPeer(kb.ConvertKey(rvID))
+	closestIDs := ps.ipfsDHT.RoutingTable().NearestPeers(kb.ConvertKey(rvID), ps.faultToleranceFactor+1)
 
-	if kb.Closer(selfID, closestID, rvID) {
-		return true, ""
-	} else {
-		addrs := ps.ipfsDHT.FindLocal(closestID).Addrs
-		return false, addrForPubSubServer(addrs, ps.addrOption)
+	for _, closestID := range closestIDs {
+		addr := addrForPubSubServer(ps.ipfsDHT.FindLocal(closestID).Addrs, ps.addrOption)
+		if kb.Closer(selfID, closestID, rvID) {
+			return true, ""
+		} else if addr != "" {
+			return false, addr
+		}
 	}
+
+	return true, ""
 }
 
 // alternativesToRv checks for alternative
