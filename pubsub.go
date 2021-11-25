@@ -223,20 +223,16 @@ func (ps *PubSub) MySubscribe(info string) error {
 
 	fmt.Println("Malandro 3 >> " + ps.serverAddr)
 
-	minID, minAttr, err := ps.closerAttrRvToSelf(p)
+	_, minAttr, err := ps.closerAttrRvToSelf(p)
 	if err != nil {
 		return errors.New("failed to find the closest attribute Rv")
 	}
 
 	fmt.Println("Malandro 5 >> " + ps.serverAddr)
 
-	var dialAddr string
-	closest := ps.ipfsDHT.RoutingTable().NearestPeer(kb.ID(minID))
-	closestAddrs := ps.ipfsDHT.FindLocal(closest).Addrs
-	if closestAddrs == nil {
+	_, dialAddr := ps.rendezvousSelfCheck(minAttr)
+	if dialAddr == "" {
 		return errors.New("no address for closest peer")
-	} else {
-		dialAddr = addrForPubSubServer(closestAddrs, ps.addrOption)
 	}
 
 	fmt.Println("Malandro 6 >> " + ps.serverAddr)
