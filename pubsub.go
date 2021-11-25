@@ -205,14 +205,12 @@ func (ps *PubSub) MySubscribe(info string) error {
 		return err
 	}
 
-	fmt.Println("Malandro 1 >> " + ps.serverAddr)
-
 	_, pNew := ps.myFilters.SimpleAddSummarizedFilter(p, nil)
 	if pNew != nil {
 		p = pNew
 	}
 
-	fmt.Println("Malandro 2 >> " + ps.serverAddr)
+	fmt.Println("Malandro 1 >> " + ps.serverAddr)
 
 	for _, attr := range p.attributes {
 		isRv, _ := ps.rendezvousSelfCheck(attr.name)
@@ -221,21 +219,21 @@ func (ps *PubSub) MySubscribe(info string) error {
 		}
 	}
 
-	fmt.Println("Malandro 3 >> " + ps.serverAddr)
+	fmt.Println("Malandro 2 >> " + ps.serverAddr)
 
 	_, minAttr, err := ps.closerAttrRvToSelf(p)
 	if err != nil {
 		return errors.New("failed to find the closest attribute Rv")
 	}
 
-	fmt.Println("Malandro 5 >> " + ps.serverAddr)
+	fmt.Println("Malandro 3 >> " + ps.serverAddr)
 
 	_, dialAddr := ps.rendezvousSelfCheck(minAttr)
 	if dialAddr == "" {
 		return errors.New("no address for closest peer")
 	}
 
-	fmt.Println("Malandro 6 >> " + ps.serverAddr)
+	fmt.Println("Malandro 4 >> " + ps.serverAddr)
 
 	if ps.activeRedirect {
 		ps.tablesLock.RLock()
@@ -245,8 +243,6 @@ func (ps *PubSub) MySubscribe(info string) error {
 		ps.nextFilterTable.addToRouteTracker(minAttr, "closes")
 		ps.tablesLock.RUnlock()
 	}
-
-	fmt.Println("Malandro 7 >> " + ps.serverAddr)
 
 	sub := &pb.Subscription{
 		PeerID:    peer.Encode(ps.ipfsDHT.PeerID()),
@@ -272,11 +268,7 @@ func (ps *PubSub) MySubscribe(info string) error {
 		}
 	}
 
-	fmt.Println("Malandro 8 >> " + ps.serverAddr)
-
 	ps.subsToForward <- &ForwardSubRequest{dialAddr: dialAddr, sub: sub}
-
-	fmt.Println("Done SubMy " + ps.serverAddr)
 
 	return nil
 }
@@ -305,8 +297,6 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 	}
 	ps.tablesLock.Unlock()
 
-	fmt.Println("phase 1 >> " + ps.serverAddr)
-
 	ps.tablesLock.RLock()
 	if ps.activeRedirect {
 		if sub.Shortcut == "!" {
@@ -321,28 +311,21 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 		ps.nextFilterTable.addToRouteTracker(sub.RvId, sub.PeerID)
 	}
 
-	fmt.Println("phase 2 >> " + ps.serverAddr)
-
 	ps.currentFilterTable.routes[sub.PeerID].SimpleAddSummarizedFilter(p, aux)
 	alreadyDone, pNew := ps.nextFilterTable.routes[sub.PeerID].SimpleAddSummarizedFilter(p, aux)
 	ps.tablesLock.RUnlock()
-
-	fmt.Println("phase 3 >> " + ps.serverAddr)
 
 	if alreadyDone {
 		if ps.activeReliability {
 			ps.sendAckOp(sub.SubAddr, "Subscribe", sub.Predicate)
 		}
-		fmt.Println("Done >> " + ps.serverAddr)
 		return &pb.Ack{State: true, Info: ""}, nil
 	} else if pNew != nil {
 		sub.Predicate = pNew.ToString()
 	}
 
-	fmt.Println("phase delta >> " + ps.serverAddr)
 	isRv, nextHopAddr := ps.rendezvousSelfCheck(sub.RvId)
 	if !isRv && nextHopAddr != "" {
-		fmt.Println("phase 4a >> " + ps.serverAddr)
 		var backups map[int32]string = make(map[int32]string)
 		for i, backup := range ps.myBackups {
 			backups[int32(i)] = backup
@@ -381,22 +364,15 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 			ps.subsToForward <- &ForwardSubRequest{dialAddr: nextHopAddr, sub: subForward}
 		}
 
-		fmt.Println("phase 5a >> " + ps.serverAddr)
-
 		ps.updateMyBackups(sub.PeerID, sub.Predicate)
-		fmt.Println("phase 6a >> " + ps.serverAddr)
 	} else if !isRv {
-		fmt.Println("nooo >> " + ps.serverAddr)
 		return &pb.Ack{State: false, Info: "rendezvous check failed"}, nil
 	} else {
 		if ps.activeReliability {
-			fmt.Println("phase 4b >> " + ps.serverAddr)
 			ps.sendAckOp(sub.SubAddr, "Subscribe", sub.Predicate)
 		}
 
-		fmt.Println("phase 5b >> " + ps.serverAddr)
 		ps.updateRvRegion(sub.PeerID, sub.Predicate, sub.RvId)
-		fmt.Println("phase 6b >> " + ps.serverAddr)
 	}
 
 	return &pb.Ack{State: true, Info: ""}, nil
