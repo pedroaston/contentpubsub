@@ -384,6 +384,7 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 
 		fmt.Println("phase 5b >> " + ps.serverAddr)
 		ps.updateRvRegion(sub.PeerID, sub.Predicate, sub.RvId)
+		fmt.Println("phase 6b >> " + ps.serverAddr)
 	}
 
 	return &pb.Ack{State: true, Info: ""}, nil
