@@ -205,10 +205,14 @@ func (ps *PubSub) MySubscribe(info string) error {
 		return err
 	}
 
+	fmt.Println("Malandro 1 >> " + ps.serverAddr)
+
 	_, pNew := ps.myFilters.SimpleAddSummarizedFilter(p, nil)
 	if pNew != nil {
 		p = pNew
 	}
+
+	fmt.Println("Malandro 2 >> " + ps.serverAddr)
 
 	for _, attr := range p.attributes {
 		isRv, _ := ps.rendezvousSelfCheck(attr.name)
@@ -217,10 +221,14 @@ func (ps *PubSub) MySubscribe(info string) error {
 		}
 	}
 
+	fmt.Println("Malandro 3 >> " + ps.serverAddr)
+
 	minID, minAttr, err := ps.closerAttrRvToSelf(p)
 	if err != nil {
 		return errors.New("failed to find the closest attribute Rv")
 	}
+
+	fmt.Println("Malandro 5 >> " + ps.serverAddr)
 
 	var dialAddr string
 	closest := ps.ipfsDHT.RoutingTable().NearestPeer(kb.ID(minID))
@@ -231,6 +239,8 @@ func (ps *PubSub) MySubscribe(info string) error {
 		dialAddr = addrForPubSubServer(closestAddrs, ps.addrOption)
 	}
 
+	fmt.Println("Malandro 6 >> " + ps.serverAddr)
+
 	if ps.activeRedirect {
 		ps.tablesLock.RLock()
 		ps.currentFilterTable.addToRouteTracker(minAttr, "sub")
@@ -239,6 +249,8 @@ func (ps *PubSub) MySubscribe(info string) error {
 		ps.nextFilterTable.addToRouteTracker(minAttr, "closes")
 		ps.tablesLock.RUnlock()
 	}
+
+	fmt.Println("Malandro 7 >> " + ps.serverAddr)
 
 	sub := &pb.Subscription{
 		PeerID:    peer.Encode(ps.ipfsDHT.PeerID()),
@@ -263,6 +275,8 @@ func (ps *PubSub) MySubscribe(info string) error {
 			ps.unconfirmedSubs[sub.Predicate].aged = true
 		}
 	}
+
+	fmt.Println("Malandro 8 >> " + ps.serverAddr)
 
 	ps.subsToForward <- &ForwardSubRequest{dialAddr: dialAddr, sub: sub}
 
