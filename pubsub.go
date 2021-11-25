@@ -205,7 +205,7 @@ func (ps *PubSub) MySubscribe(info string) error {
 		return err
 	}
 
-	_, pNew := ps.myFilters.SimpleAddSummarizedFilter(p)
+	_, pNew := ps.myFilters.SimpleAddSummarizedFilter(p, nil)
 	if pNew != nil {
 		p = pNew
 	}
@@ -284,19 +284,16 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 		aux = append(aux, addr)
 	}
 
+	ps.tablesLock.Lock()
 	if ps.currentFilterTable.routes[sub.PeerID] == nil {
-		ps.tablesLock.Lock()
 		ps.currentFilterTable.routes[sub.PeerID] = NewRouteStats(sub.IntAddr)
 		ps.nextFilterTable.routes[sub.PeerID] = NewRouteStats(sub.IntAddr)
-		ps.tablesLock.Unlock()
 	} else if ps.nextFilterTable.routes[sub.PeerID] == nil {
-		ps.tablesLock.Lock()
 		ps.nextFilterTable.routes[sub.PeerID] = NewRouteStats(sub.IntAddr)
-		ps.tablesLock.Unlock()
 	}
+	ps.tablesLock.Unlock()
 
 	ps.tablesLock.RLock()
-
 	if ps.activeRedirect {
 		if sub.Shortcut == "!" {
 			ps.currentFilterTable.turnOffRedirect(sub.PeerID, sub.RvId)
@@ -310,10 +307,8 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 		ps.nextFilterTable.addToRouteTracker(sub.RvId, sub.PeerID)
 	}
 
-	ps.currentFilterTable.routes[sub.PeerID].backups = aux
-	ps.nextFilterTable.routes[sub.PeerID].backups = aux
-	ps.currentFilterTable.routes[sub.PeerID].SimpleAddSummarizedFilter(p)
-	alreadyDone, pNew := ps.nextFilterTable.routes[sub.PeerID].SimpleAddSummarizedFilter(p)
+	ps.currentFilterTable.routes[sub.PeerID].SimpleAddSummarizedFilter(p, aux)
+	alreadyDone, pNew := ps.nextFilterTable.routes[sub.PeerID].SimpleAddSummarizedFilter(p, aux)
 	ps.tablesLock.RUnlock()
 
 	if alreadyDone {
@@ -348,19 +343,19 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 
 			if len(ps.currentFilterTable.routeTracker[sub.RvId]) >= 2 {
 				subForward.Shortcut = "!"
-				ps.subsToForward <- &ForwardSubRequest{dialAddr: nextHopAddr, sub: subForward}
 				ps.currentFilterTable.redirectLock.Unlock()
 				ps.tablesLock.RUnlock()
+				ps.subsToForward <- &ForwardSubRequest{dialAddr: nextHopAddr, sub: subForward}
 			} else if sub.Shortcut != "!" {
 				subForward.Shortcut = sub.Shortcut
-				ps.subsToForward <- &ForwardSubRequest{dialAddr: nextHopAddr, sub: subForward}
 				ps.currentFilterTable.redirectLock.Unlock()
 				ps.tablesLock.RUnlock()
+				ps.subsToForward <- &ForwardSubRequest{dialAddr: nextHopAddr, sub: subForward}
 			} else {
 				subForward.Shortcut = ps.currentFilterTable.routes[sub.PeerID].addr
-				ps.subsToForward <- &ForwardSubRequest{dialAddr: nextHopAddr, sub: subForward}
 				ps.currentFilterTable.redirectLock.Unlock()
 				ps.tablesLock.RUnlock()
+				ps.subsToForward <- &ForwardSubRequest{dialAddr: nextHopAddr, sub: subForward}
 			}
 		} else {
 			ps.subsToForward <- &ForwardSubRequest{dialAddr: nextHopAddr, sub: subForward}
@@ -1507,7 +1502,7 @@ func (ps *PubSub) UpdateBackup(ctx context.Context, update *pb.Update) (*pb.Ack,
 	ps.upBackLock.Unlock()
 
 	ps.upBackLock.RLock()
-	ps.myBackupsFilters[update.Sender].routes[update.Route].SimpleAddSummarizedFilter(p)
+	ps.myBackupsFilters[update.Sender].routes[update.Route].SimpleAddSummarizedFilter(p, nil)
 	ps.upBackLock.RUnlock()
 
 	return &pb.Ack{State: true, Info: ""}, nil
@@ -1672,7 +1667,7 @@ func (ps *PubSub) BackupRefresh(stream pb.ScoutHub_BackupRefreshServer) error {
 			ps.myBackupsFilters[update.Sender].routes[update.Route] = NewRouteStats(update.RouteAddr)
 		}
 
-		ps.myBackupsFilters[update.Sender].routes[update.Route].SimpleAddSummarizedFilter(p)
+		ps.myBackupsFilters[update.Sender].routes[update.Route].SimpleAddSummarizedFilter(p, nil)
 		i = 1
 	}
 }

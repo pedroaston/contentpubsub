@@ -27,7 +27,7 @@ func TestAddSummarizedFilter(t *testing.T) {
 	r := InitializeRouteStats()
 	// Test1: Bigger Predicate encompassed
 	pTest, _ := NewPredicate("portugal T/soccer T", 5)
-	r.SimpleAddSummarizedFilter(pTest)
+	r.SimpleAddSummarizedFilter(pTest, nil)
 
 	if len(r.filters[2]) == 2 {
 		t.Fatal("Test1: Wrongly added filter: " + pTest.String())
@@ -35,7 +35,7 @@ func TestAddSummarizedFilter(t *testing.T) {
 
 	// Test2: Same-size Predicate encompassed
 	pTest, _ = NewPredicate("soccer T/goals R 2 4", 5)
-	r.SimpleAddSummarizedFilter(pTest)
+	r.SimpleAddSummarizedFilter(pTest, nil)
 
 	if len(r.filters[2]) != 1 {
 		t.Fatal("Test2: Wrongly added filter: " + pTest.String())
@@ -43,7 +43,7 @@ func TestAddSummarizedFilter(t *testing.T) {
 
 	// Test3: Same-size Predicate encompassing
 	pTest, _ = NewPredicate("soccer T/goals R 2 7", 5)
-	r.SimpleAddSummarizedFilter(pTest)
+	r.SimpleAddSummarizedFilter(pTest, nil)
 
 	if len(r.filters[2]) == 2 {
 		t.Fatal("Test3: Filter not deleted")
@@ -53,7 +53,7 @@ func TestAddSummarizedFilter(t *testing.T) {
 
 	// Test4: Smaller Predicate encompassing
 	pTest, _ = NewPredicate("soccer T", 5)
-	r.SimpleAddSummarizedFilter(pTest)
+	r.SimpleAddSummarizedFilter(pTest, nil)
 
 	if len(r.filters[1]) == 1 {
 		t.Fatal("Test4: Filter not added: " + pTest.String())
@@ -63,7 +63,7 @@ func TestAddSummarizedFilter(t *testing.T) {
 
 	// Test5: Upper-limit merge
 	pTest, _ = NewPredicate("surf T/bali T/price R 700 1000", 5)
-	r.SimpleAddSummarizedFilter(pTest)
+	r.SimpleAddSummarizedFilter(pTest, nil)
 
 	if len(r.filters[3]) != 1 {
 		t.Fatal("Test5: Filter not deleted")
@@ -73,7 +73,7 @@ func TestAddSummarizedFilter(t *testing.T) {
 
 	// Test6: Lower limit merge
 	pTest, _ = NewPredicate("surf T/bali T/price R 400 600", 5)
-	r.SimpleAddSummarizedFilter(pTest)
+	r.SimpleAddSummarizedFilter(pTest, nil)
 
 	if len(r.filters[3]) == 2 {
 		t.Fatal("Test6: Filter not deleted")
@@ -83,7 +83,7 @@ func TestAddSummarizedFilter(t *testing.T) {
 
 	// Test7: Exclusive predicate
 	pTest, _ = NewPredicate("Tesla T/stock R 10000 15000", 5)
-	r.SimpleAddSummarizedFilter(pTest)
+	r.SimpleAddSummarizedFilter(pTest, nil)
 
 	if len(r.filters[2]) != 1 {
 		t.Fatal("Test7: Filter not added: " + pTest.String())
