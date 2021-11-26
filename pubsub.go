@@ -1255,7 +1255,7 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 		for node, received := range ps.myETrackers[eID].eventLog {
 			if !received {
 
-				fmt.Println("Zaasss >> " + ps.serverAddr)
+				fmt.Println("Zaasss 1 >> " + ps.serverAddr)
 
 				dialAddr := ps.currentFilterTable.routes[node].addr
 				newE := &pb.Event{
@@ -1271,10 +1271,14 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 					LastHop:       event.LastHop,
 				}
 
+				fmt.Println("Zaasss 2 >> " + ps.serverAddr)
+
 				if ps.activeRedirect {
+					fmt.Println("Zaasss 3 >> " + ps.serverAddr)
 					ps.currentFilterTable.redirectLock.Lock()
 					ps.nextFilterTable.redirectLock.Lock()
 
+					fmt.Println("Zaasss 4 >> " + ps.serverAddr)
 					if ps.currentFilterTable.redirectTable[node][event.RvId] != "" {
 						ps.eventsToForwardDown <- &ForwardEvent{
 							dialAddr:       dialAddr,
@@ -1289,6 +1293,8 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 						}
 					}
 
+					fmt.Println("Zaasss 5 >> " + ps.serverAddr)
+
 					ps.currentFilterTable.redirectLock.Unlock()
 					ps.nextFilterTable.redirectLock.Unlock()
 				} else {
@@ -1299,6 +1305,8 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 				}
 			}
 		}
+
+		fmt.Println("Fuuugyyy >> " + ps.serverAddr)
 
 		return &pb.Ack{State: true, Info: ""}, nil
 	}
