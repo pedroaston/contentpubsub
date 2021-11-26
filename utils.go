@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"strings"
 
+	cidRepo "github.com/ipfs/go-cid"
 	"github.com/multiformats/go-multiaddr"
+	mh "github.com/multiformats/go-multihash"
 )
 
 func addrForPubSubServer(addrs []multiaddr.Multiaddr, addrOption bool) string {
@@ -23,4 +25,12 @@ func addrForPubSubServer(addrs []multiaddr.Multiaddr, addrOption bool) string {
 	}
 
 	return ""
+}
+
+func attributeCid(attr string) string {
+
+	h, _ := mh.Sum([]byte(attr), mh.SHA3, 4)
+	res := cidRepo.NewCidV1(7, h)
+
+	return res.KeyString()
 }

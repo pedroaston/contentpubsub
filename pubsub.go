@@ -1225,26 +1225,19 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 	fmt.Println("Notify >> " + ps.serverAddr)
 	ps.record.operationHistory["Notify"]++
 
-	fmt.Println("ola 1 >> " + ps.serverAddr)
-
 	p, err := NewPredicate(event.Predicate, ps.maxAttributesPerPredicate)
 	if err != nil {
 		return &pb.Ack{State: false, Info: err.Error()}, err
 	}
 
-	fmt.Println("ola 2 >> " + ps.serverAddr)
-
-	/*
-		if !event.Backup {
-			for _, attr := range p.attributes {
-				isRv, _ := ps.rendezvousSelfCheck(attr.name)
-				if isRv {
-					return &pb.Ack{State: true, Info: ""}, nil
-				}
+	if !event.Backup {
+		for _, attr := range p.attributes {
+			isRv, _ := ps.rendezvousSelfCheck(attr.name)
+			if isRv {
+				return &pb.Ack{State: true, Info: ""}, nil
 			}
 		}
-	*/
-	fmt.Println("ola 3 >> " + ps.serverAddr)
+	}
 
 	originalDestination := event.OriginalRoute
 
@@ -1575,7 +1568,7 @@ func (ps *PubSub) updateRvRegion(route string, info string, rvID string) error {
 	routeAddr := ps.currentFilterTable.routes[route].addr
 	ps.tablesLock.RUnlock()
 
-	for _, alt := range ps.ipfsDHT.RoutingTable().NearestPeers(kb.ConvertKey(rvID), ps.faultToleranceFactor) {
+	for _, alt := range ps.ipfsDHT.RoutingTable().NearestPeers(kb.ConvertKey(attributeCid(rvID)), ps.faultToleranceFactor) {
 
 		backupAddrs := ps.ipfsDHT.FindLocal(alt).Addrs
 		if backupAddrs == nil {
@@ -1776,7 +1769,7 @@ func (ps *PubSub) refreshOneBackup(backup string, updates []*pb.Update) error {
 func (ps *PubSub) rendezvousSelfCheck(rvID string) (bool, string) {
 
 	selfID := ps.ipfsDHT.PeerID()
-	closestIDs := ps.ipfsDHT.RoutingTable().NearestPeers(kb.ConvertKey(rvID), ps.faultToleranceFactor+1)
+	closestIDs := ps.ipfsDHT.RoutingTable().NearestPeers(kb.ConvertKey(attributeCid(rvID)), ps.faultToleranceFactor+1)
 
 	for _, closestID := range closestIDs {
 		addr := addrForPubSubServer(ps.ipfsDHT.FindLocal(closestID).Addrs, ps.addrOption)
@@ -1796,7 +1789,7 @@ func (ps *PubSub) alternativesToRv(rvID string) []string {
 
 	var validAlt []string
 	selfID := ps.ipfsDHT.PeerID()
-	closestIDs := ps.ipfsDHT.RoutingTable().NearestPeers(kb.ConvertKey(rvID), ps.faultToleranceFactor)
+	closestIDs := ps.ipfsDHT.RoutingTable().NearestPeers(kb.ConvertKey(attributeCid(rvID)), ps.faultToleranceFactor)
 
 	for _, ID := range closestIDs {
 		if kb.Closer(ID, selfID, rvID) {
