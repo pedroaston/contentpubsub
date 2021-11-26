@@ -1234,15 +1234,16 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 
 	fmt.Println("ola 2 >> " + ps.serverAddr)
 
-	if !event.Backup {
-		for _, attr := range p.attributes {
-			isRv, _ := ps.rendezvousSelfCheck(attr.name)
-			if isRv {
-				return &pb.Ack{State: true, Info: ""}, nil
+	/*
+		if !event.Backup {
+			for _, attr := range p.attributes {
+				isRv, _ := ps.rendezvousSelfCheck(attr.name)
+				if isRv {
+					return &pb.Ack{State: true, Info: ""}, nil
+				}
 			}
 		}
-	}
-
+	*/
 	fmt.Println("ola 3 >> " + ps.serverAddr)
 
 	originalDestination := event.OriginalRoute
