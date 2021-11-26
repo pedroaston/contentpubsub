@@ -1231,15 +1231,18 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 
 	fmt.Println("phase 2 >> " + ps.serverAddr)
 
-	if !event.Backup {
-		for _, attr := range p.attributes {
-			isRv, _ := ps.rendezvousSelfCheck(attr.name)
-			if isRv {
-				return &pb.Ack{State: true, Info: ""}, nil
+	/*
+		if !event.Backup {
+			for _, attr := range p.attributes {
+				isRv, _ := ps.rendezvousSelfCheck(attr.name)
+				if isRv {
+					return &pb.Ack{State: true, Info: ""}, nil
+				}
 			}
 		}
-	}
 
+	*/
+	// 5 lost
 	fmt.Println("phase 3 >> " + ps.serverAddr)
 
 	originalDestination := event.OriginalRoute
@@ -1390,6 +1393,8 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 		fmt.Println("phase 5bb >> " + ps.serverAddr)
 		ps.upBackLock.RLock()
 		if _, ok := ps.myBackupsFilters[event.OriginalRoute]; !ok {
+			ps.upBackLock.RUnlock()
+			ps.tablesLock.RUnlock()
 			return &pb.Ack{State: false, Info: "cannot backup"}, nil
 		}
 
@@ -1431,6 +1436,8 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 		fmt.Println("phase 8bb >> " + ps.serverAddr)
 	}
 	ps.tablesLock.RUnlock()
+
+	fmt.Println("phase 8bb >> " + ps.serverAddr)
 
 	return &pb.Ack{State: true, Info: ""}, nil
 }
