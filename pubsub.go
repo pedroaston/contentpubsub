@@ -463,7 +463,7 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 		eLog := make(map[string]bool)
 
 		if isRv && notSent {
-
+			fmt.Println("Rv man >> " + ps.serverAddr)
 			notSent = false
 			ps.tablesLock.RLock()
 			for next, route := range ps.currentFilterTable.routes {
@@ -567,10 +567,6 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 	isRv, nextRvHopAddr := ps.rendezvousSelfCheck(event.RvId)
 	if !isRv && nextRvHopAddr != "" {
 
-		if !ps.activeReliability {
-			ps.Notify(ctx, event)
-		}
-
 		newE := &pb.Event{
 			Event:         event.Event,
 			OriginalRoute: event.OriginalRoute,
@@ -586,9 +582,14 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 
 		ps.eventsToForwardUp <- &ForwardEvent{dialAddr: nextRvHopAddr, event: newE}
 
+		if !ps.activeReliability {
+			ps.Notify(ctx, event)
+		}
+
 	} else if !isRv {
 		return &pb.Ack{State: false, Info: "rendezvous check failed"}, nil
 	} else if isRv {
+		fmt.Println("Rv man >> " + ps.serverAddr)
 		if ps.iAmRVPublish(p, event, false) != nil {
 			return &pb.Ack{State: false, Info: "rendezvous role failed"}, nil
 		}
