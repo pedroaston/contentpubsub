@@ -1225,10 +1225,14 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 	fmt.Println("Notify >> " + ps.serverAddr)
 	ps.record.operationHistory["Notify"]++
 
+	fmt.Println("ola 1 >> " + ps.serverAddr)
+
 	p, err := NewPredicate(event.Predicate, ps.maxAttributesPerPredicate)
 	if err != nil {
 		return &pb.Ack{State: false, Info: err.Error()}, err
 	}
+
+	fmt.Println("ola 2 >> " + ps.serverAddr)
 
 	if !event.Backup {
 		for _, attr := range p.attributes {
@@ -1238,6 +1242,8 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 			}
 		}
 	}
+
+	fmt.Println("ola 3 >> " + ps.serverAddr)
 
 	originalDestination := event.OriginalRoute
 
