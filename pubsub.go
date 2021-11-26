@@ -210,8 +210,6 @@ func (ps *PubSub) MySubscribe(info string) error {
 		p = pNew
 	}
 
-	fmt.Println("Malandro 1 >> " + ps.serverAddr)
-
 	for _, attr := range p.attributes {
 		isRv, _ := ps.rendezvousSelfCheck(attr.name)
 		if isRv {
@@ -219,21 +217,15 @@ func (ps *PubSub) MySubscribe(info string) error {
 		}
 	}
 
-	fmt.Println("Malandro 2 >> " + ps.serverAddr)
-
 	_, minAttr, err := ps.closerAttrRvToSelf(p)
 	if err != nil {
 		return errors.New("failed to find the closest attribute Rv")
 	}
 
-	fmt.Println("Malandro 3 >> " + ps.serverAddr)
-
 	_, dialAddr := ps.rendezvousSelfCheck(minAttr)
 	if dialAddr == "" {
 		return errors.New("no address for closest peer")
 	}
-
-	fmt.Println("Malandro 4 >> " + ps.serverAddr)
 
 	if ps.activeRedirect {
 		ps.tablesLock.RLock()
@@ -1228,12 +1220,16 @@ func (ps *PubSub) forwardEventUp(dialAddr string, event *pb.Event) {
 // Notify is a remote function called by a external peer to send an Event downstream
 func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) {
 	fmt.Println("Notify >> " + ps.serverAddr)
-	ps.record.operationHistory["Notify"]++
+	// ps.record.operationHistory["Notify"]++
+
+	fmt.Println("phase 1 >> " + ps.serverAddr)
 
 	p, err := NewPredicate(event.Predicate, ps.maxAttributesPerPredicate)
 	if err != nil {
 		return &pb.Ack{State: false, Info: err.Error()}, err
 	}
+
+	fmt.Println("phase 2 >> " + ps.serverAddr)
 
 	if !event.Backup {
 		for _, attr := range p.attributes {
@@ -1244,10 +1240,14 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 		}
 	}
 
+	fmt.Println("phase 3 >> " + ps.serverAddr)
+
 	originalDestination := event.OriginalRoute
 
 	eID := fmt.Sprintf("%s%d%d%s", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID, event.RvId)
 	if ps.activeReliability && ps.myETrackers[eID] != nil {
+
+		fmt.Println("phase 4a >> " + ps.serverAddr)
 
 		for node, received := range ps.myETrackers[eID].eventLog {
 			if !received {
@@ -1295,6 +1295,8 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 			}
 		}
 
+		fmt.Println("phase 5a >> " + ps.serverAddr)
+
 		return &pb.Ack{State: true, Info: ""}, nil
 	}
 
@@ -1302,12 +1304,16 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 	event.AckAddr = ps.serverAddr
 	eL := make(map[string]bool)
 
+	fmt.Println("phase 4b >> " + ps.serverAddr)
+
 	ps.tablesLock.RLock()
 	if !event.Backup {
 
 		if ps.myFilters.IsInterested(p) {
 			ps.interestingEvents <- event
 		}
+
+		fmt.Println("phase 5ba >> " + ps.serverAddr)
 
 		for next, route := range ps.currentFilterTable.routes {
 			if route.IsInterested(p) {
@@ -1368,6 +1374,8 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 			}
 		}
 
+		fmt.Println("phase 6ba >> " + ps.serverAddr)
+
 		if ps.activeReliability {
 			if len(eL) > 0 && ps.myETrackers[eID] == nil {
 				ps.myETrackers[eID] = NewEventLedger(eID, eL, ackAddr, event, originalDestination)
@@ -1376,11 +1384,16 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 			}
 		}
 
+		fmt.Println("phase 7ba >> " + ps.serverAddr)
+
 	} else {
+		fmt.Println("phase 5bb >> " + ps.serverAddr)
 		ps.upBackLock.RLock()
 		if _, ok := ps.myBackupsFilters[event.OriginalRoute]; !ok {
 			return &pb.Ack{State: false, Info: "cannot backup"}, nil
 		}
+
+		fmt.Println("phase 6bb >> " + ps.serverAddr)
 
 		for next, route := range ps.myBackupsFilters[event.OriginalRoute].routes {
 			if route.IsInterested(p) {
@@ -1405,6 +1418,8 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 		}
 		ps.upBackLock.RUnlock()
 
+		fmt.Println("phase 7bb >> " + ps.serverAddr)
+
 		if ps.activeReliability {
 			if len(eL) > 0 && ps.myEBackTrackers[eID] == nil {
 				ps.myEBackTrackers[eID] = NewEventLedger(eID, eL, ackAddr, event, originalDestination)
@@ -1412,6 +1427,8 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 				ps.ackToSendUp <- &AckUp{dialAddr: ackAddr, eventID: event.EventID, peerID: originalDestination, rvID: event.RvId}
 			}
 		}
+
+		fmt.Println("phase 8bb >> " + ps.serverAddr)
 	}
 	ps.tablesLock.RUnlock()
 
