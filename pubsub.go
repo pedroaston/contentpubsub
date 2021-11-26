@@ -563,12 +563,8 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 		return &pb.Ack{State: false, Info: err.Error()}, err
 	}
 
-	fmt.Println("main >> " + ps.serverAddr)
-
 	isRv, nextRvHopAddr := ps.rendezvousSelfCheck(event.RvId)
 	if !isRv && nextRvHopAddr != "" {
-
-		fmt.Println("main 1 >> " + ps.serverAddr)
 
 		newE := &pb.Event{
 			Event:         event.Event,
@@ -590,20 +586,13 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 		}
 
 	} else if !isRv {
-
-		fmt.Println("main 2 >> " + ps.serverAddr)
-
 		return &pb.Ack{State: false, Info: "rendezvous check failed"}, nil
 	} else if isRv {
-
-		fmt.Println("main 3 >> " + ps.serverAddr)
 
 		if ps.iAmRVPublish(p, event, false) != nil {
 			return &pb.Ack{State: false, Info: "rendezvous role failed"}, nil
 		}
 	}
-
-	fmt.Println("main done >> " + ps.serverAddr)
 
 	return &pb.Ack{State: true, Info: ""}, nil
 }
@@ -612,10 +601,7 @@ func (ps *PubSub) iAmRVPublish(p *Predicate, event *pb.Event, failedRv bool) err
 
 	eL := make(map[string]bool)
 
-	fmt.Println("rv 1 >> " + ps.serverAddr)
-
 	if failedRv && ps.lives >= 1 {
-		fmt.Println("rv 2a >> " + ps.serverAddr)
 		for backup := range ps.myBackupsFilters {
 			backupID, _ := peer.Decode(backup)
 			if kb.Closer(backupID, ps.ipfsDHT.PeerID(), event.RvId) {
@@ -644,10 +630,8 @@ func (ps *PubSub) iAmRVPublish(p *Predicate, event *pb.Event, failedRv bool) err
 				break
 			}
 		}
-		fmt.Println("rv 3a >> " + ps.serverAddr)
 	} else if ps.lives < 1 {
 
-		fmt.Println("rv 2b >> " + ps.serverAddr)
 		alternatives := ps.alternativesToRv(event.RvId)
 		for _, addr := range alternatives {
 			ctx, cancel := context.WithTimeout(context.Background(), ps.rpcTimeout)
@@ -666,11 +650,7 @@ func (ps *PubSub) iAmRVPublish(p *Predicate, event *pb.Event, failedRv bool) err
 				break
 			}
 		}
-
-		fmt.Println("rv 3b >> " + ps.serverAddr)
 	}
-
-	fmt.Println("rv u1 >> " + ps.serverAddr)
 
 	ps.tablesLock.RLock()
 	eIDRv := fmt.Sprintf("%s%d%d", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID)
@@ -679,8 +659,6 @@ func (ps *PubSub) iAmRVPublish(p *Predicate, event *pb.Event, failedRv bool) err
 			return nil
 		}
 	}
-
-	fmt.Println("rv u2 >> " + ps.serverAddr)
 
 	ps.rvCache = append(ps.rvCache, eIDRv)
 	event.AckAddr = ps.serverAddr
@@ -749,8 +727,6 @@ func (ps *PubSub) iAmRVPublish(p *Predicate, event *pb.Event, failedRv bool) err
 	}
 	ps.tablesLock.RUnlock()
 
-	fmt.Println("rv u3 >> " + ps.serverAddr)
-
 	if ps.activeReliability {
 		eID := fmt.Sprintf("%s%d%d%s", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID, event.RvId)
 		if len(eL) > 0 {
@@ -759,8 +735,6 @@ func (ps *PubSub) iAmRVPublish(p *Predicate, event *pb.Event, failedRv bool) err
 
 		ps.sendAckOp(event.PubAddr, "Publish", eID)
 	}
-
-	fmt.Println("rv u4 >> " + ps.serverAddr)
 
 	if ps.myFilters.IsInterested(p) {
 		ps.interestingEvents <- event
@@ -1153,6 +1127,8 @@ func (ps *PubSub) resendEvent(eLog *pb.EventLog) {
 
 	for p := range eLog.Log {
 
+		fmt.Println("Amanda!!! >> " + ps.serverAddr)
+
 		dialAddr := ps.currentFilterTable.routes[p].addr
 		newE := &pb.Event{
 			Event:         eLog.Event.Event,
@@ -1268,8 +1244,12 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 	eID := fmt.Sprintf("%s%d%d%s", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID, event.RvId)
 	if ps.activeReliability && ps.myETrackers[eID] != nil {
 
+		fmt.Println("Posss >> " + ps.serverAddr)
+
 		for node, received := range ps.myETrackers[eID].eventLog {
 			if !received {
+
+				fmt.Println("Zaasss >> " + ps.serverAddr)
 
 				dialAddr := ps.currentFilterTable.routes[node].addr
 				newE := &pb.Event{
