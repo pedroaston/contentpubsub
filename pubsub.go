@@ -786,8 +786,6 @@ func (ps *PubSub) sendAckOp(dialAddr string, Op string, info string) {
 	ctx, cancel := context.WithTimeout(context.Background(), ps.rpcTimeout)
 	defer cancel()
 
-	fmt.Println("sending ack op >> " + ps.serverAddr)
-
 	conn, err := grpc.Dial(dialAddr, grpc.WithInsecure())
 	if err != nil {
 		log.Fatalf("fail to dial: %v", err)
@@ -1127,8 +1125,6 @@ func (ps *PubSub) resendEvent(eLog *pb.EventLog) {
 
 	for p := range eLog.Log {
 
-		fmt.Println("Amanda!!! >> " + ps.serverAddr)
-
 		dialAddr := ps.currentFilterTable.routes[p].addr
 		newE := &pb.Event{
 			Event:         eLog.Event.Event,
@@ -1244,12 +1240,8 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 	eID := fmt.Sprintf("%s%d%d%s", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID, event.RvId)
 	if ps.activeReliability && ps.myETrackers[eID] != nil {
 
-		fmt.Println("Posss >> " + ps.serverAddr)
-
 		for node, received := range ps.myETrackers[eID].eventLog {
 			if !received {
-
-				fmt.Println("Zaasss 1 >> " + ps.serverAddr)
 
 				dialAddr := ps.currentFilterTable.routes[node].addr
 				newE := &pb.Event{
@@ -1265,14 +1257,10 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 					LastHop:       event.LastHop,
 				}
 
-				fmt.Println("Zaasss 2 >> " + ps.serverAddr)
-
 				if ps.activeRedirect {
-					fmt.Println("Zaasss 3 >> " + ps.serverAddr)
 					ps.currentFilterTable.redirectLock.Lock()
 					ps.nextFilterTable.redirectLock.Lock()
 
-					fmt.Println("Zaasss 4 >> " + ps.serverAddr)
 					if ps.currentFilterTable.redirectTable[node][event.RvId] != "" {
 						ps.eventsToForwardDown <- &ForwardEvent{
 							dialAddr:       dialAddr,
@@ -1287,8 +1275,6 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 						}
 					}
 
-					fmt.Println("Zaasss 5 >> " + ps.serverAddr)
-
 					ps.currentFilterTable.redirectLock.Unlock()
 					ps.nextFilterTable.redirectLock.Unlock()
 				} else {
@@ -1299,8 +1285,6 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 				}
 			}
 		}
-
-		fmt.Println("Fuuugyyy >> " + ps.serverAddr)
 
 		return &pb.Ack{State: true, Info: ""}, nil
 	}
@@ -1568,7 +1552,7 @@ func (ps *PubSub) updateRvRegion(route string, info string, rvID string) error {
 	routeAddr := ps.currentFilterTable.routes[route].addr
 	ps.tablesLock.RUnlock()
 
-	for _, alt := range ps.ipfsDHT.RoutingTable().NearestPeers(kb.ConvertKey(attributeCid(rvID)), ps.faultToleranceFactor) {
+	for _, alt := range ps.ipfsDHT.RoutingTable().NearestPeers(kb.ConvertKey(rvID), ps.faultToleranceFactor) {
 
 		backupAddrs := ps.ipfsDHT.FindLocal(alt).Addrs
 		if backupAddrs == nil {
@@ -1769,7 +1753,7 @@ func (ps *PubSub) refreshOneBackup(backup string, updates []*pb.Update) error {
 func (ps *PubSub) rendezvousSelfCheck(rvID string) (bool, string) {
 
 	selfID := ps.ipfsDHT.PeerID()
-	closestIDs := ps.ipfsDHT.RoutingTable().NearestPeers(kb.ConvertKey(attributeCid(rvID)), ps.faultToleranceFactor+1)
+	closestIDs := ps.ipfsDHT.RoutingTable().NearestPeers(kb.ConvertKey(rvID), ps.faultToleranceFactor+1)
 
 	for _, closestID := range closestIDs {
 		addr := addrForPubSubServer(ps.ipfsDHT.FindLocal(closestID).Addrs, ps.addrOption)
@@ -1789,7 +1773,7 @@ func (ps *PubSub) alternativesToRv(rvID string) []string {
 
 	var validAlt []string
 	selfID := ps.ipfsDHT.PeerID()
-	closestIDs := ps.ipfsDHT.RoutingTable().NearestPeers(kb.ConvertKey(attributeCid(rvID)), ps.faultToleranceFactor)
+	closestIDs := ps.ipfsDHT.RoutingTable().NearestPeers(kb.ConvertKey(rvID), ps.faultToleranceFactor)
 
 	for _, ID := range closestIDs {
 		if kb.Closer(ID, selfID, rvID) {
