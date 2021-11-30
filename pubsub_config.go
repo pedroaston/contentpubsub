@@ -54,7 +54,7 @@ func DefaultConfig(region string, cap int) *SetupPubSub {
 		PowerSubsPoolSize:          2,
 		OpResendRate:               10 * time.Second,
 		FaultToleranceFactor:       2,
-		ConcurrentProcessingFactor: 25,
+		ConcurrentProcessingFactor: 50,
 		MaxAttributesPerPredicate:  5,
 		SubRefreshRateMin:          15 * time.Minute,
 		TimeToCheckDelivery:        30 * time.Second,

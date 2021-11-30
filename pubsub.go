@@ -205,7 +205,7 @@ func (ps *PubSub) MySubscribe(info string) error {
 		return err
 	}
 
-	_, pNew := ps.myFilters.SimpleAddSummarizedFilter(p)
+	_, pNew := ps.myFilters.SimpleAddSummarizedFilter(p, nil)
 	if pNew != nil {
 		p = pNew
 	}
@@ -217,18 +217,14 @@ func (ps *PubSub) MySubscribe(info string) error {
 		}
 	}
 
-	minID, minAttr, err := ps.closerAttrRvToSelf(p)
+	_, minAttr, err := ps.closerAttrRvToSelf(p)
 	if err != nil {
 		return errors.New("failed to find the closest attribute Rv")
 	}
 
-	var dialAddr string
-	closest := ps.ipfsDHT.RoutingTable().NearestPeer(kb.ID(minID))
-	closestAddrs := ps.ipfsDHT.FindLocal(closest).Addrs
-	if closestAddrs == nil {
+	_, dialAddr := ps.rendezvousSelfCheck(minAttr)
+	if dialAddr == "" {
 		return errors.New("no address for closest peer")
-	} else {
-		dialAddr = addrForPubSubServer(closestAddrs, ps.addrOption)
 	}
 
 	if ps.activeRedirect {
@@ -284,19 +280,16 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 		aux = append(aux, addr)
 	}
 
+	ps.tablesLock.Lock()
 	if ps.currentFilterTable.routes[sub.PeerID] == nil {
-		ps.tablesLock.Lock()
 		ps.currentFilterTable.routes[sub.PeerID] = NewRouteStats(sub.IntAddr)
 		ps.nextFilterTable.routes[sub.PeerID] = NewRouteStats(sub.IntAddr)
-		ps.tablesLock.Unlock()
 	} else if ps.nextFilterTable.routes[sub.PeerID] == nil {
-		ps.tablesLock.Lock()
 		ps.nextFilterTable.routes[sub.PeerID] = NewRouteStats(sub.IntAddr)
-		ps.tablesLock.Unlock()
 	}
+	ps.tablesLock.Unlock()
 
 	ps.tablesLock.RLock()
-
 	if ps.activeRedirect {
 		if sub.Shortcut == "!" {
 			ps.currentFilterTable.turnOffRedirect(sub.PeerID, sub.RvId)
@@ -310,10 +303,8 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 		ps.nextFilterTable.addToRouteTracker(sub.RvId, sub.PeerID)
 	}
 
-	ps.currentFilterTable.routes[sub.PeerID].backups = aux
-	ps.nextFilterTable.routes[sub.PeerID].backups = aux
-	ps.currentFilterTable.routes[sub.PeerID].SimpleAddSummarizedFilter(p)
-	alreadyDone, pNew := ps.nextFilterTable.routes[sub.PeerID].SimpleAddSummarizedFilter(p)
+	ps.currentFilterTable.routes[sub.PeerID].SimpleAddSummarizedFilter(p, aux)
+	alreadyDone, pNew := ps.nextFilterTable.routes[sub.PeerID].SimpleAddSummarizedFilter(p, aux)
 	ps.tablesLock.RUnlock()
 
 	if alreadyDone {
@@ -327,7 +318,6 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 
 	isRv, nextHopAddr := ps.rendezvousSelfCheck(sub.RvId)
 	if !isRv && nextHopAddr != "" {
-
 		var backups map[int32]string = make(map[int32]string)
 		for i, backup := range ps.myBackups {
 			backups[int32(i)] = backup
@@ -348,19 +338,19 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 
 			if len(ps.currentFilterTable.routeTracker[sub.RvId]) >= 2 {
 				subForward.Shortcut = "!"
-				ps.subsToForward <- &ForwardSubRequest{dialAddr: nextHopAddr, sub: subForward}
 				ps.currentFilterTable.redirectLock.Unlock()
 				ps.tablesLock.RUnlock()
+				ps.subsToForward <- &ForwardSubRequest{dialAddr: nextHopAddr, sub: subForward}
 			} else if sub.Shortcut != "!" {
 				subForward.Shortcut = sub.Shortcut
-				ps.subsToForward <- &ForwardSubRequest{dialAddr: nextHopAddr, sub: subForward}
 				ps.currentFilterTable.redirectLock.Unlock()
 				ps.tablesLock.RUnlock()
+				ps.subsToForward <- &ForwardSubRequest{dialAddr: nextHopAddr, sub: subForward}
 			} else {
 				subForward.Shortcut = ps.currentFilterTable.routes[sub.PeerID].addr
-				ps.subsToForward <- &ForwardSubRequest{dialAddr: nextHopAddr, sub: subForward}
 				ps.currentFilterTable.redirectLock.Unlock()
 				ps.tablesLock.RUnlock()
+				ps.subsToForward <- &ForwardSubRequest{dialAddr: nextHopAddr, sub: subForward}
 			}
 		} else {
 			ps.subsToForward <- &ForwardSubRequest{dialAddr: nextHopAddr, sub: subForward}
@@ -473,7 +463,6 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 		eLog := make(map[string]bool)
 
 		if isRv && notSent {
-
 			notSent = false
 			ps.tablesLock.RLock()
 			for next, route := range ps.currentFilterTable.routes {
@@ -577,10 +566,6 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 	isRv, nextRvHopAddr := ps.rendezvousSelfCheck(event.RvId)
 	if !isRv && nextRvHopAddr != "" {
 
-		if !ps.activeReliability {
-			ps.Notify(ctx, event)
-		}
-
 		newE := &pb.Event{
 			Event:         event.Event,
 			OriginalRoute: event.OriginalRoute,
@@ -595,6 +580,10 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 		}
 
 		ps.eventsToForwardUp <- &ForwardEvent{dialAddr: nextRvHopAddr, event: newE}
+
+		if !ps.activeReliability {
+			ps.Notify(ctx, event)
+		}
 
 	} else if !isRv {
 		return &pb.Ack{State: false, Info: "rendezvous check failed"}, nil
@@ -753,6 +742,7 @@ func (ps *PubSub) iAmRVPublish(p *Predicate, event *pb.Event, failedRv bool) err
 }
 
 func (ps *PubSub) HelpNewRv(ctx context.Context, event *pb.Event) (*pb.Ack, error) {
+	fmt.Println("HelpNewRv >> " + ps.serverAddr)
 
 	for backup := range ps.myBackupsFilters {
 		backupID, _ := peer.Decode(backup)
@@ -1378,6 +1368,8 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 	} else {
 		ps.upBackLock.RLock()
 		if _, ok := ps.myBackupsFilters[event.OriginalRoute]; !ok {
+			ps.upBackLock.RUnlock()
+			ps.tablesLock.RUnlock()
 			return &pb.Ack{State: false, Info: "cannot backup"}, nil
 		}
 
@@ -1507,7 +1499,7 @@ func (ps *PubSub) UpdateBackup(ctx context.Context, update *pb.Update) (*pb.Ack,
 	ps.upBackLock.Unlock()
 
 	ps.upBackLock.RLock()
-	ps.myBackupsFilters[update.Sender].routes[update.Route].SimpleAddSummarizedFilter(p)
+	ps.myBackupsFilters[update.Sender].routes[update.Route].SimpleAddSummarizedFilter(p, nil)
 	ps.upBackLock.RUnlock()
 
 	return &pb.Ack{State: true, Info: ""}, nil
@@ -1672,7 +1664,7 @@ func (ps *PubSub) BackupRefresh(stream pb.ScoutHub_BackupRefreshServer) error {
 			ps.myBackupsFilters[update.Sender].routes[update.Route] = NewRouteStats(update.RouteAddr)
 		}
 
-		ps.myBackupsFilters[update.Sender].routes[update.Route].SimpleAddSummarizedFilter(p)
+		ps.myBackupsFilters[update.Sender].routes[update.Route].SimpleAddSummarizedFilter(p, nil)
 		i = 1
 	}
 }
@@ -1758,14 +1750,18 @@ func (ps *PubSub) refreshOneBackup(backup string, updates []*pb.Update) error {
 func (ps *PubSub) rendezvousSelfCheck(rvID string) (bool, string) {
 
 	selfID := ps.ipfsDHT.PeerID()
-	closestID := ps.ipfsDHT.RoutingTable().NearestPeer(kb.ConvertKey(rvID))
+	closestIDs := ps.ipfsDHT.RoutingTable().NearestPeers(kb.ConvertKey(rvID), ps.faultToleranceFactor+1)
 
-	if kb.Closer(selfID, closestID, rvID) {
-		return true, ""
-	} else {
-		addrs := ps.ipfsDHT.FindLocal(closestID).Addrs
-		return false, addrForPubSubServer(addrs, ps.addrOption)
+	for _, closestID := range closestIDs {
+		addr := addrForPubSubServer(ps.ipfsDHT.FindLocal(closestID).Addrs, ps.addrOption)
+		if kb.Closer(selfID, closestID, rvID) {
+			return true, ""
+		} else if addr != "" {
+			return false, addr
+		}
 	}
+
+	return true, ""
 }
 
 // alternativesToRv checks for alternative
