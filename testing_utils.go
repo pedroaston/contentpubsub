@@ -118,7 +118,7 @@ func connect(t *testing.T, ctx context.Context, a, b *dht.IpfsDHT) {
 func bootstrapHelper(kads []*dht.IpfsDHT, attr string) []int {
 
 	var order []int
-	orderedPeers := kads[0].RoutingTable().NearestPeers(kb.ConvertKey(attr), len(kads)-1)
+	orderedPeers := kads[0].RoutingTable().NearestPeers(kb.ConvertKey(attributeCID(attr)), len(kads)-1)
 	for _, p := range orderedPeers {
 		for i, kad := range kads {
 			if kad.PeerID().Pretty() == p.Pretty() {

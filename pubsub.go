@@ -603,7 +603,7 @@ func (ps *PubSub) iAmRVPublish(p *Predicate, event *pb.Event, failedRv bool) err
 	if failedRv && ps.lives >= 1 {
 		for backup := range ps.myBackupsFilters {
 			backupID, _ := peer.Decode(backup)
-			if kb.Closer(backupID, ps.ipfsDHT.PeerID(), event.RvId) {
+			if kb.Closer(backupID, ps.ipfsDHT.PeerID(), attributeCID(event.RvId)) {
 
 				newE := &pb.Event{
 					Event:         event.Event,
@@ -746,7 +746,7 @@ func (ps *PubSub) HelpNewRv(ctx context.Context, event *pb.Event) (*pb.Ack, erro
 
 	for backup := range ps.myBackupsFilters {
 		backupID, _ := peer.Decode(backup)
-		if kb.Closer(backupID, ps.ipfsDHT.PeerID(), event.RvId) {
+		if kb.Closer(backupID, ps.ipfsDHT.PeerID(), attributeCID(event.RvId)) {
 			if ps.lives < 1 {
 				return &pb.Ack{State: false, Info: "new node"}, nil
 			}
@@ -1549,7 +1549,7 @@ func (ps *PubSub) updateRvRegion(route string, info string, rvID string) error {
 	routeAddr := ps.currentFilterTable.routes[route].addr
 	ps.tablesLock.RUnlock()
 
-	for _, alt := range ps.ipfsDHT.RoutingTable().NearestPeers(kb.ConvertKey(rvID), ps.faultToleranceFactor) {
+	for _, alt := range ps.ipfsDHT.RoutingTable().NearestPeers(kb.ConvertKey(attributeCID(rvID)), ps.faultToleranceFactor) {
 
 		backupAddrs := ps.ipfsDHT.FindLocal(alt).Addrs
 		if backupAddrs == nil {
@@ -1750,11 +1750,11 @@ func (ps *PubSub) refreshOneBackup(backup string, updates []*pb.Update) error {
 func (ps *PubSub) rendezvousSelfCheck(rvID string) (bool, string) {
 
 	selfID := ps.ipfsDHT.PeerID()
-	closestIDs := ps.ipfsDHT.RoutingTable().NearestPeers(kb.ConvertKey(rvID), ps.faultToleranceFactor+1)
+	closestIDs := ps.ipfsDHT.RoutingTable().NearestPeers(kb.ConvertKey(attributeCID(rvID)), ps.faultToleranceFactor+1)
 
 	for _, closestID := range closestIDs {
 		addr := addrForPubSubServer(ps.ipfsDHT.FindLocal(closestID).Addrs, ps.addrOption)
-		if kb.Closer(selfID, closestID, rvID) {
+		if kb.Closer(selfID, closestID, attributeCID(rvID)) {
 			return true, ""
 		} else if addr != "" {
 			return false, addr
@@ -1770,10 +1770,10 @@ func (ps *PubSub) alternativesToRv(rvID string) []string {
 
 	var validAlt []string
 	selfID := ps.ipfsDHT.PeerID()
-	closestIDs := ps.ipfsDHT.RoutingTable().NearestPeers(kb.ConvertKey(rvID), ps.faultToleranceFactor)
+	closestIDs := ps.ipfsDHT.RoutingTable().NearestPeers(kb.ConvertKey(attributeCID(rvID)), ps.faultToleranceFactor)
 
 	for _, ID := range closestIDs {
-		if kb.Closer(ID, selfID, rvID) {
+		if kb.Closer(ID, selfID, attributeCID(rvID)) {
 			attrAddrs := ps.ipfsDHT.FindLocal(ID).Addrs
 			if attrAddrs != nil {
 				validAlt = append(validAlt, addrForPubSubServer(attrAddrs, ps.addrOption))
