@@ -1773,7 +1773,7 @@ func (ps *PubSub) alternativesToRv(rvID string) []string {
 	closestIDs := ps.ipfsDHT.RoutingTable().NearestPeers(kb.ConvertKey(rvID), ps.faultToleranceFactor)
 
 	for _, ID := range closestIDs {
-		if kb.Closer(ID, selfID, rvID) {
+		if !kb.Closer(selfID, ID, rvID) {
 			attrAddrs := ps.ipfsDHT.FindLocal(ID).Addrs
 			if attrAddrs != nil {
 				validAlt = append(validAlt, addrForPubSubServer(attrAddrs, ps.addrOption))
