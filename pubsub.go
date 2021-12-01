@@ -600,6 +600,8 @@ func (ps *PubSub) iAmRVPublish(p *Predicate, event *pb.Event, failedRv bool) err
 
 	eL := make(map[string]bool)
 
+	println("Ola !!!")
+
 	if failedRv && ps.lives >= 1 {
 		for backup := range ps.myBackupsFilters {
 			backupID, _ := peer.Decode(backup)
@@ -1228,6 +1230,7 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 		for _, attr := range p.attributes {
 			isRv, _ := ps.rendezvousSelfCheck(attr.name)
 			if isRv {
+				ps.ackToSendUp <- &AckUp{dialAddr: event.AckAddr, eventID: event.EventID, peerID: event.OriginalRoute, rvID: event.RvId}
 				return &pb.Ack{State: true, Info: ""}, nil
 			}
 		}
