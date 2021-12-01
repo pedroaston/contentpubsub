@@ -600,7 +600,7 @@ func (ps *PubSub) iAmRVPublish(p *Predicate, event *pb.Event, failedRv bool) err
 
 	eL := make(map[string]bool)
 
-	println("Ola !!!")
+	fmt.Println("Ola!!!!")
 
 	if failedRv && ps.lives >= 1 {
 		for backup := range ps.myBackupsFilters {
