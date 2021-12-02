@@ -345,3 +345,74 @@ func TestRefreshing(t *testing.T) {
 		t.Fatal("Incorrect state after refreshing!")
 	}
 }
+
+// TestAckedPublish simply subscribes to a event and then publishes it
+// Test composition: 5 nodes
+// >> 1 Publisher that publishes a event
+// >> 2 Subscribers that subscribe to a event
+// >> 1 passive node acting as rendezvous of the attribute portugal
+// >> 1 passive node acting as an intermidiate node
+func TestAckedPublish(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Initialize kademlia dhts
+	dhts := setupDHTS(t, ctx, 6)
+	var pubsubs [6]*PubSub
+	defer func() {
+		for _, dht := range dhts {
+			dht.Close()
+			defer dht.Host().Close()
+		}
+
+		for _, pubsub := range pubsubs {
+			pubsub.TerminateService()
+		}
+	}()
+
+	// One dht will act has bootstrapper
+	connect(t, ctx, dhts[0], dhts[1])
+	connect(t, ctx, dhts[0], dhts[2])
+	connect(t, ctx, dhts[0], dhts[3])
+	connect(t, ctx, dhts[0], dhts[4])
+	connect(t, ctx, dhts[0], dhts[5])
+
+	// Connect peers to achieve a dissemination chain for the attribute
+	// portugal and remove bootstrapper from routing table
+	helper := bootstrapHelper(dhts, "portugal")
+	dhts[1].RoutingTable().RemovePeer(dhts[0].PeerID())
+	dhts[2].RoutingTable().RemovePeer(dhts[0].PeerID())
+	dhts[3].RoutingTable().RemovePeer(dhts[0].PeerID())
+	dhts[4].RoutingTable().RemovePeer(dhts[0].PeerID())
+	dhts[5].RoutingTable().RemovePeer(dhts[0].PeerID())
+	connect(t, ctx, dhts[helper[0]], dhts[helper[1]])
+	connect(t, ctx, dhts[helper[1]], dhts[helper[2]])
+	connect(t, ctx, dhts[helper[2]], dhts[helper[3]])
+	connect(t, ctx, dhts[helper[2]], dhts[helper[4]])
+
+	// Initialize pub-subs
+	for i, dht := range dhts {
+		pubsubs[i] = NewPubSub(dht, DefaultConfig("PT", 10))
+		pubsubs[i].SetHasOldPeer()
+	}
+
+	// The peer at the edge of the chain subscribes
+	pubsubs[helper[3]].MySubscribe("portugal T")
+	pubsubs[helper[4]].MySubscribe("portugal T")
+	time.Sleep(time.Second)
+
+	// The peer at the middle of the chain publishes
+	pubsubs[helper[1]].MyPublish("Portugal is beautifull!", "portugal T")
+	time.Sleep(time.Second)
+
+	// Confirm if subscriber received the event
+	var expected []string
+	expected = append(expected, "Portugal is beautifull!")
+	miss3, _ := pubsubs[helper[3]].ReturnCorrectnessStats(expected)
+	miss4, _ := pubsubs[helper[4]].ReturnCorrectnessStats(expected)
+	if miss3 != 0 || miss4 != 0 {
+		t.Fatal("event not received by subscriber")
+	}
+
+	// TODO - Check if event was acked
+}

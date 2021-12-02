@@ -246,6 +246,7 @@ func (ps *PubSub) MySubscribe(info string) error {
 	}
 
 	if ps.activeReliability {
+		ps.tablesLock.RLock()
 		ps.unconfirmedSubs[sub.Predicate] = &SubState{
 			sub:      sub,
 			aged:     false,
@@ -258,6 +259,7 @@ func (ps *PubSub) MySubscribe(info string) error {
 			ps.subTickerState = true
 			ps.unconfirmedSubs[sub.Predicate].aged = true
 		}
+		ps.tablesLock.RUnlock()
 	}
 
 	ps.subsToForward <- &ForwardSubRequest{dialAddr: dialAddr, sub: sub}
@@ -275,9 +277,9 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 		return &pb.Ack{State: false, Info: "error creating predicate"}, err
 	}
 
-	var aux []string
+	var backAddrs []string
 	for _, addr := range sub.Backups {
-		aux = append(aux, addr)
+		backAddrs = append(backAddrs, addr)
 	}
 
 	ps.tablesLock.Lock()
@@ -298,13 +300,10 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 			ps.currentFilterTable.addRedirect(sub.PeerID, sub.RvId, sub.Shortcut)
 			ps.nextFilterTable.addRedirect(sub.PeerID, sub.RvId, sub.Shortcut)
 		}
-
-		ps.currentFilterTable.addToRouteTracker(sub.RvId, sub.PeerID)
-		ps.nextFilterTable.addToRouteTracker(sub.RvId, sub.PeerID)
 	}
 
-	ps.currentFilterTable.routes[sub.PeerID].SimpleAddSummarizedFilter(p, aux)
-	alreadyDone, pNew := ps.nextFilterTable.routes[sub.PeerID].SimpleAddSummarizedFilter(p, aux)
+	ps.currentFilterTable.routes[sub.PeerID].SimpleAddSummarizedFilter(p, backAddrs)
+	alreadyDone, pNew := ps.nextFilterTable.routes[sub.PeerID].SimpleAddSummarizedFilter(p, backAddrs)
 	ps.tablesLock.RUnlock()
 
 	if alreadyDone {
@@ -337,14 +336,14 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 			ps.currentFilterTable.redirectLock.Lock()
 
 			if len(ps.currentFilterTable.routeTracker[sub.RvId]) >= 2 {
-				subForward.Shortcut = "!"
 				ps.currentFilterTable.redirectLock.Unlock()
 				ps.tablesLock.RUnlock()
+				subForward.Shortcut = "!"
 				ps.subsToForward <- &ForwardSubRequest{dialAddr: nextHopAddr, sub: subForward}
 			} else if sub.Shortcut != "!" {
-				subForward.Shortcut = sub.Shortcut
 				ps.currentFilterTable.redirectLock.Unlock()
 				ps.tablesLock.RUnlock()
+				subForward.Shortcut = sub.Shortcut
 				ps.subsToForward <- &ForwardSubRequest{dialAddr: nextHopAddr, sub: subForward}
 			} else {
 				subForward.Shortcut = ps.currentFilterTable.routes[sub.PeerID].addr
@@ -414,7 +413,7 @@ func (ps *PubSub) forwardSub(dialAddr string, sub *pb.Subscription) {
 // list which will stop the refreshing of thatsub and stop
 // delivering to the user those contained events
 func (ps *PubSub) MyUnsubscribe(info string) error {
-	fmt.Printf("myUnsubscribe: %s\n", ps.serverAddr)
+	fmt.Println("MyUnsubscribe: " + ps.serverAddr)
 
 	p, err := NewPredicate(info, ps.maxAttributesPerPredicate)
 	if err != nil {
@@ -438,14 +437,14 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 		return err
 	}
 
+	eventID := &pb.EventID{
+		PublisherID:   peer.Encode(ps.ipfsDHT.PeerID()),
+		SessionNumber: int32(ps.session),
+		SeqID:         int32(ps.eventSeq),
+	}
+
 	notSent := true
 	for _, attr := range p.attributes {
-
-		eventID := &pb.EventID{
-			PublisherID:   peer.Encode(ps.ipfsDHT.PeerID()),
-			SessionNumber: int32(ps.session),
-			SeqID:         int32(ps.eventSeq),
-		}
 
 		event := &pb.Event{
 			EventID:   eventID,
@@ -532,13 +531,17 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 		} else {
 
 			if ps.activeReliability {
+
 				eID := fmt.Sprintf("%s%d%d%s", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID, event.RvId)
+				ps.tablesLock.RLock()
 				ps.unconfirmedEvents[eID] = &PubEventState{event: event, aged: false, dialAddr: nextRvHopAddr}
 				if !ps.eventTickerState {
 					ps.eventTicker.Reset(ps.opResendRate)
 					ps.eventTickerState = true
 					ps.unconfirmedEvents[eID].aged = true
 				}
+				ps.tablesLock.RUnlock()
+
 			} else {
 				ctx, cancel := context.WithTimeout(context.Background(), ps.rpcTimeout)
 				defer cancel()
@@ -551,8 +554,6 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 	}
 
 	ps.eventSeq++
-
-	fmt.Println("MyPublish Done: " + ps.serverAddr)
 	return nil
 }
 
@@ -587,14 +588,10 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 			ps.Notify(ctx, event)
 		}
 
-		fmt.Println("Publish Done")
-
 	} else if !isRv {
-		fmt.Println("Publish Err: " + ps.serverAddr)
 		return &pb.Ack{State: false, Info: "rendezvous check failed"}, nil
 	} else if isRv {
 		if ps.iAmRVPublish(p, event, false) != nil {
-			fmt.Println("Publish Err: " + ps.serverAddr)
 			return &pb.Ack{State: false, Info: "rendezvous role failed"}, nil
 		}
 	}
@@ -659,7 +656,6 @@ func (ps *PubSub) iAmRVPublish(p *Predicate, event *pb.Event, failedRv bool) err
 	eIDRv := fmt.Sprintf("%s%d%d", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID)
 	for _, cached := range ps.rvCache {
 		if eIDRv == cached {
-			fmt.Println("Publish Cashed: " + ps.serverAddr)
 			return nil
 		}
 	}
@@ -743,8 +739,6 @@ func (ps *PubSub) iAmRVPublish(p *Predicate, event *pb.Event, failedRv bool) err
 	if ps.myFilters.IsInterested(p) {
 		ps.interestingEvents <- event
 	}
-
-	fmt.Println("Publish Done: " + ps.serverAddr)
 
 	return nil
 }
