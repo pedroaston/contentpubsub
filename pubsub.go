@@ -360,9 +360,6 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 	} else if !isRv {
 		return &pb.Ack{State: false, Info: "rendezvous check failed"}, nil
 	} else {
-
-		fmt.Println("I am " + sub.RvId + " rendezvous: " + ps.serverAddr)
-
 		if ps.activeReliability {
 			ps.sendAckOp(sub.SubAddr, "Subscribe", sub.Predicate)
 		}
@@ -554,6 +551,8 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 	}
 
 	ps.eventSeq++
+
+	fmt.Println("MyPublish Done: " + ps.serverAddr)
 	return nil
 }
 
@@ -589,9 +588,11 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 		}
 
 	} else if !isRv {
+		fmt.Println("Publish Err: " + ps.serverAddr)
 		return &pb.Ack{State: false, Info: "rendezvous check failed"}, nil
 	} else if isRv {
 		if ps.iAmRVPublish(p, event, false) != nil {
+			fmt.Println("Publish Err: " + ps.serverAddr)
 			return &pb.Ack{State: false, Info: "rendezvous role failed"}, nil
 		}
 	}
@@ -602,9 +603,6 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 func (ps *PubSub) iAmRVPublish(p *Predicate, event *pb.Event, failedRv bool) error {
 
 	eL := make(map[string]bool)
-
-	fmt.Println("I am " + event.RvId + " rendezvous: " + ps.serverAddr)
-
 	if failedRv && ps.lives >= 1 {
 		for backup := range ps.myBackupsFilters {
 			backupID, _ := peer.Decode(backup)
@@ -659,6 +657,7 @@ func (ps *PubSub) iAmRVPublish(p *Predicate, event *pb.Event, failedRv bool) err
 	eIDRv := fmt.Sprintf("%s%d%d", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID)
 	for _, cached := range ps.rvCache {
 		if eIDRv == cached {
+			fmt.Println("Publish Cashed: " + ps.serverAddr)
 			return nil
 		}
 	}
@@ -742,6 +741,8 @@ func (ps *PubSub) iAmRVPublish(p *Predicate, event *pb.Event, failedRv bool) err
 	if ps.myFilters.IsInterested(p) {
 		ps.interestingEvents <- event
 	}
+
+	fmt.Println("Publish Done: " + ps.serverAddr)
 
 	return nil
 }
@@ -1234,6 +1235,7 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 			isRv, _ := ps.rendezvousSelfCheck(attr.name)
 			if isRv {
 				ps.ackToSendUp <- &AckUp{dialAddr: event.AckAddr, eventID: event.EventID, peerID: event.OriginalRoute, rvID: event.RvId}
+				fmt.Println("Notify Skipped: " + ps.serverAddr)
 				return &pb.Ack{State: true, Info: ""}, nil
 			}
 		}
@@ -1290,6 +1292,7 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 			}
 		}
 
+		fmt.Println("Notify Resend Done: " + ps.serverAddr)
 		return &pb.Ack{State: true, Info: ""}, nil
 	}
 
@@ -1376,6 +1379,7 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 		if _, ok := ps.myBackupsFilters[event.OriginalRoute]; !ok {
 			ps.upBackLock.RUnlock()
 			ps.tablesLock.RUnlock()
+			fmt.Println("Notify Backup Fail: " + ps.serverAddr)
 			return &pb.Ack{State: false, Info: "cannot backup"}, nil
 		}
 
@@ -1411,6 +1415,8 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 		}
 	}
 	ps.tablesLock.RUnlock()
+
+	fmt.Println("Notify Done: " + ps.serverAddr)
 
 	return &pb.Ack{State: true, Info: ""}, nil
 }
