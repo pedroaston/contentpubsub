@@ -587,6 +587,8 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 			ps.Notify(ctx, event)
 		}
 
+		fmt.Println("Publish Done")
+
 	} else if !isRv {
 		fmt.Println("Publish Err: " + ps.serverAddr)
 		return &pb.Ack{State: false, Info: "rendezvous check failed"}, nil
@@ -1235,7 +1237,6 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 			isRv, _ := ps.rendezvousSelfCheck(attr.name)
 			if isRv {
 				ps.ackToSendUp <- &AckUp{dialAddr: event.AckAddr, eventID: event.EventID, peerID: event.OriginalRoute, rvID: event.RvId}
-				fmt.Println("Notify Skipped: " + ps.serverAddr)
 				return &pb.Ack{State: true, Info: ""}, nil
 			}
 		}
@@ -1292,7 +1293,6 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 			}
 		}
 
-		fmt.Println("Notify Resend Done: " + ps.serverAddr)
 		return &pb.Ack{State: true, Info: ""}, nil
 	}
 
@@ -1379,7 +1379,6 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 		if _, ok := ps.myBackupsFilters[event.OriginalRoute]; !ok {
 			ps.upBackLock.RUnlock()
 			ps.tablesLock.RUnlock()
-			fmt.Println("Notify Backup Fail: " + ps.serverAddr)
 			return &pb.Ack{State: false, Info: "cannot backup"}, nil
 		}
 
@@ -1415,8 +1414,6 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 		}
 	}
 	ps.tablesLock.RUnlock()
-
-	fmt.Println("Notify Done: " + ps.serverAddr)
 
 	return &pb.Ack{State: true, Info: ""}, nil
 }
