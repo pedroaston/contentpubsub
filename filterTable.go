@@ -58,8 +58,9 @@ func NewFilterTable(dht *dht.IpfsDHT, addrOption bool) *FilterTable {
 	return ft
 }
 
-// addRedirect just adds a shortcut address for a specific set
-// of events to the peer's redirect support
+// addRedirect just adds a shortcut address for a specific
+// set of events to the peer's redirect support and updates
+// the route tracking mechanism
 func (ft *FilterTable) addRedirect(route string, rvID string, addr string) {
 
 	ft.redirectLock.Lock()
@@ -70,9 +71,18 @@ func (ft *FilterTable) addRedirect(route string, rvID string, addr string) {
 	}
 
 	ft.redirectTable[route][rvID] = addr
+
+	for _, r := range ft.routeTracker[rvID] {
+		if r == route {
+			return
+		}
+	}
+
+	ft.routeTracker[rvID] = append(ft.routeTracker[rvID], route)
 }
 
-// turnOffRedirect disallows a specific redirect from use
+// turnOffRedirect disallows a specific redirect from
+// use and updates the route tracking mechanism
 func (ft *FilterTable) turnOffRedirect(route string, rvID string) {
 
 	ft.redirectLock.Lock()
@@ -83,6 +93,14 @@ func (ft *FilterTable) turnOffRedirect(route string, rvID string) {
 	}
 
 	ft.redirectTable[route][rvID] = "!"
+
+	for _, r := range ft.routeTracker[rvID] {
+		if r == route {
+			return
+		}
+	}
+
+	ft.routeTracker[rvID] = append(ft.routeTracker[rvID], route)
 }
 
 // addToRouteTracker updates the route tracking mechanism
@@ -193,6 +211,9 @@ func (rs *RouteStats) SimpleAddSummarizedFilter(p *Predicate, backups []string) 
 // SimpleSubtractFilter removes all the emcompassed filters by the
 // info string predicate ignoring partial encompassing for now
 func (rs *RouteStats) SimpleSubtractFilter(p *Predicate) {
+
+	rs.routeLock.Lock()
+	defer rs.routeLock.Unlock()
 
 	for i := range rs.filters {
 		if len(p.attributes) <= i {
