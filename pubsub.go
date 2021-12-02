@@ -360,6 +360,9 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 	} else if !isRv {
 		return &pb.Ack{State: false, Info: "rendezvous check failed"}, nil
 	} else {
+
+		fmt.Println("I am " + sub.RvId + " rendezvous: " + ps.serverAddr)
+
 		if ps.activeReliability {
 			ps.sendAckOp(sub.SubAddr, "Subscribe", sub.Predicate)
 		}
