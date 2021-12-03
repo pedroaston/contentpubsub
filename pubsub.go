@@ -55,21 +55,23 @@ type PubSub struct {
 	myETrackers     map[string]*EventLedger
 	myEBackTrackers map[string]*EventLedger
 
-	interestingEvents   chan *pb.Event
-	subsToForward       chan *ForwardSubRequest
-	eventsToForwardUp   chan *ForwardEvent
-	eventsToForwardDown chan *ForwardEvent
-	ackToSendUp         chan *AckUp
-	heartbeatTicker     *time.Ticker
-	refreshTicker       *time.Ticker
-	eventTicker         *time.Ticker
-	subTicker           *time.Ticker
-	eventTickerState    bool
-	subTickerState      bool
-	terminate           chan string
-	unconfirmedEvents   map[string]*PubEventState
-	unconfirmedSubs     map[string]*SubState
-	lives               int
+	interestingEvents      chan *pb.Event
+	subsToForward          chan *ForwardSubRequest
+	eventsToForwardUp      chan *ForwardEvent
+	eventsToForwardDown    chan *ForwardEvent
+	ackToSendUp            chan *AckUp
+	heartbeatTicker        *time.Ticker
+	refreshTicker          *time.Ticker
+	eventTicker            *time.Ticker
+	subTicker              *time.Ticker
+	eventTickerState       bool
+	subTickerState         bool
+	terminate              chan string
+	unconfirmedEvents      map[string]*PubEventState
+	totalUnconfirmedEvents int
+	unconfirmedSubs        map[string]*SubState
+	totalUnconfirmedSubs   int
+	lives                  int
 
 	tablesLock *sync.RWMutex
 	upBackLock *sync.RWMutex
@@ -136,6 +138,8 @@ func NewPubSub(dht *kaddht.IpfsDHT, cfg *SetupPubSub) *PubSub {
 		upBackLock:                &sync.RWMutex{},
 		ackOpLock:                 &sync.Mutex{},
 		ackUpLock:                 &sync.Mutex{},
+		totalUnconfirmedEvents:    0,
+		totalUnconfirmedSubs:      0,
 		record:                    NewHistoryRecord(),
 		session:                   rand.Intn(9999),
 		eventSeq:                  0,
@@ -247,6 +251,7 @@ func (ps *PubSub) MySubscribe(info string) error {
 
 	if ps.activeReliability {
 		ps.tablesLock.RLock()
+		ps.ackOpLock.Lock()
 		ps.unconfirmedSubs[sub.Predicate] = &SubState{
 			sub:      sub,
 			aged:     false,
@@ -254,11 +259,13 @@ func (ps *PubSub) MySubscribe(info string) error {
 			started:  time.Now().Format(time.StampMilli),
 		}
 
+		ps.totalUnconfirmedSubs++
 		if !ps.subTickerState {
 			ps.subTicker.Reset(ps.opResendRate)
 			ps.subTickerState = true
 			ps.unconfirmedSubs[sub.Predicate].aged = true
 		}
+		ps.ackOpLock.Unlock()
 		ps.tablesLock.RUnlock()
 	}
 
@@ -315,12 +322,13 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 		sub.Predicate = pNew.ToString()
 	}
 
+	var backups map[int32]string = make(map[int32]string)
+	for i, backup := range ps.myBackups {
+		backups[int32(i)] = backup
+	}
+
 	isRv, nextHopAddr := ps.rendezvousSelfCheck(sub.RvId)
 	if !isRv && nextHopAddr != "" {
-		var backups map[int32]string = make(map[int32]string)
-		for i, backup := range ps.myBackups {
-			backups[int32(i)] = backup
-		}
 
 		subForward := &pb.Subscription{
 			PeerID:    peer.Encode(ps.ipfsDHT.PeerID()),
@@ -355,7 +363,7 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 			ps.subsToForward <- &ForwardSubRequest{dialAddr: nextHopAddr, sub: subForward}
 		}
 
-		ps.updateMyBackups(sub.PeerID, sub.Predicate)
+		ps.updateMyBackups(sub.PeerID, sub.Predicate, backups)
 	} else if !isRv {
 		return &pb.Ack{State: false, Info: "rendezvous check failed"}, nil
 	} else {
@@ -363,7 +371,7 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 			ps.sendAckOp(sub.SubAddr, "Subscribe", sub.Predicate)
 		}
 
-		ps.updateRvRegion(sub.PeerID, sub.Predicate, sub.RvId)
+		ps.updateRvRegion(sub.PeerID, sub.Predicate, sub.RvId, backups)
 	}
 
 	return &pb.Ack{State: true, Info: ""}, nil
@@ -534,12 +542,15 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 
 				eID := fmt.Sprintf("%s%d%d%s", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID, event.RvId)
 				ps.tablesLock.RLock()
+				ps.ackOpLock.Lock()
 				ps.unconfirmedEvents[eID] = &PubEventState{event: event, aged: false, dialAddr: nextRvHopAddr}
+				ps.totalUnconfirmedEvents++
 				if !ps.eventTickerState {
 					ps.eventTicker.Reset(ps.opResendRate)
 					ps.eventTickerState = true
 					ps.unconfirmedEvents[eID].aged = true
 				}
+				ps.ackOpLock.Unlock()
 				ps.tablesLock.RUnlock()
 
 			} else {
@@ -929,7 +940,7 @@ func (ps *PubSub) AckUp(ctx context.Context, ack *pb.EventAck) (*pb.Ack, error) 
 	if ps.myEBackTrackers[eID] != nil {
 
 		ps.ackUpLock.Lock()
-		if ps.myEBackTrackers[eID] == nil {
+		if ps.myEBackTrackers[eID] == nil || ps.myEBackTrackers[eID].receivedAcks == ps.myEBackTrackers[eID].expectedAcks {
 			return &pb.Ack{State: true, Info: "Event Tracker already closed"}, nil
 		}
 
@@ -937,9 +948,12 @@ func (ps *PubSub) AckUp(ctx context.Context, ack *pb.EventAck) (*pb.Ack, error) 
 		ps.myEBackTrackers[eID].receivedAcks++
 
 		if ps.myEBackTrackers[eID].receivedAcks == ps.myEBackTrackers[eID].expectedAcks {
-			ps.ackToSendUp <- &AckUp{dialAddr: ps.myEBackTrackers[eID].addrToAck, eventID: ack.EventID,
-				peerID: ps.myEBackTrackers[eID].originalDestination, rvID: ack.RvID}
-			delete(ps.myEBackTrackers, eID)
+			ps.ackToSendUp <- &AckUp{
+				dialAddr: ps.myEBackTrackers[eID].addrToAck,
+				eventID:  ack.EventID,
+				peerID:   ps.myEBackTrackers[eID].originalDestination,
+				rvID:     ack.RvID,
+			}
 		}
 		ps.ackUpLock.Unlock()
 
@@ -948,7 +962,7 @@ func (ps *PubSub) AckUp(ctx context.Context, ack *pb.EventAck) (*pb.Ack, error) 
 	} else {
 
 		ps.ackUpLock.Lock()
-		if ps.myETrackers[eID] == nil {
+		if ps.myETrackers[eID] == nil || ps.myETrackers[eID].receivedAcks == ps.myETrackers[eID].expectedAcks {
 			return &pb.Ack{State: true, Info: "Event Tracker already closed"}, nil
 		}
 
@@ -956,11 +970,12 @@ func (ps *PubSub) AckUp(ctx context.Context, ack *pb.EventAck) (*pb.Ack, error) 
 		ps.myETrackers[eID].receivedAcks++
 
 		if ps.myETrackers[eID].receivedAcks == ps.myETrackers[eID].expectedAcks {
-
-			ps.ackToSendUp <- &AckUp{dialAddr: ps.myETrackers[eID].addrToAck, eventID: ack.EventID,
-				peerID: ps.myETrackers[eID].originalDestination, rvID: ack.RvID}
-
-			delete(ps.myETrackers, eID)
+			ps.ackToSendUp <- &AckUp{
+				dialAddr: ps.myETrackers[eID].addrToAck,
+				eventID:  ack.EventID,
+				peerID:   ps.myETrackers[eID].originalDestination,
+				rvID:     ack.RvID,
+			}
 		}
 		ps.ackUpLock.Unlock()
 
@@ -976,20 +991,22 @@ func (ps *PubSub) AckOp(ctx context.Context, ack *pb.Ack) (*pb.Ack, error) {
 	ps.ackOpLock.Lock()
 	if ack.Op == "Publish" {
 		if ps.unconfirmedEvents[ack.Info] != nil {
-			delete(ps.unconfirmedEvents, ack.Info)
+			ps.unconfirmedEvents[ack.Info] = nil
+			ps.totalUnconfirmedEvents--
 		}
 
-		if len(ps.unconfirmedEvents) == 0 {
+		if ps.totalUnconfirmedEvents == 0 {
 			ps.eventTicker.Stop()
 			ps.eventTickerState = false
 		}
 	} else if ack.Op == "Subscribe" {
 		if ps.unconfirmedSubs[ack.Info] != nil {
 			ps.record.SaveTimeToSub(ps.unconfirmedSubs[ack.Info].started)
-			delete(ps.unconfirmedSubs, ack.Info)
+			ps.unconfirmedSubs[ack.Info] = nil
+			ps.totalUnconfirmedSubs--
 		}
 
-		if len(ps.unconfirmedSubs) == 0 {
+		if ps.totalUnconfirmedSubs == 0 {
 			ps.subTicker.Stop()
 			ps.subTickerState = false
 		}
@@ -1491,6 +1508,11 @@ func (ps *PubSub) UpdateBackup(ctx context.Context, update *pb.Update) (*pb.Ack,
 		return &pb.Ack{State: false, Info: err.Error()}, err
 	}
 
+	var backAddrs []string
+	for _, addr := range update.Backups {
+		backAddrs = append(backAddrs, addr)
+	}
+
 	ps.upBackLock.Lock()
 	if _, ok := ps.myBackupsFilters[update.Sender]; !ok {
 		ps.myBackupsFilters[update.Sender] = &FilterTable{routes: make(map[string]*RouteStats)}
@@ -1502,7 +1524,7 @@ func (ps *PubSub) UpdateBackup(ctx context.Context, update *pb.Update) (*pb.Ack,
 	ps.upBackLock.Unlock()
 
 	ps.upBackLock.RLock()
-	ps.myBackupsFilters[update.Sender].routes[update.Route].SimpleAddSummarizedFilter(p, nil)
+	ps.myBackupsFilters[update.Sender].routes[update.Route].SimpleAddSummarizedFilter(p, backAddrs)
 	ps.upBackLock.RUnlock()
 
 	return &pb.Ack{State: true, Info: ""}, nil
@@ -1510,7 +1532,7 @@ func (ps *PubSub) UpdateBackup(ctx context.Context, update *pb.Update) (*pb.Ack,
 
 // updateMyBackups basically sends updates rpcs to its backups
 // to update their versions of his filter table
-func (ps *PubSub) updateMyBackups(route string, info string) error {
+func (ps *PubSub) updateMyBackups(route string, info string, backups map[int32]string) error {
 
 	ps.tablesLock.RLock()
 	routeAddr := ps.currentFilterTable.routes[route].addr
@@ -1532,6 +1554,7 @@ func (ps *PubSub) updateMyBackups(route string, info string) error {
 			Route:     route,
 			RouteAddr: routeAddr,
 			Predicate: info,
+			Backups:   backups,
 		}
 
 		ack, err := client.UpdateBackup(ctx, update)
@@ -1546,7 +1569,7 @@ func (ps *PubSub) updateMyBackups(route string, info string) error {
 
 // updateRvRegion basically sends updates rpcs
 // to the closest nodes to the attribute
-func (ps *PubSub) updateRvRegion(route string, info string, rvID string) error {
+func (ps *PubSub) updateRvRegion(route string, info string, rvID string, backups map[int32]string) error {
 
 	ps.tablesLock.RLock()
 	routeAddr := ps.currentFilterTable.routes[route].addr
@@ -1576,6 +1599,7 @@ func (ps *PubSub) updateRvRegion(route string, info string, rvID string) error {
 			Route:     route,
 			RouteAddr: routeAddr,
 			Predicate: info,
+			Backups:   backups,
 		}
 
 		client.UpdateBackup(ctx, update)
@@ -1855,17 +1879,17 @@ func (ps *PubSub) processLoop() {
 			go ps.forwardAdvertising(pid.dialAddr, pid.adv)
 		case <-ps.eventTicker.C:
 			for _, e := range ps.unconfirmedEvents {
-				if e.aged {
+				if e != nil && e.aged {
 					ps.forwardEventUp(e.dialAddr, e.event)
-				} else {
+				} else if e != nil {
 					e.aged = true
 				}
 			}
 		case <-ps.subTicker.C:
 			for _, sub := range ps.unconfirmedSubs {
-				if sub.aged {
+				if sub != nil && sub.aged {
 					ps.forwardSub(sub.dialAddr, sub.sub)
-				} else {
+				} else if sub != nil {
 					sub.aged = true
 				}
 			}

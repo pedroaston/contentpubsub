@@ -345,3 +345,112 @@ func TestRefreshing(t *testing.T) {
 		t.Fatal("Incorrect state after refreshing!")
 	}
 }
+
+// TestAcknowledgeChain confirms if the entire acknowledge
+// and tracking mechanisms were successfully completed
+// after a successful event delivery
+// Test composition: 6 nodes
+// >> 1 Publisher that publishes a event
+// >> 3 Subscribers that subscribe to a event
+// >> 2 passive nodes one acting as rendezvous of
+//      the attribute portugal and another as an
+//      intermidiate one
+func TestAcknowledgeChain(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Initialize kademlia dhts
+	dhts := setupDHTS(t, ctx, 7)
+	var pubsubs [7]*PubSub
+	defer func() {
+		for _, dht := range dhts {
+			dht.Close()
+			defer dht.Host().Close()
+		}
+
+		for _, pubsub := range pubsubs {
+			pubsub.TerminateService()
+		}
+	}()
+
+	// One dht will act has bootstrapper
+	connect(t, ctx, dhts[0], dhts[1])
+	connect(t, ctx, dhts[0], dhts[2])
+	connect(t, ctx, dhts[0], dhts[3])
+	connect(t, ctx, dhts[0], dhts[4])
+	connect(t, ctx, dhts[0], dhts[5])
+	connect(t, ctx, dhts[0], dhts[6])
+
+	// Connect peers to achieve a dissemination chain for the attribute
+	// portugal and remove bootstrapper from routing table
+	helper := bootstrapHelper(dhts, "portugal")
+	dhts[1].RoutingTable().RemovePeer(dhts[0].PeerID())
+	dhts[2].RoutingTable().RemovePeer(dhts[0].PeerID())
+	dhts[3].RoutingTable().RemovePeer(dhts[0].PeerID())
+	dhts[4].RoutingTable().RemovePeer(dhts[0].PeerID())
+	dhts[5].RoutingTable().RemovePeer(dhts[0].PeerID())
+	dhts[6].RoutingTable().RemovePeer(dhts[0].PeerID())
+	connect(t, ctx, dhts[helper[0]], dhts[helper[1]])
+	connect(t, ctx, dhts[helper[1]], dhts[helper[2]])
+	connect(t, ctx, dhts[helper[1]], dhts[helper[3]])
+	connect(t, ctx, dhts[helper[3]], dhts[helper[4]])
+	connect(t, ctx, dhts[helper[3]], dhts[helper[5]])
+
+	// Initialize pub-subs
+	for i, dht := range dhts {
+		pubsubs[i] = NewPubSub(dht, DefaultConfig("PT", 10))
+		pubsubs[i].SetHasOldPeer()
+	}
+
+	// The peer at the edge of the chain subscribes
+	pubsubs[helper[2]].MySubscribe("portugal T")
+	pubsubs[helper[4]].MySubscribe("portugal T")
+	pubsubs[helper[5]].MySubscribe("portugal T")
+	time.Sleep(time.Second)
+
+	// The peer at the middle of the chain publishes
+	pubsubs[helper[1]].MyPublish("Portugal is beautifull!", "portugal T")
+	time.Sleep(time.Second)
+
+	// Confirm if subscriber received the event
+	var expected []string
+	expected = append(expected, "Portugal is beautifull!")
+	miss2, _ := pubsubs[helper[2]].ReturnCorrectnessStats(expected)
+	miss4, _ := pubsubs[helper[4]].ReturnCorrectnessStats(expected)
+	miss5, _ := pubsubs[helper[5]].ReturnCorrectnessStats(expected)
+	if miss2 != 0 || miss4 != 0 || miss5 != 0 {
+		t.Fatal("event not received by subscriber")
+	}
+
+	// Confirm that publisher received confirmation
+	// that the rv received the event
+	if pubsubs[helper[1]].totalUnconfirmedEvents != 0 {
+		t.Fatal("event not confirmed by rendezvous")
+	}
+
+	// Confirm that subscribers received confirmation
+	// that the rv received the subscriptions
+	if pubsubs[helper[2]].totalUnconfirmedEvents != 0 || pubsubs[helper[4]].totalUnconfirmedEvents != 0 ||
+		pubsubs[helper[5]].totalUnconfirmedEvents != 0 {
+		t.Fatal("subscription not confirmed by rendezvous")
+	}
+
+	// Confirm the intermidiate nodes received all acks
+	for _, eLog := range pubsubs[helper[1]].myETrackers {
+		if eLog.expectedAcks != eLog.receivedAcks {
+			t.Fatal("unreceived acks at 1st intermidiate")
+		}
+	}
+	for _, eLog := range pubsubs[helper[3]].myETrackers {
+		if eLog.expectedAcks != eLog.receivedAcks {
+			t.Fatal("unreceived acks at 2st intermidiate")
+		}
+	}
+
+	// Confirm that the tracker has received all acks
+	for _, eLog := range pubsubs[helper[0]].myTrackers["portugal"].eventStats {
+		if eLog.expectedAcks != eLog.receivedAcks {
+			t.Fatal("unreceived acks at tracker")
+		}
+	}
+}

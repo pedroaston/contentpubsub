@@ -72,6 +72,7 @@ message Update {
     string route = 2;
     string routeAddr = 3;
     string predicate = 4;
+    map<int32, string> backups = 5;
 }
 
 message RecruitTrackerMessage {

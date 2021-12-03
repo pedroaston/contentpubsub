@@ -74,11 +74,9 @@ func (t *Tracker) addAckToLedger(ack *pb.EventAck) {
 		return
 	}
 
-	t.eventStats[eID].eventLog[ack.PeerID] = true
-	t.eventStats[eID].receivedAcks++
-
-	if t.eventStats[eID].receivedAcks == t.eventStats[eID].expectedAcks {
-		delete(t.eventStats, eID)
+	if t.eventStats[eID].receivedAcks < t.eventStats[eID].expectedAcks && !t.eventStats[eID].eventLog[ack.PeerID] {
+		t.eventStats[eID].eventLog[ack.PeerID] = true
+		t.eventStats[eID].receivedAcks++
 	}
 }
 
@@ -97,14 +95,10 @@ func (t *Tracker) applyBuffedAcks() {
 // delivery and warns the Rv of which are they and for which events
 func (t *Tracker) returnUnAckedEvents() {
 
-	if len(t.eventStats) == 0 {
-		return
-	}
-
 	for _, l := range t.eventStats {
 		if !l.old {
 			l.old = true
-		} else {
+		} else if l.receivedAcks < l.expectedAcks {
 			stillMissAck := make(map[string]bool)
 			for peer, ack := range l.eventLog {
 				if !ack {
