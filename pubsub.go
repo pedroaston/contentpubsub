@@ -189,6 +189,7 @@ type ForwardEvent struct {
 	redirectOption string
 	dialAddr       string
 	event          *pb.Event
+	backups        []string
 }
 
 type AckUp struct {
@@ -284,6 +285,7 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 		return &pb.Ack{State: false, Info: "error creating predicate"}, err
 	}
 
+	updateBackups := sub.Backups
 	var backAddrs []string
 	for _, addr := range sub.Backups {
 		backAddrs = append(backAddrs, addr)
@@ -322,13 +324,13 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 		sub.Predicate = pNew.ToString()
 	}
 
-	var backups map[int32]string = make(map[int32]string)
-	for i, backup := range ps.myBackups {
-		backups[int32(i)] = backup
-	}
-
 	isRv, nextHopAddr := ps.rendezvousSelfCheck(sub.RvId)
 	if !isRv && nextHopAddr != "" {
+
+		var backups map[int32]string = make(map[int32]string)
+		for i, backup := range ps.myBackups {
+			backups[int32(i)] = backup
+		}
 
 		subForward := &pb.Subscription{
 			PeerID:    peer.Encode(ps.ipfsDHT.PeerID()),
@@ -363,7 +365,7 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 			ps.subsToForward <- &ForwardSubRequest{dialAddr: nextHopAddr, sub: subForward}
 		}
 
-		ps.updateMyBackups(sub.PeerID, sub.Predicate, backups)
+		ps.updateMyBackups(sub.PeerID, sub.Predicate, updateBackups)
 	} else if !isRv {
 		return &pb.Ack{State: false, Info: "rendezvous check failed"}, nil
 	} else {
@@ -371,7 +373,7 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 			ps.sendAckOp(sub.SubAddr, "Subscribe", sub.Predicate)
 		}
 
-		ps.updateRvRegion(sub.PeerID, sub.Predicate, sub.RvId, backups)
+		ps.updateRvRegion(sub.PeerID, sub.Predicate, sub.RvId, updateBackups)
 	}
 
 	return &pb.Ack{State: true, Info: ""}, nil
@@ -710,18 +712,21 @@ func (ps *PubSub) iAmRVPublish(p *Predicate, event *pb.Event, failedRv bool) err
 						dialAddr:       dialAddr,
 						event:          newE,
 						redirectOption: "",
+						backups:        route.backups,
 					}
 				} else if ps.currentFilterTable.redirectTable[next][event.RvId] == "" {
 					ps.eventsToForwardDown <- &ForwardEvent{
 						dialAddr:       dialAddr,
 						event:          newE,
 						redirectOption: "",
+						backups:        route.backups,
 					}
 				} else {
 					ps.eventsToForwardDown <- &ForwardEvent{
 						dialAddr:       dialAddr,
 						event:          newE,
 						redirectOption: ps.currentFilterTable.redirectTable[next][event.RvId],
+						backups:        route.backups,
 					}
 				}
 
@@ -732,6 +737,7 @@ func (ps *PubSub) iAmRVPublish(p *Predicate, event *pb.Event, failedRv bool) err
 				ps.eventsToForwardDown <- &ForwardEvent{
 					dialAddr: dialAddr,
 					event:    newE,
+					backups:  route.backups,
 				}
 			}
 		}
@@ -1256,8 +1262,7 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 	originalDestination := event.OriginalRoute
 
 	eID := fmt.Sprintf("%s%d%d%s", event.EventID.PublisherID, event.EventID.SessionNumber, event.EventID.SeqID, event.RvId)
-	if ps.activeReliability && ps.myETrackers[eID] != nil {
-
+	if ps.activeReliability && ps.myETrackers[eID] != nil && !event.Backup {
 		for node, received := range ps.myETrackers[eID].eventLog {
 			if !received {
 
@@ -1323,6 +1328,7 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 
 				newE := &pb.Event{
 					Event:         event.Event,
+					Backup:        event.Backup,
 					OriginalRoute: next,
 					Predicate:     event.Predicate,
 					RvId:          event.RvId,
@@ -1350,18 +1356,21 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 							dialAddr:       dialAddr,
 							event:          newE,
 							redirectOption: "",
+							backups:        route.backups,
 						}
 					} else if ps.currentFilterTable.redirectTable[next][event.RvId] == "" {
 						ps.eventsToForwardDown <- &ForwardEvent{
 							dialAddr:       dialAddr,
 							event:          newE,
 							redirectOption: "",
+							backups:        route.backups,
 						}
 					} else {
 						ps.eventsToForwardDown <- &ForwardEvent{
 							dialAddr:       dialAddr,
 							event:          newE,
 							redirectOption: ps.currentFilterTable.redirectTable[next][event.RvId],
+							backups:        route.backups,
 						}
 					}
 
@@ -1372,6 +1381,7 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 					ps.eventsToForwardDown <- &ForwardEvent{
 						dialAddr: dialAddr,
 						event:    newE,
+						backups:  route.backups,
 					}
 				}
 			}
@@ -1384,8 +1394,8 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 				ps.ackToSendUp <- &AckUp{dialAddr: ackAddr, eventID: event.EventID, peerID: originalDestination, rvID: event.RvId}
 			}
 		}
-
 	} else {
+
 		ps.upBackLock.RLock()
 		if _, ok := ps.myBackupsFilters[event.OriginalRoute]; !ok {
 			ps.upBackLock.RUnlock()
@@ -1411,7 +1421,11 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 					LastHop:       event.LastHop,
 				}
 
-				ps.eventsToForwardDown <- &ForwardEvent{dialAddr: dialAddr, event: newE}
+				ps.eventsToForwardDown <- &ForwardEvent{
+					dialAddr: dialAddr,
+					event:    newE,
+					backups:  route.backups,
+				}
 			}
 		}
 		ps.upBackLock.RUnlock()
@@ -1431,7 +1445,7 @@ func (ps *PubSub) Notify(ctx context.Context, event *pb.Event) (*pb.Ack, error) 
 
 // forwardEventDown is called upon receiving the request to keep forward a event downwards
 // until it finds all subscribers by calling a notify operation towards them
-func (ps *PubSub) forwardEventDown(dialAddr string, event *pb.Event, redirect string) {
+func (ps *PubSub) forwardEventDown(dialAddr string, event *pb.Event, redirect string, backups []string) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), ps.rpcTimeout)
 	defer cancel()
@@ -1455,8 +1469,9 @@ func (ps *PubSub) forwardEventDown(dialAddr string, event *pb.Event, redirect st
 	event.LastHop = peer.Encode(ps.ipfsDHT.PeerID())
 	ack, err := client.Notify(ctx, event)
 	if err != nil || !ack.State {
+
 		event.Backup = true
-		for _, backup := range ps.currentFilterTable.routes[event.OriginalRoute].backups {
+		for _, backup := range backups {
 
 			if backup == ps.serverAddr {
 				ps.Notify(ctx, event)
@@ -1864,7 +1879,7 @@ func (ps *PubSub) processLoop() {
 		case pid := <-ps.eventsToForwardUp:
 			go ps.forwardEventUp(pid.dialAddr, pid.event)
 		case pid := <-ps.eventsToForwardDown:
-			go ps.forwardEventDown(pid.dialAddr, pid.event, pid.redirectOption)
+			go ps.forwardEventDown(pid.dialAddr, pid.event, pid.redirectOption, pid.backups)
 		case pid := <-ps.interestingEvents:
 			ps.record.SaveReceivedEvent(pid.EventID.PublisherID, pid.BirthTime, pid.Event)
 			fmt.Printf("Received Event at: %s\n", ps.serverAddr)

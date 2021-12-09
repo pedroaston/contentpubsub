@@ -141,22 +141,25 @@ func TestPublish(t *testing.T) {
 // maitaining its functioning
 // Test composition: 4 nodes
 // >> 1 Publisher publishes a kind of event
-// >> 2 Subscribers subscribing a kind of event
-// >> 1 Passive node that just diffuse the
+// >> 3 Subscribers subscribing a kind of event
+// >> 3 Passive node that just diffuse the
 // subscriptions that will fail between the
 // subscription stage and the event publishing
 func TestFaultTolerance(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	var pubsubs [5]*PubSub
-	dhts := setupDHTS(t, ctx, 5)
+	var pubsubs [8]*PubSub
+	dhts := setupDHTS(t, ctx, 8)
 
 	// One dht will act has bootstrapper
 	connect(t, ctx, dhts[0], dhts[1])
 	connect(t, ctx, dhts[0], dhts[2])
 	connect(t, ctx, dhts[0], dhts[3])
 	connect(t, ctx, dhts[0], dhts[4])
+	connect(t, ctx, dhts[0], dhts[5])
+	connect(t, ctx, dhts[0], dhts[6])
+	connect(t, ctx, dhts[0], dhts[7])
 
 	// Connect peers to achieve a dissemination chain for the attribute
 	// portugal and remove bootstrapper from routing table
@@ -165,9 +168,15 @@ func TestFaultTolerance(t *testing.T) {
 	dhts[2].RoutingTable().RemovePeer(dhts[0].PeerID())
 	dhts[3].RoutingTable().RemovePeer(dhts[0].PeerID())
 	dhts[4].RoutingTable().RemovePeer(dhts[0].PeerID())
+	dhts[5].RoutingTable().RemovePeer(dhts[0].PeerID())
+	dhts[6].RoutingTable().RemovePeer(dhts[0].PeerID())
+	dhts[7].RoutingTable().RemovePeer(dhts[0].PeerID())
 	connect(t, ctx, dhts[helper[0]], dhts[helper[1]])
-	connect(t, ctx, dhts[helper[1]], dhts[helper[2]])
-	connect(t, ctx, dhts[helper[1]], dhts[helper[3]])
+	connect(t, ctx, dhts[helper[0]], dhts[helper[2]])
+	connect(t, ctx, dhts[helper[2]], dhts[helper[6]])
+	connect(t, ctx, dhts[helper[2]], dhts[helper[3]])
+	connect(t, ctx, dhts[helper[3]], dhts[helper[5]])
+	connect(t, ctx, dhts[helper[3]], dhts[helper[4]])
 
 	defer func() {
 		for _, dht := range dhts {
@@ -176,33 +185,38 @@ func TestFaultTolerance(t *testing.T) {
 		}
 
 		for i, pubsub := range pubsubs {
-			if i != helper[1] {
+			if i != helper[2] && i != helper[3] {
 				pubsub.TerminateService()
 			}
 		}
 	}()
 
+	cfg := DefaultConfig("PT", 10)
+	cfg.FaultToleranceFactor = 3
 	for i, dht := range dhts {
-		pubsubs[i] = NewPubSub(dht, DefaultConfig("PT", 10))
+		pubsubs[i] = NewPubSub(dht, cfg)
 		pubsubs[i].SetHasOldPeer()
 	}
 
-	pubsubs[helper[3]].MySubscribe("portugal T")
-	pubsubs[helper[2]].MySubscribe("portugal T")
+	pubsubs[helper[4]].MySubscribe("portugal T")
+	pubsubs[helper[5]].MySubscribe("portugal T")
+	pubsubs[helper[6]].MySubscribe("portugal T")
 	time.Sleep(time.Second)
 
-	pubsubs[helper[1]].TerminateService()
+	pubsubs[helper[2]].TerminateService()
+	pubsubs[helper[3]].TerminateService()
 	time.Sleep(time.Second)
 
-	pubsubs[helper[0]].MyPublish("valmitão tem as melhores marolas do mundo!", "portugal T")
-	time.Sleep(5 * time.Second)
+	pubsubs[helper[1]].MyPublish("valmitão tem as melhores marolas do mundo!", "portugal T")
+	time.Sleep(10 * time.Second)
 
 	// Confirm if subscribers received the event
 	var expected []string
 	expected = append(expected, "valmitão tem as melhores marolas do mundo!")
-	miss0, _ := pubsubs[helper[2]].ReturnCorrectnessStats(expected)
-	miss1, _ := pubsubs[helper[3]].ReturnCorrectnessStats(expected)
-	if miss0 != 0 || miss1 != 0 {
+	miss4, _ := pubsubs[helper[4]].ReturnCorrectnessStats(expected)
+	miss5, _ := pubsubs[helper[5]].ReturnCorrectnessStats(expected)
+	miss6, _ := pubsubs[helper[6]].ReturnCorrectnessStats(expected)
+	if miss4 != 0 || miss5 != 0 || miss6 != 0 {
 		t.Fatal("event not received by at least one subscriber")
 	}
 }
