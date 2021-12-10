@@ -507,18 +507,21 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 								dialAddr:       dialAddr,
 								event:          newE,
 								redirectOption: "",
+								backups:        route.backups,
 							}
 						} else if ps.currentFilterTable.redirectTable[next][event.RvId] == "" {
 							ps.eventsToForwardDown <- &ForwardEvent{
 								dialAddr:       dialAddr,
 								event:          newE,
 								redirectOption: "",
+								backups:        route.backups,
 							}
 						} else {
 							ps.eventsToForwardDown <- &ForwardEvent{
 								dialAddr:       dialAddr,
 								event:          newE,
 								redirectOption: ps.currentFilterTable.redirectTable[next][event.RvId],
+								backups:        route.backups,
 							}
 						}
 
@@ -527,8 +530,10 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 
 					} else {
 						ps.eventsToForwardDown <- &ForwardEvent{
-							dialAddr: dialAddr,
-							event:    newE,
+							dialAddr:       dialAddr,
+							event:          newE,
+							redirectOption: "",
+							backups:        route.backups,
 						}
 					}
 				}
