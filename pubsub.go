@@ -305,7 +305,7 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 		if ps.activeReliability {
 			ps.sendAckOp(sub.SubAddr, "Subscribe", sub.Predicate)
 		}
-		fmt.Println("Done Sub")
+		fmt.Println("Already Done Sub")
 		return &pb.Ack{State: true, Info: ""}, nil
 	} else if pNew != nil {
 		sub.Predicate = pNew.ToString()
@@ -350,26 +350,24 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 			}
 		}
 
-		fmt.Println("Phase 6b")
+		fmt.Println("Phase 6a")
 
 		go ps.forwardSub(nextHopAddr, subForward)
 		ps.updateMyBackups(sub.PeerID, sub.Predicate, updateBackups)
-		fmt.Println("Phase 7b")
+		fmt.Println("Phase 7a")
 	} else if !isRv {
 		fmt.Println("Impossible")
 		return &pb.Ack{State: false, Info: "rendezvous check failed"}, nil
 	} else {
-
-		fmt.Println("I am Rv for " + sub.RvId + " and live at " + ps.serverAddr)
-		fmt.Println("Phase 5a")
+		fmt.Println("Phase 5b")
 		if ps.activeReliability {
 			ps.sendAckOp(sub.SubAddr, "Subscribe", sub.Predicate)
 		}
 
-		fmt.Println("Phase 5a")
-		fmt.Println("Done Sub")
+		fmt.Println("Phase 6b")
 
 		ps.updateRvRegion(sub.PeerID, sub.Predicate, sub.RvId, updateBackups)
+		fmt.Println("Phase 7b")
 	}
 
 	return &pb.Ack{State: true, Info: ""}, nil
