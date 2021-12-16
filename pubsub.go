@@ -299,6 +299,7 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 		if ps.activeReliability {
 			ps.sendAckOp(sub.SubAddr, "Subscribe", sub.Predicate)
 		}
+		fmt.Println("Already done Sub")
 		return &pb.Ack{State: true, Info: ""}, nil
 	} else if pNew != nil {
 		sub.Predicate = pNew.ToString()
@@ -346,11 +347,12 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 		return &pb.Ack{State: false, Info: "rendezvous check failed"}, nil
 	} else {
 
-		fmt.Println("I am Rv for" + sub.RvId + "and live at " + ps.serverAddr)
+		fmt.Println("I am Rv for " + sub.RvId + " and live at " + ps.serverAddr)
 
 		if ps.activeReliability {
 			ps.sendAckOp(sub.SubAddr, "Subscribe", sub.Predicate)
 		}
+		fmt.Println("Done Sub")
 
 		ps.updateRvRegion(sub.PeerID, sub.Predicate, sub.RvId, updateBackups)
 	}
@@ -470,6 +472,8 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 						BirthTime:     event.BirthTime,
 						LastHop:       event.LastHop,
 					}
+
+					fmt.Println("I am Rv for " + newE.RvId + " and live at " + ps.serverAddr)
 
 					if ps.activeRedirect {
 
