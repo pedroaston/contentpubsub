@@ -345,6 +345,9 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 	} else if !isRv {
 		return &pb.Ack{State: false, Info: "rendezvous check failed"}, nil
 	} else {
+
+		fmt.Println("I am Rv for" + sub.RvId + "and live at " + ps.serverAddr)
+
 		if ps.activeReliability {
 			ps.sendAckOp(sub.SubAddr, "Subscribe", sub.Predicate)
 		}
@@ -565,6 +568,7 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 	} else if !isRv {
 		return &pb.Ack{State: false, Info: "rendezvous check failed"}, nil
 	} else if isRv {
+		fmt.Println("I am Rv for" + event.RvId + "and live at " + ps.serverAddr)
 		if ps.iAmRVPublish(p, event, false) != nil {
 			return &pb.Ack{State: false, Info: "rendezvous role failed"}, nil
 		}
