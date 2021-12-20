@@ -302,11 +302,13 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 	fmt.Println("Phase 3")
 
 	if alreadyDone {
-		if ps.activeReliability {
-			ps.sendAckOp(sub.SubAddr, "Subscribe", sub.Predicate)
-		}
-		fmt.Println("Already Done Sub")
-		return &pb.Ack{State: true, Info: ""}, nil
+		/*
+			if ps.activeReliability {
+				ps.sendAckOp(sub.SubAddr, "Subscribe", sub.Predicate)
+			}
+			fmt.Println("Already Done Sub")
+			return &pb.Ack{State: true, Info: ""}, nil
+		*/
 	} else if pNew != nil {
 		sub.Predicate = pNew.ToString()
 	}
