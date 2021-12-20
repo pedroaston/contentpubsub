@@ -271,8 +271,6 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 		backAddrs = append(backAddrs, addr)
 	}
 
-	fmt.Println("Phase 1")
-
 	ps.tablesLock.Lock()
 	if ps.currentFilterTable.routes[sub.PeerID] == nil {
 		ps.currentFilterTable.routes[sub.PeerID] = NewRouteStats(sub.IntAddr)
@@ -281,8 +279,6 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 		ps.nextFilterTable.routes[sub.PeerID] = NewRouteStats(sub.IntAddr)
 	}
 	ps.tablesLock.Unlock()
-
-	fmt.Println("Phase 2")
 
 	ps.tablesLock.RLock()
 	if ps.activeRedirect {
@@ -299,26 +295,19 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 	alreadyDone, pNew := ps.nextFilterTable.routes[sub.PeerID].SimpleAddSummarizedFilter(p, backAddrs)
 	ps.tablesLock.RUnlock()
 
-	fmt.Println("Phase 3")
-
 	if alreadyDone {
-		/*
-			if ps.activeReliability {
-				ps.sendAckOp(sub.SubAddr, "Subscribe", sub.Predicate)
-			}
-			fmt.Println("Already Done Sub")
-			return &pb.Ack{State: true, Info: ""}, nil
-		*/
+		if ps.activeReliability {
+			ps.sendAckOp(sub.SubAddr, "Subscribe", sub.Predicate)
+		}
+		fmt.Println("Already Done Sub")
+		return &pb.Ack{State: true, Info: ""}, nil
 	} else if pNew != nil {
 		sub.Predicate = pNew.ToString()
 	}
 
-	fmt.Println("Phase 4")
-
 	isRv, nextHopAddr := ps.rendezvousSelfCheck(sub.RvId)
 	if !isRv && nextHopAddr != "" {
 
-		fmt.Println("Phase 5a")
 		var backups map[int32]string = make(map[int32]string)
 		for i, backup := range ps.myBackups {
 			backups[int32(i)] = backup
@@ -352,24 +341,19 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 			}
 		}
 
-		fmt.Println("Phase 6a")
-
 		go ps.forwardSub(nextHopAddr, subForward)
 		ps.updateMyBackups(sub.PeerID, sub.Predicate, updateBackups)
-		fmt.Println("Phase 7a")
+
 	} else if !isRv {
-		fmt.Println("Impossible")
 		return &pb.Ack{State: false, Info: "rendezvous check failed"}, nil
 	} else {
-		fmt.Println("Phase 5b")
+
 		if ps.activeReliability {
 			ps.sendAckOp(sub.SubAddr, "Subscribe", sub.Predicate)
 		}
 
-		fmt.Println("Phase 6b")
-
 		ps.updateRvRegion(sub.PeerID, sub.Predicate, sub.RvId, updateBackups)
-		fmt.Println("Phase 7b")
+
 	}
 
 	return &pb.Ack{State: true, Info: ""}, nil
