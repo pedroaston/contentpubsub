@@ -195,6 +195,8 @@ func (ps *PubSub) MySubscribe(info string) error {
 		p = pNew
 	}
 
+	fmt.Println("Phase 1")
+
 	for _, attr := range p.attributes {
 		isRv, _ := ps.rendezvousSelfCheck(attr.name)
 		if isRv {
@@ -202,15 +204,21 @@ func (ps *PubSub) MySubscribe(info string) error {
 		}
 	}
 
+	fmt.Println("Phase 2")
+
 	_, minAttr, err := ps.closerAttrRvToSelf(p)
 	if err != nil {
 		return errors.New("failed to find the closest attribute Rv")
 	}
 
+	fmt.Println("Phase 3")
+
 	_, dialAddr := ps.rendezvousSelfCheck(minAttr)
 	if dialAddr == "" {
 		return errors.New("no address for closest peer")
 	}
+
+	fmt.Println("Phase 4")
 
 	if ps.activeRedirect {
 		ps.tablesLock.RLock()
@@ -299,7 +307,6 @@ func (ps *PubSub) Subscribe(ctx context.Context, sub *pb.Subscription) (*pb.Ack,
 		if ps.activeReliability {
 			ps.sendAckOp(sub.SubAddr, "Subscribe", sub.Predicate)
 		}
-		fmt.Println("Already Done Sub")
 		return &pb.Ack{State: true, Info: ""}, nil
 	} else if pNew != nil {
 		sub.Predicate = pNew.ToString()
