@@ -195,8 +195,6 @@ func (ps *PubSub) MySubscribe(info string) error {
 		p = pNew
 	}
 
-	fmt.Println("Phase 1")
-
 	for _, attr := range p.attributes {
 		isRv, _ := ps.rendezvousSelfCheck(attr.name)
 		if isRv {
@@ -204,21 +202,15 @@ func (ps *PubSub) MySubscribe(info string) error {
 		}
 	}
 
-	fmt.Println("Phase 2")
-
 	_, minAttr, err := ps.closerAttrRvToSelf(p)
 	if err != nil {
 		return errors.New("failed to find the closest attribute Rv")
 	}
 
-	fmt.Println("Phase 3")
-
 	_, dialAddr := ps.rendezvousSelfCheck(minAttr)
 	if dialAddr == "" {
 		return errors.New("no address for closest peer")
 	}
-
-	fmt.Println("Phase 4")
 
 	if ps.activeRedirect {
 		ps.tablesLock.RLock()
@@ -479,8 +471,6 @@ func (ps *PubSub) MyPublish(data string, info string) error {
 						LastHop:       event.LastHop,
 					}
 
-					fmt.Println("I am Rv for " + newE.RvId + " and live at " + ps.serverAddr)
-
 					if ps.activeRedirect {
 
 						ps.currentFilterTable.redirectLock.Lock()
@@ -578,7 +568,6 @@ func (ps *PubSub) Publish(ctx context.Context, event *pb.Event) (*pb.Ack, error)
 	} else if !isRv {
 		return &pb.Ack{State: false, Info: "rendezvous check failed"}, nil
 	} else if isRv {
-		fmt.Println("I am Rv for" + event.RvId + "and live at " + ps.serverAddr)
 		if ps.iAmRVPublish(p, event, false) != nil {
 			return &pb.Ack{State: false, Info: "rendezvous role failed"}, nil
 		}
